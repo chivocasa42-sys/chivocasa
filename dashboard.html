@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChivoCasas - Property Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        :root {
+            --accent: #e91e63;
+            --accent-light: #fce4ec;
+        }
+
+        body {
+            background: #f8f9fa;
+            color: #212529;
+            min-height: 100vh;
+        }
+
+        .navbar {
+            background: linear-gradient(135deg, #fff 0%, #f8f9fa 100%);
+            border-bottom: 1px solid #dee2e6;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        }
+
+        .card {
+            background: #fff;
+            border: 1px solid #e9ecef;
+            transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+        }
+
+        .card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+        }
+
+        .card-location {
+            cursor: pointer;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #fff 0%, #f8f9fa 100%);
+        }
+
+        .price-avg {
+            color: var(--accent);
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+
+        .price-range {
+            color: #6c757d;
+            font-size: 0.85rem;
+        }
+
+        .badge-count {
+            background: var(--accent);
+        }
+
+        .listing-card img {
+            height: 200px;
+            object-fit: cover;
+        }
+
+        .btn-accent {
+            background: var(--accent);
+            border: none;
+            color: white;
+        }
+
+        .btn-accent:hover {
+            background: #c2185b;
+            color: white;
+        }
+
+        .btn-outline-accent {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .btn-outline-accent:hover {
+            background: var(--accent);
+            color: white;
+        }
+
+        .detail-img {
+            max-height: 400px;
+            object-fit: cover;
+            border-radius: 8px;
+        }
+
+        .spec-badge {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            color: #495057;
+        }
+
+        .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 300px;
+        }
+
+        .breadcrumb {
+            background: transparent;
+        }
+
+        .breadcrumb-item a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        .breadcrumb-item.active {
+            color: #6c757d;
+        }
+
+        #detailModal .modal-content {
+            background: #fff;
+            border: 1px solid #dee2e6;
+        }
+
+        #detailModal .modal-header {
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        .carousel-item img {
+            height: 350px;
+            object-fit: cover;
+        }
+
+        .contact-box {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 1rem;
+        }
+
+        .text-accent {
+            color: var(--accent) !important;
+        }
+
+        .card-footer {
+            border-top: 1px solid #e9ecef !important;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Navbar -->
+    <nav class="navbar navbar-light py-3 mb-4">
+        <div class="container">
+            <a class="navbar-brand d-flex align-items-center" href="#" onclick="showOverview()">
+                <i class="bi bi-house-heart-fill text-accent me-2 fs-4"></i>
+                <span class="fw-bold">ChivoCasas</span>
+            </a>
+            <div class="d-flex align-items-center">
+                <span id="totalListings" class="badge bg-secondary me-3">0 listings</span>
+                <button class="btn btn-outline-secondary btn-sm" onclick="refreshData()">
+                    <i class="bi bi-arrow-clockwise"></i> Refresh
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- Breadcrumb -->
+        <nav id="breadcrumb" aria-label="breadcrumb" class="mb-4" style="display:none;">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="#" onclick="showOverview()">Locations</a></li>
+                <li class="breadcrumb-item active" id="breadcrumbLocation"></li>
+            </ol>
+        </nav>
+
+        <!-- Overview Section -->
+        <section id="overviewSection">
+            <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
+                <h2 class="mb-0"><i class="bi bi-geo-alt-fill text-accent me-2"></i>Ubicaciones</h2>
+                <div class="btn-group" role="group" aria-label="Filtrar por tipo">
+                    <button type="button" class="btn btn-outline-secondary active" onclick="setFilter('all')"
+                        id="filterAll">Todos</button>
+                    <button type="button" class="btn btn-outline-secondary" onclick="setFilter('sale')"
+                        id="filterSale">Venta</button>
+                    <button type="button" class="btn btn-outline-secondary" onclick="setFilter('rent')"
+                        id="filterRent">Alquiler</button>
+                </div>
+            </div>
+            <div id="locationsGrid" class="row g-4">
+                <div class="loading">
+                    <div class="spinner-border text-secondary" role="status"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Listings Section -->
+        <section id="listingsSection" style="display:none;">
+            <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
+                <h2 class="mb-0"><i class="bi bi-buildings me-2"></i><span id="locationTitle"></span></h2>
+                <div class="d-flex align-items-center gap-2">
+                    <label class="text-muted mb-0">Ordenar:</label>
+                    <select class="form-select form-select-sm" style="width: auto;" id="sortSelect"
+                        onchange="sortListings()">
+                        <option value="price-asc">Precio ↑</option>
+                        <option value="price-desc">Precio ↓</option>
+                        <option value="rooms-desc">Habitaciones ↓</option>
+                        <option value="rooms-asc">Habitaciones ↑</option>
+                        <option value="ppm2-asc">Precio/m² ↑</option>
+                        <option value="ppm2-desc">Precio/m² ↓</option>
+                    </select>
+                </div>
+            </div>
+            <div id="listingsGrid" class="row g-4"></div>
+        </section>
+    </div>
+
+    <!-- Detail Modal -->
+    <div class="modal fade" id="detailModal" tabindex="-1">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="modalTitle">Listing Details</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="modalBody"></div>
+                <div class="modal-footer border-0">
+                    <a id="modalLink" href="#" target="_blank" class="btn btn-accent">
+                        <i class="bi bi-box-arrow-up-right me-1"></i>View Original
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Supabase Config
+        const SUPABASE_URL = 'https://zvamupbxzuxdgvzgbssn.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp2YW11cGJ4enV4ZGd2emdic3NuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkwOTAzMDUsImV4cCI6MjA4NDY2NjMwNX0.6D7VaYu14paYys7lE1n0laiZB74o4OZHdcKILUAFiIA';
+        const TABLE = 'scrappeddata_ingest';
+
+        let allListings = [];
+        let locationStats = {};
+        let currentFilter = 'all'; // 'all', 'sale', 'rent'
+        let currentLocation = null; // Current location being viewed
+
+        // Fetch data from Supabase
+        async function fetchListings() {
+            const url = `${SUPABASE_URL}/rest/v1/${TABLE}?select=*&order=last_updated.desc`;
+            const res = await fetch(url, {
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                }
+            });
+            return await res.json();
+        }
+
+        // Group by location and calculate stats
+        function calculateStats(listings) {
+            const groups = {};
+            listings.forEach(l => {
+                const loc = l.location || 'Unknown';
+                if (!groups[loc]) groups[loc] = [];
+                groups[loc].push(l);
+            });
+
+            const stats = {};
+            for (const [loc, items] of Object.entries(groups)) {
+                const prices = items.filter(i => i.price && i.price > 0).map(i => i.price);
+                stats[loc] = {
+                    count: items.length,
+                    listings: items,
+                    avg: prices.length ? Math.round(prices.reduce((a, b) => a + b, 0) / prices.length) : 0,
+                    min: prices.length ? Math.min(...prices) : 0,
+                    max: prices.length ? Math.max(...prices) : 0
+                };
+            }
+            return stats;
+        }
+
+        // Format price
+        function formatPrice(price) {
+            if (!price) return 'N/A';
+            return '$' + price.toLocaleString('en-US');
+        }
+
+        // Render location cards
+        function renderLocations(stats) {
+            const grid = document.getElementById('locationsGrid');
+            // Sort by average price ascending (lowest to highest)
+            const sorted = Object.entries(stats).sort((a, b) => a[1].avg - b[1].avg);
+
+            grid.innerHTML = sorted.map(([loc, data]) => `
+                <div class="col-md-6 col-lg-4">
+                    <div class="card card-location h-100" onclick="showLocation('${loc.replace(/'/g, "\\'")}')">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-start mb-3">
+                                <h5 class="card-title mb-0">
+                                    <i class="bi bi-geo-alt text-accent me-1"></i>${loc}
+                                </h5>
+                                <span class="badge badge-count">${data.count}</span>
+                            </div>
+                            <div class="price-avg mb-2">${formatPrice(data.avg)}</div>
+                            <div class="price-range">
+                                <i class="bi bi-arrow-down-short"></i>${formatPrice(data.min)} 
+                                <span class="mx-2">—</span>
+                                <i class="bi bi-arrow-up-short"></i>${formatPrice(data.max)}
+                            </div>
+                        </div>
+                        <div class="card-footer bg-transparent border-top border-secondary text-end">
+                            <small class="text-muted">View listings <i class="bi bi-chevron-right"></i></small>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Set filter and re-render
+        function setFilter(filter) {
+            currentFilter = filter;
+
+            // Update button states
+            document.querySelectorAll('.btn-group .btn').forEach(btn => btn.classList.remove('active'));
+            if (filter === 'all') document.getElementById('filterAll').classList.add('active');
+            else if (filter === 'sale') document.getElementById('filterSale').classList.add('active');
+            else if (filter === 'rent') document.getElementById('filterRent').classList.add('active');
+
+            // Filter listings
+            let filtered = allListings;
+            if (filter === 'sale') {
+                filtered = allListings.filter(l => l.listing_type === 'sale');
+            } else if (filter === 'rent') {
+                filtered = allListings.filter(l => l.listing_type === 'rent');
+            }
+
+            // Update total count
+            document.getElementById('totalListings').textContent = `${filtered.length} listings`;
+
+            // Recalculate stats and render
+            locationStats = calculateStats(filtered);
+            renderLocations(locationStats);
+        }
+
+        // Show listings for a location
+        function showLocation(loc) {
+            const data = locationStats[loc];
+            if (!data) return;
+
+            currentLocation = loc;
+            document.getElementById('sortSelect').value = 'price-asc'; // Reset sort
+
+            document.getElementById('overviewSection').style.display = 'none';
+            document.getElementById('listingsSection').style.display = 'block';
+            document.getElementById('breadcrumb').style.display = 'block';
+            document.getElementById('breadcrumbLocation').textContent = loc;
+            document.getElementById('locationTitle').textContent = `${loc} (${data.count} propiedades)`;
+
+            renderListingsGrid(data.listings);
+        }
+
+        // Helper to get area in m² from specs
+        function getArea(listing) {
+            const specs = listing.specs || {};
+            // Try common area field names
+            const areaStr = specs['Área construida (m²)'] || specs['area'] || specs['m2'] || specs['metros'] || '0';
+            return parseFloat(String(areaStr).replace(/[^\d.]/g, '')) || 0;
+        }
+
+        // Sort and render listings
+        function sortListings() {
+            if (!currentLocation) return;
+            const data = locationStats[currentLocation];
+            if (!data) return;
+
+            const sortValue = document.getElementById('sortSelect').value;
+            let sorted = [...data.listings];
+
+            switch (sortValue) {
+                case 'price-asc':
+                    sorted.sort((a, b) => (a.price || 0) - (b.price || 0));
+                    break;
+                case 'price-desc':
+                    sorted.sort((a, b) => (b.price || 0) - (a.price || 0));
+                    break;
+                case 'rooms-desc':
+                    sorted.sort((a, b) => (b.specs?.bedrooms || 0) - (a.specs?.bedrooms || 0));
+                    break;
+                case 'rooms-asc':
+                    sorted.sort((a, b) => (a.specs?.bedrooms || 0) - (b.specs?.bedrooms || 0));
+                    break;
+                case 'ppm2-asc':
+                    sorted.sort((a, b) => {
+                        const ppmA = getArea(a) > 0 ? (a.price || 0) / getArea(a) : Infinity;
+                        const ppmB = getArea(b) > 0 ? (b.price || 0) / getArea(b) : Infinity;
+                        return ppmA - ppmB;
+                    });
+                    break;
+                case 'ppm2-desc':
+                    sorted.sort((a, b) => {
+                        const ppmA = getArea(a) > 0 ? (a.price || 0) / getArea(a) : 0;
+                        const ppmB = getArea(b) > 0 ? (b.price || 0) / getArea(b) : 0;
+                        return ppmB - ppmA;
+                    });
+                    break;
+            }
+
+            renderListingsGrid(sorted);
+        }
+
+        // Render listings grid
+        function renderListingsGrid(listings) {
+            const grid = document.getElementById('listingsGrid');
+            grid.innerHTML = listings.map(l => {
+                const area = getArea(l);
+                const pricePerM2 = area > 0 ? Math.round(l.price / area) : null;
+                return `
+                <div class="col-md-6 col-lg-4">
+                    <div class="card listing-card h-100" onclick="showDetail(${l.external_id})" style="cursor:pointer;">
+                        <img src="${l.images?.[0] || 'https://via.placeholder.com/400x200?text=No+Image'}" class="card-img-top" alt="${l.title}">
+                        <div class="card-body">
+                            <h6 class="card-title text-truncate" title="${l.title}">${l.title || 'Untitled'}</h6>
+                            <div class="price-avg mb-2">${formatPrice(l.price)}</div>
+                            <div class="d-flex flex-wrap gap-2 mb-2">
+                                ${l.specs?.bedrooms ? `<span class="badge spec-badge"><i class="bi bi-door-closed me-1"></i>${l.specs.bedrooms} hab</span>` : ''}
+                                ${l.specs?.bathrooms ? `<span class="badge spec-badge"><i class="bi bi-droplet me-1"></i>${l.specs.bathrooms} baño</span>` : ''}
+                                ${pricePerM2 ? `<span class="badge spec-badge"><i class="bi bi-rulers me-1"></i>$${pricePerM2}/m²</span>` : ''}
+                            </div>
+                            <small class="text-muted">${l.listing_type === 'sale' ? 'Venta' : 'Alquiler'}</small>
+                        </div>
+                    </div>
+                </div>
+            `;
+            }).join('');
+        }
+
+        // Show detail modal
+        function showDetail(externalId) {
+            const listing = allListings.find(l => l.external_id === externalId);
+            if (!listing) return;
+
+            document.getElementById('modalTitle').textContent = listing.title || 'Listing Details';
+            document.getElementById('modalLink').href = listing.url || '#';
+
+            const images = listing.images || [];
+            const carouselItems = images.length ? images.map((img, i) => `
+                <div class="carousel-item ${i === 0 ? 'active' : ''}">
+                    <img src="${img}" class="d-block w-100" alt="Image ${i + 1}">
+                </div>
+            `).join('') : '<div class="carousel-item active"><img src="https://via.placeholder.com/800x350?text=No+Images" class="d-block w-100"></div>';
+
+            const specs = listing.specs || {};
+            const details = listing.details || {};
+            const contact = listing.contact_info || {};
+
+            document.getElementById('modalBody').innerHTML = `
+                <div class="row">
+                    <div class="col-lg-7 mb-4">
+                        <!-- Image Carousel -->
+                        <div id="imageCarousel" class="carousel slide mb-4" data-bs-ride="carousel">
+                            <div class="carousel-inner rounded">${carouselItems}</div>
+                            ${images.length > 1 ? `
+                                <button class="carousel-control-prev" type="button" data-bs-target="#imageCarousel" data-bs-slide="prev">
+                                    <span class="carousel-control-prev-icon"></span>
+                                </button>
+                                <button class="carousel-control-next" type="button" data-bs-target="#imageCarousel" data-bs-slide="next">
+                                    <span class="carousel-control-next-icon"></span>
+                                </button>
+                            ` : ''}
+                        </div>
+                        <!-- Description -->
+                        <h5>Description</h5>
+                        <p class="text-muted" style="white-space: pre-line;">${listing.description || 'No description available.'}</p>
+                    </div>
+                    <div class="col-lg-5">
+                        <!-- Price -->
+                        <div class="mb-4">
+                            <h2 class="text-accent mb-0">${formatPrice(listing.price)}</h2>
+                            <span class="badge ${listing.listing_type === 'sale' ? 'bg-success' : 'bg-info'}">${listing.listing_type === 'sale' ? 'For Sale' : 'For Rent'}</span>
+                        </div>
+                        <!-- Specs -->
+                        <div class="d-flex flex-wrap gap-2 mb-4">
+                            ${specs.bedrooms ? `<span class="badge spec-badge fs-6"><i class="bi bi-door-closed me-1"></i>${specs.bedrooms} Bedrooms</span>` : ''}
+                            ${specs.bathrooms ? `<span class="badge spec-badge fs-6"><i class="bi bi-droplet me-1"></i>${specs.bathrooms} Bathrooms</span>` : ''}
+                            ${Object.entries(specs).filter(([k]) => !['bedrooms', 'bathrooms'].includes(k)).map(([k, v]) => `<span class="badge spec-badge fs-6">${k}: ${v}</span>`).join('')}
+                        </div>
+                        <!-- Details -->
+                        ${Object.keys(details).length ? `
+                            <h6 class="mb-3">Details</h6>
+                            <ul class="list-unstyled mb-4">
+                                ${Object.entries(details).map(([k, v]) => `<li class="mb-1"><strong>${k}:</strong> ${v}</li>`).join('')}
+                            </ul>
+                        ` : ''}
+                        <!-- Contact -->
+                        <div class="contact-box">
+                            <h6 class="mb-3"><i class="bi bi-person-circle me-1"></i>Contact</h6>
+                            ${contact.nombre ? `<p class="mb-1"><strong>${contact.nombre}</strong></p>` : ''}
+                            ${contact.telefono ? `<p class="mb-1"><i class="bi bi-telephone me-2"></i><a href="tel:${contact.telefono}" class="text-accent">${contact.telefono}</a></p>` : ''}
+                            ${contact.whatsapp ? `<p class="mb-1"><i class="bi bi-whatsapp me-2"></i><a href="https://wa.me/${contact.whatsapp}" target="_blank" class="text-success">${contact.whatsapp}</a></p>` : ''}
+                            ${!contact.nombre && !contact.telefono && !contact.whatsapp ? '<p class="text-muted mb-0">No contact info available</p>' : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            new bootstrap.Modal(document.getElementById('detailModal')).show();
+        }
+
+        // Show overview
+        function showOverview() {
+            document.getElementById('overviewSection').style.display = 'block';
+            document.getElementById('listingsSection').style.display = 'none';
+            document.getElementById('breadcrumb').style.display = 'none';
+        }
+
+        // Refresh data
+        async function refreshData() {
+            document.getElementById('locationsGrid').innerHTML = '<div class="loading col-12"><div class="spinner-border text-secondary" role="status"></div></div>';
+            await loadData();
+        }
+
+        // Load data
+        async function loadData() {
+            try {
+                allListings = await fetchListings();
+                document.getElementById('totalListings').textContent = `${allListings.length} listings`;
+                locationStats = calculateStats(allListings);
+                renderLocations(locationStats);
+            } catch (err) {
+                console.error('Error loading data:', err);
+                document.getElementById('locationsGrid').innerHTML = '<div class="col-12 text-center text-danger"><i class="bi bi-exclamation-triangle fs-1"></i><p>Error loading data</p></div>';
+            }
+        }
+
+        // Init
+        loadData();
+    </script>
+</body>
+
+</html>

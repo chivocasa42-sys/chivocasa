@@ -1,0 +1,38 @@
+ [{ "title": "Alquiler de Casas en Apopa | ALQUILER INMEDIATO",
+  "price": "$550.00",
+  "location": "Apopa",
+  "published_date": "04/01/2026",
+  "listing_type": "rent",
+  "url": "https://www.encuentra24.com/el-salvador-es/...",
+  "external_id": "31817095",
+  "specs": {
+    "bedrooms": "2",
+    "bathrooms": "1"
+  },
+    "details": {
+      "Ubicación": "Apopa",
+      "Publicado": "04/01/2026",
+      "M² totales": "¡Pregunta al anunciante!",
+      "Disponible desde": "INMEDIATO",
+      "Dirección exacta": "Residencial Paseo del Prado, Apopa, San Salvador",
+      "Costos de mantenimiento": "¡Pregunta al anunciante!",
+      "Altura": "¡Pregunta al anunciante!",
+      "Años de construcción": "¡Pregunta al anunciante!",
+      "Niveles": "¡Pregunta al anunciante!",
+      "Tipo de piso(s)": "¡Pregunta al anunciante!",
+      "Piso Número": "¡Pregunta al anunciante!",
+      "PDF con info de la propiedad": "¡Pregunta al anunciante!",
+      "Parking": "1"
+    },
+  "description": "HERMOSA CASA SEMI AMUEBLADA PARA ALQUILAR...",
+  "images": ["https://photos.encuentra24.com/..."],
+  "source": "Encuentra24",
+  "active": true,
+  "contact_info": {
+    "nombre": "Juan Pérez",
+    "correo": "juan@email.com",
+    "telefono": "22345678",
+    "whatsapp": "76543210"
+  },
+  "last_updated": "2026-01-22T09:35:00.123456"
+}]
