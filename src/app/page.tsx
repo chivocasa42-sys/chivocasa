@@ -2,41 +2,47 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Navbar from '@/components/Navbar';
+import DepartmentCard from '@/components/DepartmentCard';
 import LocationCard from '@/components/LocationCard';
 import ListingsView from '@/components/ListingsView';
 import { Listing, LocationStats } from '@/types/listing';
+import { DEPARTAMENTOS, detectDepartamento, normalizeText } from '@/data/departamentos';
 
 type FilterType = 'all' | 'sale' | 'rent';
 
+interface DepartmentStats {
+  count: number;
+  listings: Listing[];
+  avg: number;
+  min: number;
+  max: number;
+  municipios: Record<string, LocationStats>;
+}
+
 // Helper to extract location string from listing data
 function getLocationString(listing: Listing): string {
-  // Try location field first
   const loc = listing.location;
   if (loc) {
     if (typeof loc === 'string' && loc.trim()) return loc.trim();
     if (typeof loc === 'object' && loc !== null) {
       const locObj = loc as Record<string, unknown>;
-      const name = locObj.name || locObj.city || locObj.zona || locObj.area;
+      const name = locObj.name || locObj.city || locObj.zona || locObj.area || locObj.municipio_detectado;
       if (name) return String(name);
     }
   }
 
-  // Try details.Ubicación or details.Localización
   const details = listing.details || {};
   if (details['Ubicación']) return details['Ubicación'];
   if (details['Localización']) return details['Localización'];
 
-  // Try extracting from title (format: "Venta/Alquiler de Casas en [Location]")
   const title = listing.title || '';
   const locationMatch = title.match(/(?:en|in)\s+([A-Za-zÀ-ÿ\s]+?)(?:\s*[|\-]|$)/i);
   if (locationMatch && locationMatch[1]) {
     return locationMatch[1].trim();
   }
 
-  // Try extracting from "Dirección exacta" detail
   if (details['Dirección exacta']) {
     const addr = details['Dirección exacta'];
-    // Extract last part (often city/zone)
     const parts = addr.split(',').map(p => p.trim());
     if (parts.length > 0) {
       return parts[parts.length - 1] || parts[0];
@@ -46,34 +52,81 @@ function getLocationString(listing: Listing): string {
   return 'Otros';
 }
 
-function calculateStats(listings: Listing[]): Record<string, LocationStats> {
-  const groups: Record<string, Listing[]> = {};
+// Calculate stats grouped by department
+function calculateDepartmentStats(listings: Listing[]): Record<string, DepartmentStats> {
+  const deptGroups: Record<string, { listings: Listing[]; municipios: Record<string, Listing[]> }> = {};
 
-  listings.forEach((l) => {
-    const loc = getLocationString(l);
-    if (!groups[loc]) groups[loc] = [];
-    groups[loc].push(l);
+  // Initialize all 14 departments
+  for (const dept of Object.keys(DEPARTAMENTOS)) {
+    deptGroups[dept] = { listings: [], municipios: {} };
+  }
+  deptGroups['Otros'] = { listings: [], municipios: {} };
+
+  // Group listings by department and municipality
+  listings.forEach((listing) => {
+    const locationStr = getLocationString(listing);
+    const detected = detectDepartamento(locationStr);
+
+    let dept = 'Otros';
+    let muni = locationStr;
+
+    if (detected) {
+      dept = detected.departamento;
+      muni = detected.municipio;
+    }
+
+    if (!deptGroups[dept]) {
+      deptGroups[dept] = { listings: [], municipios: {} };
+    }
+
+    deptGroups[dept].listings.push(listing);
+
+    if (!deptGroups[dept].municipios[muni]) {
+      deptGroups[dept].municipios[muni] = [];
+    }
+    deptGroups[dept].municipios[muni].push(listing);
   });
 
-  const stats: Record<string, LocationStats> = {};
-  for (const [loc, items] of Object.entries(groups)) {
-    const prices = items.filter((i) => i.price && i.price > 0).map((i) => i.price);
-    stats[loc] = {
-      count: items.length,
-      listings: items,
+  // Calculate stats for each department
+  const stats: Record<string, DepartmentStats> = {};
+
+  for (const [dept, data] of Object.entries(deptGroups)) {
+    if (data.listings.length === 0) continue;
+
+    const prices = data.listings.filter(l => l.price && l.price > 0).map(l => l.price);
+
+    // Calculate municipio stats
+    const municipioStats: Record<string, LocationStats> = {};
+    for (const [muni, muniListings] of Object.entries(data.municipios)) {
+      const muniPrices = muniListings.filter(l => l.price && l.price > 0).map(l => l.price);
+      municipioStats[muni] = {
+        count: muniListings.length,
+        listings: muniListings,
+        avg: muniPrices.length ? Math.round(muniPrices.reduce((a, b) => a + b, 0) / muniPrices.length) : 0,
+        min: muniPrices.length ? Math.min(...muniPrices) : 0,
+        max: muniPrices.length ? Math.max(...muniPrices) : 0,
+      };
+    }
+
+    stats[dept] = {
+      count: data.listings.length,
+      listings: data.listings,
       avg: prices.length ? Math.round(prices.reduce((a, b) => a + b, 0) / prices.length) : 0,
       min: prices.length ? Math.min(...prices) : 0,
       max: prices.length ? Math.max(...prices) : 0,
+      municipios: municipioStats,
     };
   }
+
   return stats;
 }
 
 export default function Home() {
   const [allListings, setAllListings] = useState<Listing[]>([]);
-  const [locationStats, setLocationStats] = useState<Record<string, LocationStats>>({});
+  const [departmentStats, setDepartmentStats] = useState<Record<string, DepartmentStats>>({});
   const [currentFilter, setCurrentFilter] = useState<FilterType>('all');
-  const [currentLocation, setCurrentLocation] = useState<string | null>(null);
+  const [currentDepartment, setCurrentDepartment] = useState<string | null>(null);
+  const [currentMunicipio, setCurrentMunicipio] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -104,31 +157,108 @@ export default function Home() {
     } else if (currentFilter === 'rent') {
       filtered = allListings.filter((l) => l.listing_type === 'rent');
     }
-    setLocationStats(calculateStats(filtered));
+    setDepartmentStats(calculateDepartmentStats(filtered));
   }, [allListings, currentFilter]);
-
-  const sortedLocations = Object.entries(locationStats).sort((a, b) => a[1].avg - b[1].avg);
 
   const filteredCount = currentFilter === 'all'
     ? allListings.length
     : allListings.filter((l) => l.listing_type === currentFilter).length;
 
-  if (currentLocation && locationStats[currentLocation]) {
+  // Sort departments by listing count (descending)
+  const sortedDepartments = Object.entries(departmentStats)
+    .sort((a, b) => b[1].count - a[1].count);
+
+  // VIEW 3: Show listings for a specific municipio
+  if (currentDepartment && currentMunicipio && departmentStats[currentDepartment]?.municipios[currentMunicipio]) {
+    const stats = departmentStats[currentDepartment].municipios[currentMunicipio];
     return (
       <>
         <Navbar totalListings={filteredCount} onRefresh={fetchListings} />
         <div className="container mx-auto px-4">
           <ListingsView
-            location={currentLocation}
-            stats={locationStats[currentLocation]}
+            location={currentMunicipio}
+            stats={stats}
             allListings={allListings}
-            onBack={() => setCurrentLocation(null)}
+            onBack={() => setCurrentMunicipio(null)}
           />
         </div>
       </>
     );
   }
 
+  // VIEW 2: Show municipios within a department
+  if (currentDepartment && departmentStats[currentDepartment]) {
+    const deptData = departmentStats[currentDepartment];
+    const sortedMunicipios = Object.entries(deptData.municipios)
+      .sort((a, b) => b[1].count - a[1].count);
+
+    return (
+      <>
+        <Navbar totalListings={filteredCount} onRefresh={fetchListings} />
+        <div className="container mx-auto px-4">
+          {/* Breadcrumb & Back button */}
+          <div className="flex items-center gap-3 mb-6">
+            <button
+              onClick={() => setCurrentDepartment(null)}
+              className="flex items-center gap-2 text-[var(--accent)] hover:underline"
+            >
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 16 16">
+                <path fillRule="evenodd" d="M15 8a.5.5 0 0 0-.5-.5H2.707l3.147-3.146a.5.5 0 1 0-.708-.708l-4 4a.5.5 0 0 0 0 .708l4 4a.5.5 0 0 0 .708-.708L2.707 8.5H14.5A.5.5 0 0 0 15 8z" />
+              </svg>
+              Volver a Departamentos
+            </button>
+          </div>
+
+          {/* Header with department name */}
+          <div className="flex flex-wrap justify-between items-center gap-3 mb-6">
+            <h2 className="text-2xl font-bold flex items-center gap-2">
+              <svg className="w-6 h-6 text-[var(--accent)]" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M8 16s6-5.686 6-10A6 6 0 0 0 2 6c0 4.314 6 10 6 10zm0-7a3 3 0 1 1 0-6 3 3 0 0 1 0 6z" />
+              </svg>
+              {currentDepartment}
+              <span className="text-lg font-normal text-gray-500">
+                ({deptData.count} propiedades)
+              </span>
+            </h2>
+            <div className="flex">
+              <button
+                onClick={() => setCurrentFilter('all')}
+                className={`filter-btn ${currentFilter === 'all' ? 'active' : ''}`}
+              >
+                Todos
+              </button>
+              <button
+                onClick={() => setCurrentFilter('sale')}
+                className={`filter-btn ${currentFilter === 'sale' ? 'active' : ''}`}
+              >
+                Venta
+              </button>
+              <button
+                onClick={() => setCurrentFilter('rent')}
+                className={`filter-btn ${currentFilter === 'rent' ? 'active' : ''}`}
+              >
+                Alquiler
+              </button>
+            </div>
+          </div>
+
+          {/* Municipios grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {sortedMunicipios.map(([muni, stats]) => (
+              <LocationCard
+                key={muni}
+                location={muni}
+                stats={stats}
+                onClick={() => setCurrentMunicipio(muni)}
+              />
+            ))}
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // VIEW 1: Show all 14 departments
   return (
     <>
       <Navbar totalListings={filteredCount} onRefresh={fetchListings} />
@@ -139,7 +269,7 @@ export default function Home() {
             <svg className="w-6 h-6 text-[var(--accent)]" fill="currentColor" viewBox="0 0 16 16">
               <path d="M8 16s6-5.686 6-10A6 6 0 0 0 2 6c0 4.314 6 10 6 10zm0-7a3 3 0 1 1 0-6 3 3 0 0 1 0 6z" />
             </svg>
-            Ubicaciones
+            Departamentos
           </h2>
           <div className="flex">
             <button
@@ -177,13 +307,14 @@ export default function Home() {
             <p>{error}</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {sortedLocations.map(([loc, stats]) => (
-              <LocationCard
-                key={loc}
-                location={loc}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {sortedDepartments.map(([dept, stats]) => (
+              <DepartmentCard
+                key={dept}
+                departamento={dept}
                 stats={stats}
-                onClick={() => setCurrentLocation(loc)}
+                municipiosCount={Object.keys(stats.municipios).length}
+                onClick={() => setCurrentDepartment(dept)}
               />
             ))}
           </div>
