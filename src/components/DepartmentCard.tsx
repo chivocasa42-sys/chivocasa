@@ -1,61 +1,99 @@
 'use client';
 
-import { LocationStats } from '@/types/listing';
+import Link from 'next/link';
 
 interface DepartmentCardProps {
     departamento: string;
-    stats: LocationStats;
-    municipiosCount: number;
-    onClick: () => void;
+    totalCount: number;
+    saleCount?: number;
+    rentCount?: number;
+    medianPrice: number;
+    priceRangeMin: number;
+    priceRangeMax: number;
+    slug: string;
 }
 
 function formatPrice(price: number): string {
-    if (!price) return 'N/A';
-    return '$' + price.toLocaleString('en-US');
+    if (!price || price === 0) return 'N/A';
+    return '$' + Math.round(price).toLocaleString('en-US');
 }
 
-export default function DepartmentCard({ departamento, stats, municipiosCount, onClick }: DepartmentCardProps) {
+function formatPriceCompact(price: number): string {
+    if (!price || price === 0) return 'N/A';
+    if (price >= 1000000) return '$' + (price / 1000000).toFixed(1) + 'M';
+    if (price >= 1000) return '$' + Math.round(price / 1000) + 'K';
+    return '$' + Math.round(price).toLocaleString();
+}
+
+export default function DepartmentCard({
+    departamento, totalCount, saleCount, rentCount,
+    medianPrice, priceRangeMin, priceRangeMax, slug
+}: DepartmentCardProps) {
     return (
-        <div
-            className="card card-location h-full flex flex-col cursor-pointer hover:scale-[1.02] transition-transform"
-            onClick={onClick}
+        <Link
+            href={`/${slug}`}
+            className="card-float card-float-interactive flex flex-col"
         >
-            <div className="p-4 flex-1">
+            {/* Header */}
+            <div className="p-5 pb-3">
                 <div className="flex justify-between items-start mb-3">
-                    <h5 className="font-semibold text-lg flex items-center gap-2">
-                        <svg className="w-5 h-5 text-[var(--accent)]" fill="currentColor" viewBox="0 0 16 16">
-                            <path d="M8 16s6-5.686 6-10A6 6 0 0 0 2 6c0 4.314 6 10 6 10zm0-7a3 3 0 1 1 0-6 3 3 0 0 1 0 6z" />
-                        </svg>
+                    <h3 className="font-semibold text-base text-[var(--text-primary)]">
                         {departamento}
-                    </h5>
-                    <span className="badge-count">{stats.count}</span>
+                    </h3>
+                    <span className="badge-count">
+                        {totalCount}
+                    </span>
                 </div>
 
-                <div className="text-sm text-gray-500 mb-2">
-                    {municipiosCount} {municipiosCount === 1 ? 'municipio' : 'municipios'} con propiedades
-                </div>
-
-                <div className="price-avg mb-2">{formatPrice(stats.avg)}</div>
-                <div className="price-range flex items-center gap-1 text-sm">
-                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 16 16">
-                        <path fillRule="evenodd" d="M8 4a.5.5 0 0 1 .5.5v5.793l2.146-2.147a.5.5 0 0 1 .708.708l-3 3a.5.5 0 0 1-.708 0l-3-3a.5.5 0 1 1 .708-.708L7.5 10.293V4.5A.5.5 0 0 1 8 4z" />
-                    </svg>
-                    {formatPrice(stats.min)}
-                    <span className="mx-2">—</span>
-                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 16 16">
-                        <path fillRule="evenodd" d="M8 12a.5.5 0 0 0 .5-.5V5.707l2.146 2.147a.5.5 0 0 0 .708-.708l-3-3a.5.5 0 0 0-.708 0l-3 3a.5.5 0 1 0 .708.708L7.5 5.707V11.5a.5.5 0 0 0 .5.5z" />
-                    </svg>
-                    {formatPrice(stats.max)}
+                {/* Iconos con tooltips */}
+                <div className="flex items-center gap-4 text-sm text-[var(--text-secondary)]">
+                    {saleCount !== undefined && saleCount > 0 && (
+                        <span
+                            className="flex items-center gap-1.5"
+                            title="Propiedades en venta"
+                        >
+                            <span>🏠</span>
+                            <span className="font-medium">{saleCount}</span>
+                        </span>
+                    )}
+                    {rentCount !== undefined && rentCount > 0 && (
+                        <span
+                            className="flex items-center gap-1.5"
+                            title="Propiedades en alquiler"
+                        >
+                            <span>🔑</span>
+                            <span className="font-medium">{rentCount}</span>
+                        </span>
+                    )}
                 </div>
             </div>
-            <div className="px-4 py-3 border-t border-gray-200 text-right bg-transparent">
-                <small className="text-muted flex items-center justify-end gap-1">
-                    Ver municipios
-                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 16 16">
+
+            {/* Precio típico - centrado y prominente */}
+            <div className="px-5 py-5 border-t border-slate-100 text-center flex-1">
+                <div className="kpi-label mb-2">
+                    PRECIO TÍPICO
+                </div>
+                <div className="kpi-value text-[var(--primary)]">
+                    {formatPrice(medianPrice)}
+                </div>
+            </div>
+
+            {/* Rango típico */}
+            <div className="px-5 pb-4 text-center">
+                <span className="pill-range">
+                    {formatPriceCompact(priceRangeMin)} → {formatPriceCompact(priceRangeMax)}
+                </span>
+            </div>
+
+            {/* CTA */}
+            <div className="px-5 py-3 border-t border-slate-100 bg-[var(--bg-subtle)] rounded-b-2xl">
+                <div className="text-sm text-[var(--primary)] font-medium flex items-center justify-end gap-1">
+                    Ver propiedades
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 16 16">
                         <path fillRule="evenodd" d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708z" />
                     </svg>
-                </small>
+                </div>
             </div>
-        </div>
+        </Link>
     );
 }
