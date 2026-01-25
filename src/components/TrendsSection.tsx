@@ -3,6 +3,7 @@
 import { useMemo } from 'react';
 import Link from 'next/link';
 import { departamentoToSlug } from '@/lib/slugify';
+import SectionHeader from './SectionHeader';
 
 interface DepartmentData {
     departamento: string;
@@ -75,9 +76,12 @@ export default function TrendsSection({ departmentData, period }: TrendsSectionP
 
     return (
         <div className="mb-8">
-            <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4">
-                Tendencias e Insights
-            </h2>
+            <SectionHeader
+                title={['Señales', 'del mercado']}
+                subtitle={`Subidas, bajadas y oportunidades en el periodo seleccionado`}
+                actionLabel="Ver tendencias"
+                actionHref="#"
+            />
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                 {/* Subieron más */}

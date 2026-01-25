@@ -13,72 +13,99 @@ interface HomeHeaderProps {
     onOrderChange: (order: OrderType) => void;
 }
 
+const periodLabels: Record<PeriodType, string> = {
+    '7d': '7 días',
+    '30d': '30 días',
+    '90d': '90 días'
+};
+
+const viewLabels: Record<ViewType, string> = {
+    'all': 'Todos',
+    'sale': 'Venta',
+    'rent': 'Renta'
+};
+
+const orderLabels: Record<OrderType, string> = {
+    'activity': 'Actividad',
+    'price': 'Precio',
+    'variation': 'Variación'
+};
+
 export default function HomeHeader({
     period, view, orderBy,
     onPeriodChange, onViewChange, onOrderChange
 }: HomeHeaderProps) {
     return (
         <div className="mb-8">
-            {/* Título */}
-            <div className="mb-6">
-                <h1 className="text-2xl font-bold text-[var(--text-primary)] tracking-wide">
-                    ÍNDICE INMOBILIARIO · EL SALVADOR
-                </h1>
-                <p className="text-[var(--text-secondary)] mt-1">
-                    Datos agregados del mercado inmobiliario salvadoreño
-                </p>
+            {/* Control Bar - 3 Column Layout */}
+            <div className="control-bar">
+                {/* LEFT: Periodo */}
+                <div className="control-group">
+                    <label className="control-label">Periodo</label>
+                    <div className="segmented-control">
+                        {(['7d', '30d', '90d'] as PeriodType[]).map(p => (
+                            <button
+                                key={p}
+                                onClick={() => onPeriodChange(p)}
+                                className={`segmented-btn ${period === p ? 'active' : ''}`}
+                            >
+                                {periodLabels[p]}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* CENTER: Mercado (with flex spacer) */}
+                <div className="control-group" style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)' }}>
+                    <label className="control-label">Mercado</label>
+                    <div className="segmented-control">
+                        {(['all', 'sale', 'rent'] as ViewType[]).map(v => (
+                            <button
+                                key={v}
+                                onClick={() => onViewChange(v)}
+                                className={`segmented-btn ${view === v ? 'active' : ''}`}
+                            >
+                                {viewLabels[v]}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* RIGHT: Ordenar */}
+                <div className="control-group" style={{ marginLeft: 'auto' }}>
+                    <label className="control-label">Ordenar por</label>
+                    <div className="dropdown-control">
+                        <select
+                            value={orderBy}
+                            onChange={(e) => onOrderChange(e.target.value as OrderType)}
+                            className="dropdown-select"
+                        >
+                            <option value="activity">{orderLabels.activity}</option>
+                            <option value="price">{orderLabels.price}</option>
+                            <option value="variation">{orderLabels.variation}</option>
+                        </select>
+                        <svg
+                            className="dropdown-icon"
+                            width="12"
+                            height="12"
+                            viewBox="0 0 12 12"
+                            fill="none"
+                        >
+                            <path
+                                d="M3 4.5L6 7.5L9 4.5"
+                                stroke="currentColor"
+                                strokeWidth="1.5"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                            />
+                        </svg>
+                    </div>
+                </div>
             </div>
 
-            {/* Controles */}
-            <div className="flex flex-wrap items-center gap-4">
-                {/* Período */}
-                <div className="pill-group">
-                    {(['7d', '30d', '90d'] as PeriodType[]).map(p => (
-                        <button
-                            key={p}
-                            onClick={() => onPeriodChange(p)}
-                            className={`pill-btn ${period === p ? 'active' : ''}`}
-                        >
-                            {p.toUpperCase()}
-                        </button>
-                    ))}
-                </div>
-
-                {/* Vista */}
-                <div className="pill-group">
-                    <button
-                        onClick={() => onViewChange('all')}
-                        className={`pill-btn ${view === 'all' ? 'active' : ''}`}
-                    >
-                        Todo
-                    </button>
-                    <button
-                        onClick={() => onViewChange('sale')}
-                        className={`pill-btn ${view === 'sale' ? 'active' : ''}`}
-                    >
-                        Venta
-                    </button>
-                    <button
-                        onClick={() => onViewChange('rent')}
-                        className={`pill-btn ${view === 'rent' ? 'active' : ''}`}
-                    >
-                        Renta
-                    </button>
-                </div>
-
-                {/* Ordenar */}
-                <div className="flex items-center gap-2">
-                    <span className="text-sm text-[var(--text-muted)]">Ordenar:</span>
-                    <select
-                        value={orderBy}
-                        onChange={(e) => onOrderChange(e.target.value as OrderType)}
-                        className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 bg-white text-[var(--text-secondary)]"
-                    >
-                        <option value="activity">Actividad</option>
-                        <option value="price">Precio</option>
-                        <option value="variation">Variación</option>
-                    </select>
-                </div>
+            {/* Status Line */}
+            <div className="status-line">
+                Mostrando: <span>{periodLabels[period]}</span> · <span>{viewLabels[view]}</span> · Orden: <span>{orderLabels[orderBy]}</span>
             </div>
         </div>
     );

@@ -2,11 +2,14 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Navbar from '@/components/Navbar';
+import HeroSection from '@/components/HeroSection';
+import FeatureCards from '@/components/FeatureCards';
 import HomeHeader from '@/components/HomeHeader';
 import KPIStrip from '@/components/KPIStrip';
 import RankingsSection from '@/components/RankingsSection';
 import TrendsSection from '@/components/TrendsSection';
 import DepartmentCard from '@/components/DepartmentCard';
+import SectionHeader from '@/components/SectionHeader';
 import { departamentoToSlug } from '@/lib/slugify';
 import Link from 'next/link';
 
@@ -149,20 +152,24 @@ export default function Home() {
     <>
       <Navbar
         totalListings={kpiStats.totalActive}
-        lastUpdated={new Date().toISOString()}
         onRefresh={() => window.location.reload()}
       />
 
+      {/* Hero Section - Earnwave Style */}
+      <HeroSection />
+
       <main className="container mx-auto px-4 max-w-7xl">
         {/* Header + Controles */}
-        <HomeHeader
-          period={period}
-          view={view}
-          orderBy={orderBy}
-          onPeriodChange={setPeriod}
-          onViewChange={setView}
-          onOrderChange={setOrderBy}
-        />
+        <div id="filtros">
+          <HomeHeader
+            period={period}
+            view={view}
+            orderBy={orderBy}
+            onPeriodChange={setPeriod}
+            onViewChange={setView}
+            onOrderChange={setOrderBy}
+          />
+        </div>
 
         {/* Loading / Error / Content */}
         {isLoading ? (
@@ -186,23 +193,30 @@ export default function Home() {
             <KPIStrip stats={kpiStats} />
 
             {/* Rankings */}
-            <RankingsSection
-              topExpensive={rankings.topExpensive}
-              topCheap={rankings.topCheap}
-              topActive={rankings.topActive}
-            />
+            <div id="rankings">
+              <RankingsSection
+                topExpensive={rankings.topExpensive}
+                topCheap={rankings.topCheap}
+                topActive={rankings.topActive}
+              />
+            </div>
 
             {/* Tendencias */}
-            <TrendsSection
-              departmentData={departments}
-              period={period}
-            />
+            <div id="tendencias">
+              <TrendsSection
+                departmentData={departments}
+                period={period}
+              />
+            </div>
 
             {/* Departamentos Grid */}
-            <div className="mb-8">
-              <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4">
-                Departamentos
-              </h2>
+            <div id="departamentos" className="mb-8">
+              <SectionHeader
+                title={['Panorama', 'por departamento']}
+                subtitle="Precio típico en venta (P50-P85) y nuevos en 7 días por región"
+                actionLabel="Ver detalles"
+                actionHref="#"
+              />
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
                 {filteredDepartments.map((dept) => {

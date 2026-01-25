@@ -8,7 +8,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "ChivoCasas - Property Dashboard",
+  title: "ChivoCasa - Property Dashboard",
   description: "Dashboard de propiedades inmobiliarias en El Salvador. Encuentra casas y apartamentos en venta y alquiler.",
 };
 

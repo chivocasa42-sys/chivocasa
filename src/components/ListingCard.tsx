@@ -43,7 +43,7 @@ export default function ListingCard({ listing, onClick }: ListingCardProps) {
 
     return (
         <div
-            className="bg-white rounded-xl shadow-sm border border-slate-200 hover:shadow-md hover:border-rose-300 transition-all cursor-pointer flex flex-col overflow-hidden"
+            className="bg-white rounded-xl shadow-sm border border-slate-200 hover:shadow-md hover:border-[var(--primary)] transition-all cursor-pointer flex flex-col overflow-hidden"
             onClick={onClick}
         >
             <img
@@ -59,7 +59,7 @@ export default function ListingCard({ listing, onClick }: ListingCardProps) {
                     {listing.title || 'Propiedad sin título'}
                 </h6>
 
-                <div className="text-2xl font-bold text-rose-500 mb-2">
+                <div className="text-2xl font-bold text-[var(--primary)] mb-2">
                     {formatPrice(listing.price)}
                     {listing.listing_type === 'rent' && (
                         <span className="text-sm font-normal text-slate-400">/mes</span>
@@ -91,8 +91,8 @@ export default function ListingCard({ listing, onClick }: ListingCardProps) {
                         </span>
                     )}
                     <span className={`text-xs font-medium px-2 py-0.5 rounded ${listing.listing_type === 'sale'
-                            ? 'bg-emerald-100 text-emerald-700'
-                            : 'bg-blue-100 text-blue-700'
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : 'bg-blue-100 text-blue-700'
                         }`}>
                         {listing.listing_type === 'sale' ? 'Venta' : 'Alquiler'}
                     </span>

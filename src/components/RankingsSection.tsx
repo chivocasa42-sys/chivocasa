@@ -1,6 +1,7 @@
 'use client';
 
 import RankingCard from './RankingCard';
+import SectionHeader from './SectionHeader';
 
 interface RankingItem {
     name: string;
@@ -23,9 +24,12 @@ function formatPriceCompact(price: number): string {
 export default function RankingsSection({ topExpensive, topCheap, topActive }: RankingsSectionProps) {
     return (
         <div className="mb-8">
-            <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4">
-                Rankings del Mercado
-            </h2>
+            <SectionHeader
+                title={['Rankings', 'clave del mercado']}
+                subtitle="Comparativa por precio típico y volumen"
+                actionLabel="Ver todo"
+                actionHref="#"
+            />
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                 <RankingCard
