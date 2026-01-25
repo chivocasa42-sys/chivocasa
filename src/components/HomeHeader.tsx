@@ -36,9 +36,9 @@ export default function HomeHeader({
     onPeriodChange, onViewChange, onOrderChange
 }: HomeHeaderProps) {
     return (
-        <div className="mb-8">
-            {/* Control Bar - 3 Column Layout */}
-            <div className="control-bar">
+        <div className="mb-6">
+            {/* Control Bar - Responsive Flex Layout */}
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
                 {/* LEFT: Periodo */}
                 <div className="control-group">
                     <label className="control-label">Periodo</label>
@@ -55,8 +55,8 @@ export default function HomeHeader({
                     </div>
                 </div>
 
-                {/* CENTER: Mercado (with flex spacer) */}
-                <div className="control-group" style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)' }}>
+                {/* CENTER: Mercado */}
+                <div className="control-group">
                     <label className="control-label">Mercado</label>
                     <div className="segmented-control">
                         {(['all', 'sale', 'rent'] as ViewType[]).map(v => (
@@ -72,13 +72,13 @@ export default function HomeHeader({
                 </div>
 
                 {/* RIGHT: Ordenar */}
-                <div className="control-group" style={{ marginLeft: 'auto' }}>
+                <div className="control-group">
                     <label className="control-label">Ordenar por</label>
                     <div className="dropdown-control">
                         <select
                             value={orderBy}
                             onChange={(e) => onOrderChange(e.target.value as OrderType)}
-                            className="dropdown-select"
+                            className="dropdown-select w-full md:w-auto"
                         >
                             <option value="activity">{orderLabels.activity}</option>
                             <option value="price">{orderLabels.price}</option>
@@ -104,7 +104,7 @@ export default function HomeHeader({
             </div>
 
             {/* Status Line */}
-            <div className="status-line">
+            <div className="status-line mt-4">
                 Mostrando: <span>{periodLabels[period]}</span> · <span>{viewLabels[view]}</span> · Orden: <span>{orderLabels[orderBy]}</span>
             </div>
         </div>

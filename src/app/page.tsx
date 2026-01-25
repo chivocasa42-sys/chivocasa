@@ -159,18 +159,6 @@ export default function Home() {
       <HeroSection />
 
       <main className="container mx-auto px-4 max-w-7xl">
-        {/* Header + Controles */}
-        <div id="filtros">
-          <HomeHeader
-            period={period}
-            view={view}
-            orderBy={orderBy}
-            onPeriodChange={setPeriod}
-            onViewChange={setView}
-            onOrderChange={setOrderBy}
-          />
-        </div>
-
         {/* Loading / Error / Content */}
         {isLoading ? (
           <div className="flex flex-col justify-center items-center min-h-[400px] gap-4">
@@ -210,13 +198,24 @@ export default function Home() {
             </div>
 
             {/* Departamentos Grid */}
-            <div id="departamentos" className="mb-8">
+            <div id="departamentos" className="mb-8 scroll-mt-24">
               <SectionHeader
                 title={['Panorama', 'por departamento']}
                 subtitle="Precio típico en venta (P50-P85) y nuevos en 7 días por región"
                 actionLabel="Ver detalles"
                 actionHref="#"
               />
+
+              <div className="mb-8">
+                <HomeHeader
+                  period={period}
+                  view={view}
+                  orderBy={orderBy}
+                  onPeriodChange={setPeriod}
+                  onViewChange={setView}
+                  onOrderChange={setOrderBy}
+                />
+              </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
                 {filteredDepartments.map((dept) => {
