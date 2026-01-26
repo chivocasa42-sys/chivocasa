@@ -62,11 +62,19 @@ def insert_listing(listing):
     
     # Prepare data for insertion (match DB schema)
     # JSONB fields are sent as dicts/lists - requests.post with json= handles serialization
+    
+    # Build location JSONB with breakdown
+    location_data = {
+        "location_original": listing.get("location", ""),
+        "municipio_detectado": listing.get("municipio_detectado", "No identificado"),
+        "departamento": listing.get("departamento", "")
+    }
+    
     data = {
         "external_id": external_id,
         "title": listing.get("title"),
         "price": parse_price(listing.get("price", "")),
-        "location": listing.get("location"),
+        "location": location_data,
         "published_date": parsed_date,
         "listing_type": listing.get("listing_type"),
         "url": listing.get("url"),
@@ -135,12 +143,19 @@ def insert_listings_batch(listings, batch_size=50):
                 except:
                     parsed_date = None
             
+            # Build location JSONB with breakdown
+            location_data = {
+                "location_original": listing.get("location", ""),
+                "municipio_detectado": listing.get("municipio_detectado", "No identificado"),
+                "departamento": listing.get("departamento", "")
+            }
+            
             # Build record
             record = {
                 "external_id": external_id,
                 "title": listing.get("title"),
                 "price": parse_price(listing.get("price", "")),
-                "location": listing.get("location"),
+                "location": location_data,
                 "published_date": parsed_date,
                 "listing_type": listing.get("listing_type"),
                 "url": listing.get("url"),
@@ -255,6 +270,331 @@ CONCURRENT_PAGES = 10
 # Maximum listings to get (set to None for unlimited)
 MAX_LISTINGS = None
 
+# ============== MUNICIPIOS DE EL SALVADOR ==============
+# Lista completa de los 262 municipios organizados por departamento
+MUNICIPIOS_EL_SALVADOR = {
+    "Ahuachapán": [
+        "Ahuachapán", "Apaneca", "Atiquizaya", "Concepción de Ataco", "El Refugio",
+        "Guaymango", "Jujutla", "San Francisco Menéndez", "San Lorenzo", "San Pedro Puxtla",
+        "Tacuba", "Turín"
+    ],
+    "Santa Ana": [
+        "Candelaria de la Frontera", "Chalchuapa", "Coatepeque", "El Congo", "El Porvenir",
+        "Masahuat", "Metapán", "San Antonio Pajonal", "San Sebastián Salitrillo", "Santa Ana",
+        "Santa Rosa Guachipilín", "Santiago de la Frontera", "Texistepeque"
+    ],
+    "Sonsonate": [
+        "Acajutla", "Armenia", "Caluco", "Cuisnahuat", "Izalco", "Juayúa",
+        "Nahuizalco", "Nahulingo", "Salcoatitán", "San Antonio del Monte", "San Julián",
+        "Santa Catarina Masahuat", "Santa Isabel Ishuatán", "Santo Domingo de Guzmán",
+        "Sonsonate", "Sonzacate"
+    ],
+    "Chalatenango": [
+        "Agua Caliente", "Arcatao", "Azacualpa", "Chalatenango", "Citalá", "Comalapa",
+        "Concepción Quezaltepeque", "Dulce Nombre de María", "El Carrizal", "El Paraíso",
+        "La Laguna", "La Palma", "La Reina", "Las Vueltas", "Nombre de Jesús",
+        "Nueva Concepción", "Nueva Trinidad", "Ojos de Agua", "Potonico", "San Antonio de la Cruz",
+        "San Antonio Los Ranchos", "San Fernando", "San Francisco Lempa", "San Francisco Morazán",
+        "San Ignacio", "San Isidro Labrador", "San José Cancasque", "San José Las Flores",
+        "San Luis del Carmen", "San Miguel de Mercedes", "San Rafael", "Santa Rita",
+        "Tejutla"
+    ],
+    "La Libertad": [
+        "Antiguo Cuscatlán", "Chiltiupán", "Ciudad Arce", "Colón", "Comasagua", "Huizúcar",
+        "Jayaque", "Jicalapa", "La Libertad", "Nuevo Cuscatlán", "Opico", "Quezaltepeque",
+        "Sacacoyo", "San José Villanueva", "San Juan Opico", "San Matías", "San Pablo Tacachico",
+        "Santa Tecla", "Talnique", "Tamanique", "Teotepeque", "Tepecoyo", "Zaragoza"
+    ],
+    "San Salvador": [
+        "Aguilares", "Apopa", "Ayutuxtepeque", "Cuscatancingo", "Delgado", "El Paisnal",
+        "Guazapa", "Ilopango", "Mejicanos", "Nejapa", "Panchimalco", "Rosario de Mora",
+        "San Marcos", "San Martín", "San Salvador", "Santiago Texacuangos", "Santo Tomás",
+        "Soyapango", "Tonacatepeque"
+    ],
+    "Cuscatlán": [
+        "Candelaria", "Cojutepeque", "El Carmen", "El Rosario", "Monte San Juan",
+        "Oratorio de Concepción", "San Bartolomé Perulapía", "San Cristóbal", "San José Guayabal",
+        "San Pedro Perulapán", "San Rafael Cedros", "San Ramón", "Santa Cruz Analquito",
+        "Santa Cruz Michapa", "Suchitoto", "Tenancingo"
+    ],
+    "La Paz": [
+        "Cuyultitán", "El Rosario", "Jerusalén", "Mercedes La Ceiba", "Olocuilta",
+        "Paraíso de Osorio", "San Antonio Masahuat", "San Emigdio", "San Francisco Chinameca",
+        "San Juan Nonualco", "San Juan Talpa", "San Juan Tepezontes", "San Luis La Herradura",
+        "San Luis Talpa", "San Miguel Tepezontes", "San Pedro Masahuat", "San Pedro Nonualco",
+        "San Rafael Obrajuelo", "Santa María Ostuma", "Santiago Nonualco", "Tapalhuaca",
+        "Zacatecoluca"
+    ],
+    "Cabañas": [
+        "Cinquera", "Dolores", "Guacotecti", "Ilobasco", "Jutiapa", "San Isidro",
+        "Sensuntepeque", "Tejutepeque", "Victoria"
+    ],
+    "San Vicente": [
+        "Apastepeque", "Guadalupe", "San Cayetano Istepeque", "San Esteban Catarina",
+        "San Ildefonso", "San Lorenzo", "San Sebastián", "San Vicente", "Santa Clara",
+        "Santo Domingo", "Tecoluca", "Tepetitán", "Verapaz"
+    ],
+    "Usulután": [
+        "Alegría", "Berlín", "California", "Concepción Batres", "El Triunfo", "Ereguayquín",
+        "Estanzuelas", "Jiquilisco", "Jucuapa", "Jucuarán", "Mercedes Umaña", "Nueva Granada",
+        "Ozatlán", "Puerto El Triunfo", "San Agustín", "San Buenaventura", "San Dionisio",
+        "San Francisco Javier", "Santa Elena", "Santa María", "Santiago de María",
+        "Tecapán", "Usulután"
+    ],
+    "San Miguel": [
+        "Carolina", "Chapeltique", "Chinameca", "Chirilagua", "Ciudad Barrios", "Comacarán",
+        "El Tránsito", "Lolotique", "Moncagua", "Nueva Guadalupe", "Nuevo Edén de San Juan",
+        "Quelepa", "San Antonio", "San Gerardo", "San Jorge", "San Luis de la Reina",
+        "San Miguel", "San Rafael Oriente", "Sesori", "Uluazapa"
+    ],
+    "Morazán": [
+        "Arambala", "Cacaopera", "Chilanga", "Corinto", "Delicias de Concepción", "El Divisadero",
+        "El Rosario", "Gualococti", "Guatajiagua", "Joateca", "Jocoaitique", "Jocoro",
+        "Lolotiquillo", "Meanguera", "Osicala", "Perquín", "San Carlos", "San Fernando",
+        "San Francisco Gotera", "San Isidro", "San Simón", "Sensembra", "Sociedad",
+        "Torola", "Yamabal", "Yoloaiquín"
+    ],
+    "La Unión": [
+        "Anamorós", "Bolívar", "Concepción de Oriente", "Conchagua", "El Carmen", "El Sauce",
+        "Intipucá", "La Unión", "Lislique", "Meanguera del Golfo", "Nueva Esparta",
+        "Pasaquina", "Polorós", "San Alejo", "San José", "Santa Rosa de Lima", "Yayantique", "Yucuaiquín"
+    ]
+}
+
+# Crear lista plana de todos los municipios para búsqueda rápida
+ALL_MUNICIPIOS = []
+MUNICIPIO_TO_DEPARTAMENTO = {}
+for depto, municipios in MUNICIPIOS_EL_SALVADOR.items():
+    for muni in municipios:
+        ALL_MUNICIPIOS.append(muni)
+        MUNICIPIO_TO_DEPARTAMENTO[muni.lower()] = {"municipio": muni, "departamento": depto}
+
+# Agregar variantes comunes y nombres alternativos
+MUNICIPIO_ALIASES = {
+    # San Salvador area
+    "santa tecla": "Santa Tecla",
+    "nueva san salvador": "Santa Tecla",
+    "antiguo cuscatlan": "Antiguo Cuscatlán",
+    "san salvador": "San Salvador",
+    "soyapango": "Soyapango",
+    "mejicanos": "Mejicanos",
+    "apopa": "Apopa",
+    "ilopango": "Ilopango",
+    "san martin": "San Martín",
+    "san marcos": "San Marcos",
+    "ciudad merliot": "Santa Tecla",
+    "merliot": "Santa Tecla",
+    "escalon": "San Salvador",
+    "escalón": "San Salvador",
+    "colonia escalon": "San Salvador",
+    "colonia escalón": "San Salvador",
+    "zona rosa": "San Salvador",
+    "metrocentro": "San Salvador",
+    "centro historico": "San Salvador",
+    "centro histórico": "San Salvador",
+    "el boqueron": "San Salvador",
+    "el boquerón": "San Salvador",
+    
+    # La Libertad area
+    "la libertad": "La Libertad",
+    "puerto la libertad": "La Libertad",
+    "el tunco": "La Libertad",
+    "playa el tunco": "La Libertad",
+    "colon": "Colón",
+    "lourdes colon": "Colón",
+    "lourdes colón": "Colón",
+    "lourdes": "Colón",
+    "san juan opico": "San Juan Opico",
+    "opico": "San Juan Opico",
+    "ciudad arce": "Ciudad Arce",
+    "quezaltepeque": "Quezaltepeque",
+    "zaragoza": "Zaragoza",
+    "santa tecla": "Santa Tecla",
+    "nuevo cuscatlan": "Nuevo Cuscatlán",
+    "nuevo cuscatlán": "Nuevo Cuscatlán",
+    "san luis talpa": "San Luis Talpa",
+    "comalapa": "San Luis Talpa",  # Comalapa Flats está en San Luis Talpa
+    "comalapa flats": "San Luis Talpa",
+    
+    # La Paz department
+    "la paz": "Zacatecoluca",  # Capital del departamento
+    "zacatecoluca": "Zacatecoluca",
+    "olocuilta": "Olocuilta",
+    "san luis la herradura": "San Luis La Herradura",
+    "la costa del sol": "San Luis La Herradura",
+    "costa del sol": "San Luis La Herradura",
+    "san juan nonualco": "San Juan Nonualco",
+    "santiago nonualco": "Santiago Nonualco",
+    
+    # Cuscatlán department
+    "cuscatlan": "Cojutepeque",  # Capital del departamento
+    "cuscatlán": "Cojutepeque",
+    "cojutepeque": "Cojutepeque",
+    "suchitoto": "Suchitoto",
+    "san pedro perulapan": "San Pedro Perulapán",
+    "san pedro perulapán": "San Pedro Perulapán",
+    
+    # San Vicente department
+    "san vicente": "San Vicente",
+    "tecoluca": "Tecoluca",
+    
+    # Chalatenango area
+    "la palma": "La Palma",
+    "el pital": "San Ignacio",
+    "chalatenango": "Chalatenango",
+    "nueva concepcion": "Nueva Concepción",
+    "nueva concepción": "Nueva Concepción",
+    
+    # Sonsonate area
+    "juayua": "Juayúa",
+    "juayúa": "Juayúa",
+    "ataco": "Concepción de Ataco",
+    "concepcion de ataco": "Concepción de Ataco",
+    "apaneca": "Apaneca",
+    "ruta de las flores": "Juayúa",
+    "sonsonate": "Sonsonate",
+    "izalco": "Izalco",
+    "nahuizalco": "Nahuizalco",
+    "acajutla": "Acajutla",
+    "armenia": "Armenia",
+    
+    # Santa Ana area
+    "santa ana": "Santa Ana",
+    "metapan": "Metapán",
+    "metapán": "Metapán",
+    "chalchuapa": "Chalchuapa",
+    "el congo": "El Congo",
+    "coatepeque": "Coatepeque",
+    
+    # Ahuachapán area
+    "ahuachapan": "Ahuachapán",
+    "ahuachapán": "Ahuachapán",
+    
+    # Usulután area
+    "usulutan": "Usulután",
+    "usulután": "Usulután",
+    "jiquilisco": "Jiquilisco",
+    "berlin": "Berlín",
+    "berlín": "Berlín",
+    "alegria": "Alegría",
+    "alegría": "Alegría",
+    "santiago de maria": "Santiago de María",
+    "santiago de maría": "Santiago de María",
+    
+    # San Miguel area
+    "san miguel": "San Miguel",
+    "chinameca": "Chinameca",
+    "ciudad barrios": "Ciudad Barrios",
+    "chirilagua": "Chirilagua",
+    "el cuco": "Chirilagua",
+    "playa el cuco": "Chirilagua",
+    
+    # La Unión area
+    "la union": "La Unión",
+    "la unión": "La Unión",
+    "conchagua": "Conchagua",
+    "santa rosa de lima": "Santa Rosa de Lima",
+    
+    # Morazán area
+    "morazan": "San Francisco Gotera",
+    "morazán": "San Francisco Gotera",
+    "san francisco gotera": "San Francisco Gotera",
+    "perquin": "Perquín",
+    "perquín": "Perquín",
+    
+    # Cabañas area
+    "cabanas": "Sensuntepeque",
+    "cabañas": "Sensuntepeque",
+    "sensuntepeque": "Sensuntepeque",
+    "ilobasco": "Ilobasco",
+    
+    # Panchimalco area
+    "planes de renderos": "Panchimalco",
+    "los planes": "Panchimalco",
+    "panchimalco": "Panchimalco"
+}
+
+
+def normalize_text(text):
+    """Normalize text for comparison: lowercase, remove accents and special chars."""
+    if not text:
+        return ""
+    import unicodedata
+    # Lowercase
+    text = text.lower()
+    # Remove accents
+    text = unicodedata.normalize('NFD', text)
+    text = ''.join(c for c in text if unicodedata.category(c) != 'Mn')
+    return text
+
+
+def detect_municipio(location, description="", title=""):
+    """
+    Detect municipality from location, description, and title fields.
+    Analyzes all three fields to find the best match.
+    Returns a dict with municipio_detectado and departamento.
+    """
+    # Combine all texts for searching (title often has the most specific location info)
+    combined_text = f"{title or ''} {location or ''} {description or ''}".lower()
+    combined_normalized = normalize_text(combined_text)
+    
+    # First, check aliases (most specific matches) - sorted by length (longer first)
+    sorted_aliases = sorted(MUNICIPIO_ALIASES.items(), key=lambda x: len(x[0]), reverse=True)
+    for alias, municipio in sorted_aliases:
+        if alias in combined_text or normalize_text(alias) in combined_normalized:
+            depto_info = MUNICIPIO_TO_DEPARTAMENTO.get(municipio.lower(), {})
+            return {
+                "municipio_detectado": municipio,
+                "departamento": depto_info.get("departamento", "")
+            }
+    
+    # Sort municipios by length (longer first) to match more specific names first
+    sorted_municipios = sorted(ALL_MUNICIPIOS, key=len, reverse=True)
+    
+    # Check in title first (highest priority - often has most specific info)
+    title_normalized = normalize_text(title or "")
+    for municipio in sorted_municipios:
+        muni_lower = municipio.lower()
+        muni_normalized = normalize_text(municipio)
+        
+        if muni_lower in (title or "").lower() or muni_normalized in title_normalized:
+            depto_info = MUNICIPIO_TO_DEPARTAMENTO.get(muni_lower, {})
+            return {
+                "municipio_detectado": municipio,
+                "departamento": depto_info.get("departamento", "")
+            }
+    
+    # Then check in location
+    location_normalized = normalize_text(location or "")
+    for municipio in sorted_municipios:
+        muni_lower = municipio.lower()
+        muni_normalized = normalize_text(municipio)
+        
+        if muni_lower in (location or "").lower() or muni_normalized in location_normalized:
+            depto_info = MUNICIPIO_TO_DEPARTAMENTO.get(muni_lower, {})
+            return {
+                "municipio_detectado": municipio,
+                "departamento": depto_info.get("departamento", "")
+            }
+    
+    # Check in description as fallback
+    desc_normalized = normalize_text(description or "")
+    for municipio in sorted_municipios:
+        muni_lower = municipio.lower()
+        muni_normalized = normalize_text(municipio)
+        
+        if muni_lower in (description or "").lower() or muni_normalized in desc_normalized:
+            depto_info = MUNICIPIO_TO_DEPARTAMENTO.get(muni_lower, {})
+            return {
+                "municipio_detectado": municipio,
+                "departamento": depto_info.get("departamento", "")
+            }
+    
+    # No match found
+    return {
+        "municipio_detectado": "No identificado",
+        "departamento": ""
+    }
 
 def make_absolute_url(href):
     """Convert relative URL to absolute URL."""
@@ -533,6 +873,8 @@ def scrape_listing(url, listing_type):
         if listing_type == "sale" and price_value and price_value < 1000:
             listing_type = "rent"
 
+        # Detect municipality from location, description and title
+        municipio_info = detect_municipio(location, description, title)
         return {
             "title": title,
             "price": price,
@@ -548,6 +890,8 @@ def scrape_listing(url, listing_type):
             "source": "Encuentra24",
             "active": True,
             "contact_info": contact_info,
+            "municipio_detectado": municipio_info["municipio_detectado"],
+            "departamento": municipio_info["departamento"],
             "last_updated": datetime.now().isoformat()
         }
     except Exception as e:
@@ -835,6 +1179,8 @@ def scrape_micasasv_listing(url, listing_type):
         if listing_type == "sale" and price_value and price_value < 1000:
             listing_type = "rent"
         
+        # Detect municipality from location, description and title
+        municipio_info = detect_municipio(location, description, title)
         return {
             "title": title,
             "price": price,
@@ -850,6 +1196,8 @@ def scrape_micasasv_listing(url, listing_type):
             "source": "MiCasaSV",
             "active": True,
             "contact_info": contact_info,
+            "municipio_detectado": municipio_info["municipio_detectado"],
+            "departamento": municipio_info["departamento"],
             "last_updated": datetime.now().isoformat()
         }
     except Exception as e:
@@ -1057,6 +1405,8 @@ def get_realtor_listings_from_page(page_url):
             if listing_category:
                 details["category"] = listing_category
             
+            # Detect municipality from location, description and title
+            municipio_info = detect_municipio(location, description, title)
             listings.append({
                 "title": remove_emojis(title[:200]) if title else "",
                 "price": price_str,
@@ -1072,6 +1422,8 @@ def get_realtor_listings_from_page(page_url):
                 "source": "Realtor",
                 "active": True,
                 "contact_info": contact_info,
+                "municipio_detectado": municipio_info["municipio_detectado"],
+                "departamento": municipio_info["departamento"],
                 "last_updated": datetime.now().isoformat()
             })
         

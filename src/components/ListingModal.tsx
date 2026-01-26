@@ -15,52 +15,57 @@ function formatPrice(price: number): string {
 
 export default function ListingModal({ listing, onClose }: ListingModalProps) {
     const [currentImage, setCurrentImage] = useState(0);
+    const [isExpanded, setIsExpanded] = useState(false);
     const images = listing.images || [];
     const specs = listing.specs || {};
     const details = listing.details || {};
     const contact = listing.contact_info || {};
 
-    const nextImage = () => {
+    const description = listing.description || 'No hay descripción disponible para esta propiedad.';
+    const shouldShowReadMore = description.length > 200;
+    const displayText = isExpanded ? description : (shouldShowReadMore ? `${description.slice(0, 200)}...` : description);
+
+    const nextImage = (e: React.MouseEvent) => {
+        e.stopPropagation();
         setCurrentImage((prev) => (prev + 1) % images.length);
     };
 
-    const prevImage = () => {
+    const prevImage = (e: React.MouseEvent) => {
+        e.stopPropagation();
         setCurrentImage((prev) => (prev - 1 + images.length) % images.length);
     };
 
     return (
         <div className="modal-backdrop" onClick={onClose}>
-            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-                <div className="modal-header">
-                    <h5 className="font-semibold text-lg">{listing.title || 'Listing Details'}</h5>
-                    <button
-                        onClick={onClose}
-                        className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100"
-                    >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                    </button>
-                </div>
+            <div className="modal-content-premium" onClick={(e) => e.stopPropagation()}>
+                {/* Close Button */}
+                <button
+                    onClick={onClose}
+                    className="modal-close-btn"
+                    aria-label="Cerrar"
+                >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
 
-                <div className="modal-body">
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        {/* Left column - Images and description */}
-                        <div>
-                            {/* Image Carousel */}
-                            <div className="carousel mb-4 relative">
-                                {images.length > 0 ? (
-                                    <>
-                                        <img
-                                            src={images[currentImage]}
-                                            alt={`Image ${currentImage + 1}`}
-                                            className="w-full h-[350px] object-cover rounded-lg"
-                                        />
-                                        {images.length > 1 && (
-                                            <>
+                <div className="flex-1 overflow-y-auto">
+                    <div className="grid grid-cols-1 lg:grid-cols-2">
+                        {/* Left column - Images */}
+                        <div className="relative bg-slate-900 h-[350px] lg:h-[500px]">
+                            {images.length > 0 ? (
+                                <>
+                                    <img
+                                        src={images[currentImage]}
+                                        alt={listing.title}
+                                        className="w-full h-full object-cover"
+                                    />
+                                    {images.length > 1 && (
+                                        <>
+                                            <div className="absolute inset-0 flex items-center justify-between px-4 pointer-events-none">
                                                 <button
                                                     onClick={prevImage}
-                                                    className="carousel-btn prev"
+                                                    className="carousel-btn-premium pointer-events-auto"
                                                 >
                                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -68,138 +73,186 @@ export default function ListingModal({ listing, onClose }: ListingModalProps) {
                                                 </button>
                                                 <button
                                                     onClick={nextImage}
-                                                    className="carousel-btn next"
+                                                    className="carousel-btn-premium pointer-events-auto"
                                                 >
                                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                                                     </svg>
                                                 </button>
-                                                <div className="absolute bottom-3 left-1/2 transform -translate-x-1/2 bg-black/50 text-white px-2 py-1 rounded text-sm">
-                                                    {currentImage + 1} / {images.length}
-                                                </div>
-                                            </>
-                                        )}
-                                    </>
-                                ) : (
-                                    <img
-                                        src="https://via.placeholder.com/800x350?text=No+Images"
-                                        alt="No images"
-                                        className="w-full h-[350px] object-cover rounded-lg"
-                                    />
-                                )}
-                            </div>
-
-                            {/* Description */}
-                            <h5 className="font-semibold mb-2">Descripción</h5>
-                            <p className="text-muted whitespace-pre-line">
-                                {listing.description || 'No description available.'}
-                            </p>
+                                            </div>
+                                            <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 bg-black/40 backdrop-blur-md text-white px-3 py-1.5 rounded-full text-xs font-semibold tracking-wider">
+                                                {currentImage + 1} / {images.length}
+                                            </div>
+                                        </>
+                                    )}
+                                </>
+                            ) : (
+                                <div className="w-full h-full flex items-center justify-center bg-slate-100 text-slate-400">
+                                    <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                    </svg>
+                                </div>
+                            )}
                         </div>
 
-                        {/* Right column - Price, specs, contact */}
-                        <div>
-                            {/* Price */}
-                            <div className="mb-4">
-                                <h2 className="text-accent text-3xl font-bold mb-2">{formatPrice(listing.price)}</h2>
-                                <span className={`inline-block px-2 py-1 rounded text-white text-sm ${listing.listing_type === 'sale' ? 'bg-green-500' : 'bg-blue-500'}`}>
-                                    {listing.listing_type === 'sale' ? 'En Venta' : 'En Alquiler'}
-                                </span>
+                        {/* Right column - Data */}
+                        <div className="p-8 lg:p-12 overflow-y-auto bg-white">
+                            {/* Header Info */}
+                            <div className="mb-8">
+                                <div className="flex items-center gap-2 mb-4">
+                                    <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest text-white shadow-sm ${listing.listing_type === 'sale' ? 'bg-emerald-500' : 'bg-blue-500'}`}>
+                                        {listing.listing_type === 'sale' ? 'En Venta' : 'En Alquiler'}
+                                    </span>
+                                    {typeof listing.location === 'string' && (
+                                        <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                                            {listing.location as string}
+                                        </span>
+                                    )}
+                                </div>
+                                <h1 className="text-3xl font-bold text-slate-900 leading-tight mb-2">
+                                    {listing.title}
+                                </h1>
+                                <div className="text-4xl font-extrabold text-[var(--primary)] tracking-tight">
+                                    {formatPrice(listing.price)}
+                                </div>
                             </div>
 
-                            {/* Specs */}
-                            <div className="flex flex-wrap gap-2 mb-4">
+                            {/* Key Specs */}
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-10">
                                 {specs.bedrooms && (
-                                    <span className="spec-badge text-base">
-                                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 16 16">
-                                            <path d="M8.354 1.146a.5.5 0 0 0-.708 0l-6 6A.5.5 0 0 0 1.5 7.5v7a.5.5 0 0 0 .5.5h4.5a.5.5 0 0 0 .5-.5v-4h2v4a.5.5 0 0 0 .5.5H14a.5.5 0 0 0 .5-.5v-7a.5.5 0 0 0-.146-.354L13 5.793V2.5a.5.5 0 0 0-.5-.5h-1a.5.5 0 0 0-.5.5v1.293L8.354 1.146z" />
+                                    <div className="spec-badge-premium">
+                                        <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
                                         </svg>
-                                        {specs.bedrooms} Habitaciones
-                                    </span>
+                                        <span>{specs.bedrooms} Hab.</span>
+                                    </div>
                                 )}
                                 {specs.bathrooms && (
-                                    <span className="spec-badge text-base">
-                                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 16 16">
-                                            <path d="M7 14s-1 0-1-1 1-4 5-4 5 3 5 4-1 1-1 1H7zm4-6a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" />
+                                    <div className="spec-badge-premium">
+                                        <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 14v.01M12 14v.01M16 14v.01M21 12c0 1.657-3.582 3-8 3s-8-1.343-8-3 3.582-3 8-3 8 1.343 8 3zM3 20h18M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
                                         </svg>
-                                        {specs.bathrooms} Baños
-                                    </span>
+                                        <span>{specs.bathrooms} Baños</span>
+                                    </div>
                                 )}
                                 {Object.entries(specs)
                                     .filter(([k]) => !['bedrooms', 'bathrooms'].includes(k))
+                                    .slice(0, 1)
                                     .map(([key, value]) => (
-                                        <span key={key} className="spec-badge text-base">
-                                            {key}: {value}
-                                        </span>
+                                        <div key={key} className="spec-badge-premium">
+                                            <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                                            </svg>
+                                            <span>{value}</span>
+                                        </div>
                                     ))
                                 }
                             </div>
 
-                            {/* Details */}
+                            {/* Description */}
+                            <div className="mb-10">
+                                <h3 className="text-sm font-bold uppercase tracking-widest text-slate-400 mb-4">Descripción</h3>
+                                <p className="text-slate-600 leading-relaxed whitespace-pre-line text-lg">
+                                    {displayText}
+                                </p>
+                                {shouldShowReadMore && (
+                                    <button
+                                        onClick={() => setIsExpanded(!isExpanded)}
+                                        className="mt-2 text-sm font-bold text-[var(--primary)] hover:underline flex items-center gap-1"
+                                    >
+                                        {isExpanded ? 'Ver menos' : 'Ver más'}
+                                        <svg
+                                            className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                                            fill="none"
+                                            stroke="currentColor"
+                                            viewBox="0 0 24 24"
+                                        >
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                        </svg>
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* Details Table */}
                             {Object.keys(details).length > 0 && (
-                                <div className="mb-4">
-                                    <h6 className="font-semibold mb-2">Detalles</h6>
-                                    <ul className="space-y-1">
+                                <div className="mb-10">
+                                    <h3 className="text-sm font-bold uppercase tracking-widest text-slate-400 mb-4">Detalles Adicionales</h3>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-3 gap-x-8">
                                         {Object.entries(details).map(([key, value]) => (
-                                            <li key={key}>
-                                                <strong>{key}:</strong> {value}
-                                            </li>
+                                            <div key={key} className="flex justify-between py-2 border-b border-slate-100">
+                                                <span className="text-slate-500 font-medium">{key}</span>
+                                                <span className="text-slate-900 font-bold text-right pl-4">{value}</span>
+                                            </div>
                                         ))}
-                                    </ul>
+                                    </div>
                                 </div>
                             )}
 
-                            {/* Contact */}
-                            <div className="contact-box">
-                                <h6 className="font-semibold mb-3 flex items-center gap-2">
-                                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 16 16">
-                                        <path d="M11 6a3 3 0 1 1-6 0 3 3 0 0 1 6 0z" />
-                                        <path fillRule="evenodd" d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8zm8-7a7 7 0 0 0-5.468 11.37C3.242 11.226 4.805 10 8 10s4.757 1.225 5.468 2.37A7 7 0 0 0 8 1z" />
+                            {/* Contact Card */}
+                            <div className="contact-card-premium">
+                                <h3 className="text-base font-bold text-slate-900 mb-6 flex items-center gap-2">
+                                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                                    Información de Contacto
+                                </h3>
+
+                                <div className="space-y-4">
+                                    {contact.nombre && (
+                                        <div className="flex items-center gap-4">
+                                            <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center font-bold text-slate-600">
+                                                {contact.nombre[0]}
+                                            </div>
+                                            <div>
+                                                <div className="text-xs text-slate-400 font-bold uppercase tracking-wider">Publicado por</div>
+                                                <div className="text-lg font-bold text-slate-900">{contact.nombre}</div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-6">
+                                        {contact.telefono && (
+                                            <a
+                                                href={`tel:${contact.telefono}`}
+                                                className="flex items-center justify-center gap-2 py-3 px-4 bg-white border border-slate-200 rounded-xl font-bold text-slate-700 hover:border-[var(--primary)] hover:text-[var(--primary)] transition-all flex-1"
+                                            >
+                                                <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                                                </svg>
+                                                Llamar
+                                            </a>
+                                        )}
+                                        {contact.whatsapp && (
+                                            <a
+                                                href={`https://wa.me/${contact.whatsapp}`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="flex items-center justify-center gap-2 py-3 px-4 bg-emerald-50 border border-emerald-100 rounded-xl font-bold text-emerald-700 hover:bg-emerald-100 transition-all flex-1"
+                                            >
+                                                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                                                    <path d="M12.012 2c-5.518 0-9.997 4.48-9.997 9.998 0 1.763.459 3.484 1.33 5.004L2 22l5.122-1.343c1.48.807 3.138 1.233 4.832 1.233 5.518 0 10-4.482 10-10.001 0-5.517-4.481-9.998-10-9.998zm-4.706 14.502l-.338-.201c-1.353-.807-2.193-2.184-2.193-3.693 0-2.316 1.884-4.2 4.2-4.2s4.2 1.884 4.2 4.2-1.884 4.2-4.2 4.2c-.687 0-1.359-.166-1.956-.479l-.317-.167L5.805 16.9l1.501-.398z" />
+                                                </svg>
+                                                WhatsApp
+                                            </a>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* External Link */}
+                            <div className="mt-8 pt-8 border-t border-slate-100 flex justify-center">
+                                <a
+                                    href={listing.url || '#'}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-2 text-sm font-bold text-slate-400 hover:text-[var(--primary)] transition-all uppercase tracking-widest"
+                                >
+                                    Ver fuente original
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                                     </svg>
-                                    Contacto
-                                </h6>
-                                {contact.nombre && (
-                                    <p className="mb-1"><strong>{contact.nombre}</strong></p>
-                                )}
-                                {contact.telefono && (
-                                    <p className="mb-1 flex items-center gap-2">
-                                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 16 16">
-                                            <path d="M3.654 1.328a.678.678 0 0 0-1.015-.063L1.605 2.3c-.483.484-.661 1.169-.45 1.77a17.568 17.568 0 0 0 4.168 6.608 17.569 17.569 0 0 0 6.608 4.168c.601.211 1.286.033 1.77-.45l1.034-1.034a.678.678 0 0 0-.063-1.015l-2.307-1.794a.678.678 0 0 0-.58-.122l-2.19.547a1.745 1.745 0 0 1-1.657-.459L5.482 8.062a1.745 1.745 0 0 1-.46-1.657l.548-2.19a.678.678 0 0 0-.122-.58L3.654 1.328zM1.884.511a1.745 1.745 0 0 1 2.612.163L6.29 2.98c.329.423.445.974.315 1.494l-.547 2.19a.678.678 0 0 0 .178.643l2.457 2.457a.678.678 0 0 0 .644.178l2.189-.547a1.745 1.745 0 0 1 1.494.315l2.306 1.794c.829.645.905 1.87.163 2.611l-1.034 1.034c-.74.74-1.846 1.065-2.877.702a18.634 18.634 0 0 1-7.01-4.42 18.634 18.634 0 0 1-4.42-7.009c-.362-1.03-.037-2.137.703-2.877L1.885.511z" />
-                                        </svg>
-                                        <a href={`tel:${contact.telefono}`} className="text-accent hover:underline">
-                                            {contact.telefono}
-                                        </a>
-                                    </p>
-                                )}
-                                {contact.whatsapp && (
-                                    <p className="mb-1 flex items-center gap-2">
-                                        <svg className="w-4 h-4 text-green-500" fill="currentColor" viewBox="0 0 16 16">
-                                            <path d="M13.601 2.326A7.854 7.854 0 0 0 7.994 0C3.627 0 .068 3.558.064 7.926c0 1.399.366 2.76 1.057 3.965L0 16l4.204-1.102a7.933 7.933 0 0 0 3.79.965h.004c4.368 0 7.926-3.558 7.93-7.93A7.898 7.898 0 0 0 13.6 2.326zM7.994 14.521a6.573 6.573 0 0 1-3.356-.92l-.24-.144-2.494.654.666-2.433-.156-.251a6.56 6.56 0 0 1-1.007-3.505c0-3.626 2.957-6.584 6.591-6.584a6.56 6.56 0 0 1 4.66 1.931 6.557 6.557 0 0 1 1.928 4.66c-.004 3.639-2.961 6.592-6.592 6.592zm3.615-4.934c-.197-.099-1.17-.578-1.353-.646-.182-.065-.315-.099-.445.099-.133.197-.513.646-.627.775-.114.133-.232.148-.43.05-.197-.1-.836-.308-1.592-.985-.59-.525-.985-1.175-1.103-1.372-.114-.198-.011-.304.088-.403.087-.088.197-.232.296-.346.1-.114.133-.198.198-.33.065-.134.034-.248-.015-.347-.05-.099-.445-1.076-.612-1.47-.16-.389-.323-.335-.445-.34-.114-.007-.247-.007-.38-.007a.729.729 0 0 0-.529.247c-.182.198-.691.677-.691 1.654 0 .977.71 1.916.81 2.049.098.133 1.394 2.132 3.383 2.992.47.205.84.326 1.129.418.475.152.904.129 1.246.08.38-.058 1.171-.48 1.338-.943.164-.464.164-.86.114-.943-.049-.084-.182-.133-.38-.232z" />
-                                        </svg>
-                                        <a href={`https://wa.me/${contact.whatsapp}`} target="_blank" rel="noopener noreferrer" className="text-green-500 hover:underline">
-                                            {contact.whatsapp}
-                                        </a>
-                                    </p>
-                                )}
-                                {!contact.nombre && !contact.telefono && !contact.whatsapp && (
-                                    <p className="text-muted">No hay información de contacto disponible</p>
-                                )}
+                                </a>
                             </div>
                         </div>
                     </div>
-                </div>
-
-                <div className="modal-footer">
-                    <a
-                        href={listing.url || '#'}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="btn-accent flex items-center gap-2"
-                    >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                        </svg>
-                        Ver Original
-                    </a>
                 </div>
             </div>
         </div>
