@@ -22,6 +22,9 @@ from urllib.parse import unquote
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+# Import localization plugin for generating searchable tags
+from localization_plugin import build_destination_queries
+
 # ============== SUPABASE CONFIG ==============
 SUPABASE_URL = "https://zvamupbxzuxdgvzgbssn.supabase.co"
 SUPABASE_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp2YW11cGJ4enV4ZGd2emdic3NuIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTA5MDMwNSwiZXhwIjoyMDg0NjY2MzA1fQ.VfONseJg19pMEymrc6FbdEQJUWxTzJdNlVTboAaRgEs"
@@ -70,6 +73,11 @@ def insert_listing(listing):
         "departamento": listing.get("departamento", "")
     }
     
+    # Generate tags using localization plugin (use pre-computed if available)
+    tags = listing.get("tags")
+    if not tags:
+        tags = generate_location_tags(listing)
+    
     data = {
         "external_id": external_id,
         "title": listing.get("title"),
@@ -83,7 +91,8 @@ def insert_listing(listing):
         "description": listing.get("description"),
         "images": listing.get("images", []),
         "source": listing.get("source"),
-        "active": listing.get("active", True)
+        "active": listing.get("active", True),
+        "tags": tags
     }
     
     url = f"{SUPABASE_URL}/rest/v1/{TABLE_NAME}"
@@ -149,6 +158,11 @@ def insert_listings_batch(listings, batch_size=50):
                 "departamento": listing.get("departamento", "")
             }
             
+            # Get tags (pre-computed or generate now)
+            tags = listing.get("tags")
+            if not tags:
+                tags = generate_location_tags(listing)
+            
             # Build record
             record = {
                 "external_id": external_id,
@@ -163,7 +177,8 @@ def insert_listings_batch(listings, batch_size=50):
                 "description": listing.get("description"),
                 "images": listing.get("images", []),
                 "source": listing.get("source"),
-                "active": listing.get("active", True)
+                "active": listing.get("active", True),
+                "tags": tags
             }
             batch_data.append(record)
         
@@ -198,6 +213,45 @@ def parse_price(price_str):
         return float(cleaned)
     except:
         return None
+
+
+def generate_location_tags(listing):
+    """
+    Generate searchable location tags for a listing using the localization plugin.
+    Uses the build_destination_queries function to create location query strings
+    that serve as searchable tags.
+    
+    Args:
+        listing: Dict with listing data including location info
+        
+    Returns:
+        List of tag strings for the listing
+    """
+    try:
+        # Build a listing dict in the format expected by localization_plugin
+        loc_listing = {
+            "title": listing.get("title", ""),
+            "description": listing.get("description", ""),
+            "location": {
+                "municipio_detectado": listing.get("municipio_detectado", ""),
+                "departamento": listing.get("departamento", ""),
+                "location_original": listing.get("location", "")
+            }
+        }
+        
+        # Generate tags using the localization plugin's query builder
+        # Only keep the first (most specific) tag, then split into separate tags
+        tags = build_destination_queries(loc_listing)
+        
+        if tags:
+            # Split the first tag by ", " to get individual tags
+            # e.g., "Santa Rosa, Santa Tecla, La Libertad, El Salvador" 
+            # becomes ["Santa Rosa", "Santa Tecla", "La Libertad", "El Salvador"]
+            return [t.strip() for t in tags[0].split(",") if t.strip()]
+        return []
+    except Exception as e:
+        print(f"  Warning: Could not generate tags: {e}")
+        return []
 
 
 def parse_date(date_str):
