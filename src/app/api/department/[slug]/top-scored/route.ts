@@ -36,6 +36,7 @@ export async function GET(
         // Llamar a la función RPC get_top_scored_listings (actualizada)
         const url = `${process.env.SUPABASE_URL}/rest/v1/rpc/get_top_scored_listings`;
 
+        console.time(`[PERF] /api/department/${slug}/top-scored - Supabase RPC call`);
         const res = await fetch(url, {
             method: 'POST',
             headers: {
@@ -50,6 +51,7 @@ export async function GET(
             }),
             next: { revalidate: 300 }
         });
+        console.timeEnd(`[PERF] /api/department/${slug}/top-scored - Supabase RPC call`);
 
         if (!res.ok) {
             const errorText = await res.text();
@@ -57,7 +59,9 @@ export async function GET(
             throw new Error(`Supabase error: ${res.status}`);
         }
 
+        console.time(`[PERF] /api/department/${slug}/top-scored - JSON parse`);
         const data: TopScoredListing[] = await res.json();
+        console.timeEnd(`[PERF] /api/department/${slug}/top-scored - JSON parse`);
 
         // Separar por tipo
         const saleListings = data.filter(l => l.listing_type === 'sale');
