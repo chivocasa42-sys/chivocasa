@@ -1,9 +1,15 @@
 'use client';
 
-import { ListingCardData, ListingSpecs, ListingLocation } from '@/types/listing';
-
 interface ListingCardProps {
-    listing: ListingCardData;
+    listing: {
+        external_id: number;
+        title: string;
+        price: number;
+        listing_type: 'sale' | 'rent';
+        images?: string[] | null;
+        specs?: Record<string, string | number | undefined> | null;
+        location?: any;
+    };
     onClick: () => void;
 }
 
@@ -12,7 +18,7 @@ function formatPrice(price: number): string {
     return '$' + price.toLocaleString('en-US');
 }
 
-function getArea(specs: ListingSpecs | null | undefined): number {
+function getArea(specs: Record<string, string | number | undefined> | null | undefined): number {
     if (!specs) return 0;
     const areaStr = specs['Área construida (m²)'] || specs['area'] || specs['m2'] || specs['metros'] || '0';
     return parseFloat(String(areaStr).replace(/[^\d.]/g, '')) || 0;
@@ -27,17 +33,10 @@ function getImageUrl(images: string[] | null | undefined): string {
     return firstImage || 'https://via.placeholder.com/400x200?text=Sin+Imagen';
 }
 
-function getMunicipio(location: ListingLocation | undefined): string | undefined {
-    if (typeof location === 'object' && location !== null) {
-        return location.municipio_detectado;
-    }
-    return undefined;
-}
-
 export default function ListingCard({ listing, onClick }: ListingCardProps) {
     const area = getArea(listing.specs);
     const pricePerM2 = area > 0 && listing.price > 0 ? Math.round(listing.price / area) : null;
-    const municipio = getMunicipio(listing.location);
+    const municipio = listing.location?.municipio_detectado;
 
     return (
         <div
