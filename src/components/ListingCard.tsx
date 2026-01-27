@@ -7,11 +7,8 @@ interface ListingCardProps {
         price: number;
         listing_type: 'sale' | 'rent';
         images?: string[] | null;
-        specs?: Record<string, string | number> | null;
-        location?: {
-            municipio_detectado?: string;
-            departamento?: string;
-        } | null;
+        specs?: Record<string, string | number | undefined> | null;
+        location?: any;
     };
     onClick: () => void;
 }
@@ -21,7 +18,7 @@ function formatPrice(price: number): string {
     return '$' + price.toLocaleString('en-US');
 }
 
-function getArea(specs: Record<string, string | number> | null | undefined): number {
+function getArea(specs: Record<string, string | number | undefined> | null | undefined): number {
     if (!specs) return 0;
     const areaStr = specs['Área construida (m²)'] || specs['area'] || specs['m2'] || specs['metros'] || '0';
     return parseFloat(String(areaStr).replace(/[^\d.]/g, '')) || 0;
