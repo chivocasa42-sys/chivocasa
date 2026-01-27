@@ -6,7 +6,10 @@ export interface Listing {
     title: string;
     price: number;
     currency: string;
-    location: unknown; // Can be string, object, or null
+    location: string | {
+        municipio_detectado?: string;
+        [key: string]: string | undefined;
+    } | null;
     listing_type: 'sale' | 'rent';
     description: string;
     specs: {
@@ -34,3 +37,23 @@ export interface LocationStats {
     min: number;
     max: number;
 }
+
+// Minimal type for displaying listing cards (subset of Listing)
+export interface ListingCardData {
+    external_id: number;
+    title: string;
+    price: number;
+    listing_type: 'sale' | 'rent';
+    images?: string[] | null;
+    specs?: {
+        bedrooms?: number;
+        bathrooms?: number;
+        'Área construida (m²)'?: string | number;
+        [key: string]: string | number | undefined;
+    } | null;
+    location?: string | {
+        municipio_detectado?: string;
+        [key: string]: string | undefined;
+    } | null;
+}
+
