@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { slugToDepartamento, isValidDepartamentoSlug } from '@/lib/slugify';
 
+export const runtime = 'edge';
+
 export interface TopScoredListing {
     external_id: number;
     title: string;

@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 
+export const runtime = 'edge';
+
 export async function GET() {
     try {
         const url = `${process.env.SUPABASE_URL}/rest/v1/scrappeddata_ingest?select=*&order=last_updated.desc`;
