@@ -16,6 +16,7 @@ export interface TopScoredListing {
     price_per_m2: number;
     score: number;
     url: string;
+    first_image?: string | null;
 }
 
 export async function GET(

@@ -45,14 +45,17 @@ export default function DepartmentCardBI({ stats, filterType, onClick }: Departm
                 </div>
             </div>
 
-            {/* Precio Principal */}
+            {/* Precio Principal - NOW FIRST */}
             <div className="px-5 py-4 border-t border-slate-100">
+                <div className="text-xs uppercase tracking-wider text-slate-400 mb-1 font-semibold">
+                    Precio Típico
+                </div>
                 <div className="text-3xl font-bold text-rose-500">
                     {formatPrice(stats.median_price)}
                 </div>
             </div>
 
-            {/* Rango como Pill */}
+            {/* Rango como Pill - NOW SECOND */}
             <div className="px-5 pb-3">
                 <span className="inline-flex items-center gap-1.5 bg-slate-100 text-slate-600 text-xs font-medium px-3 py-1.5 rounded-full">
                     {formatPriceCompact(stats.p25_price)} → {formatPriceCompact(stats.p75_price)}
@@ -62,8 +65,8 @@ export default function DepartmentCardBI({ stats, filterType, onClick }: Departm
             {/* Actividad como Chip */}
             <div className="px-5 pb-4">
                 <span className={`inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full ${stats.new_7d > 0
-                        ? 'bg-emerald-100 text-emerald-700'
-                        : 'bg-slate-100 text-slate-500'
+                    ? 'bg-emerald-100 text-emerald-700'
+                    : 'bg-slate-100 text-slate-500'
                     }`}>
                     {stats.new_7d > 0 ? (
                         <>
