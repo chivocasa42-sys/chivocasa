@@ -3,29 +3,17 @@
  * Single source of truth for all listing-related types.
  */
 
-/**
- * Location can be a string, an object with structured data, or null.
- * Real data from Supabase may come in any of these formats.
- */
+// Define reusable types for property specs and location
+export type ListingSpecs = Record<string, string | number | undefined>;
+
 export type ListingLocation = string | {
     municipio_detectado?: string;
+    city?: string;
+    state?: string;
+    country?: string;
     [key: string]: string | undefined;
 } | null;
 
-/**
- * Specs represent property specifications.
- * Values can be string, number, or undefined since real data may be incomplete.
- */
-export type ListingSpecs = {
-    bedrooms?: number;
-    bathrooms?: number;
-    'Área construida (m²)'?: string | number;
-    [key: string]: string | number | undefined;
-};
-
-/**
- * Contact information for a listing.
- */
 export interface ListingContactInfo {
     nombre?: string;
     telefono?: string;
@@ -34,38 +22,38 @@ export interface ListingContactInfo {
 
 /**
  * Main Listing interface - the single source of truth.
- * This represents a complete listing record from Supabase.
+ * Accurately represents real-world data from Supabase/API.
+ * Optional fields allow for partial/lean data objects.
  */
 export interface Listing {
-    id: number;
+    // Core fields required for cards
     external_id: number;
-    url: string;
-    source: string;
     title: string;
     price: number;
-    currency: string;
-    location: ListingLocation;
     listing_type: 'sale' | 'rent';
-    description: string;
-    specs: ListingSpecs;
-    details: Record<string, string>;
-    images: string[];
-    contact_info: ListingContactInfo;
-    published_date: string;
-    scraped_at: string;
-    last_updated: string;
-}
 
-/**
- * Partial listing data for card display.
- * Use Pick to ensure type compatibility with Listing.
- * Optional fields allow for data from different sources (API pagination, etc.)
- */
-export type ListingCardData = Pick<Listing, 'external_id' | 'title' | 'price' | 'listing_type'> & {
-    images?: string[] | null;
-    specs?: ListingSpecs | null;
+    // Optional/Nullable fields
+    id?: number; // Internal ID might not always be present in lean payloads
+    url?: string;
+    source?: string;
+    currency?: string;
+
     location?: ListingLocation;
-};
+
+    description?: string;
+
+    specs?: ListingSpecs | null;
+
+    details?: Record<string, string>;
+
+    images?: string[] | null;
+
+    contact_info?: ListingContactInfo;
+
+    published_date?: string;
+    scraped_at?: string;
+    last_updated?: string;
+}
 
 /**
  * Statistics for a group of listings by location.

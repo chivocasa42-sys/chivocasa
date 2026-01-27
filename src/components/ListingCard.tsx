@@ -1,10 +1,10 @@
 'use client';
 
-import { ListingCardData, ListingSpecs, ListingLocation } from '@/types/listing';
+import { Listing, ListingSpecs, ListingLocation } from '@/types/listing';
 
 interface ListingCardProps {
-    listing: ListingCardData;
-    onClick: () => void;
+    listing: Listing;
+    onClick?: () => void;
 }
 
 function formatPrice(price: number): string {
@@ -12,7 +12,7 @@ function formatPrice(price: number): string {
     return '$' + price.toLocaleString('en-US');
 }
 
-function getArea(specs: ListingSpecs | null | undefined): number {
+function getArea(specs: ListingSpecs | undefined | null): number {
     if (!specs) return 0;
     const areaStr = specs['Área construida (m²)'] || specs['area'] || specs['m2'] || specs['metros'] || '0';
     return parseFloat(String(areaStr).replace(/[^\d.]/g, '')) || 0;
@@ -35,7 +35,8 @@ function getMunicipio(location: ListingLocation | undefined): string | undefined
 }
 
 export default function ListingCard({ listing, onClick }: ListingCardProps) {
-    const area = getArea(listing.specs);
+    const specs = listing.specs || {};
+    const area = getArea(specs);
     const pricePerM2 = area > 0 && listing.price > 0 ? Math.round(listing.price / area) : null;
     const municipio = getMunicipio(listing.location);
 
@@ -98,12 +99,12 @@ export default function ListingCard({ listing, onClick }: ListingCardProps) {
 
                 {/* Specs Inline Row */}
                 <div className="flex items-center gap-1.5 text-[13px] text-slate-700 font-medium mb-1">
-                    {listing.specs?.bedrooms && (
-                        <span><span className="font-bold">{listing.specs.bedrooms}</span> hab</span>
+                    {specs.bedrooms !== undefined && (
+                        <span><span className="font-bold">{specs.bedrooms}</span> hab</span>
                     )}
-                    {(listing.specs?.bedrooms && listing.specs?.bathrooms) && <span className="text-slate-300">|</span>}
-                    {listing.specs?.bathrooms && (
-                        <span><span className="font-bold">{listing.specs.bathrooms}</span> baños</span>
+                    {(specs.bedrooms !== undefined && specs.bathrooms !== undefined) && <span className="text-slate-300">|</span>}
+                    {specs.bathrooms !== undefined && (
+                        <span><span className="font-bold">{specs.bathrooms}</span> baños</span>
                     )}
                     {area > 0 && <span className="text-slate-300">|</span>}
                     {area > 0 && (
