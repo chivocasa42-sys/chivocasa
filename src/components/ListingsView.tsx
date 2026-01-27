@@ -22,7 +22,7 @@ type SortOption = 'price-asc' | 'price-desc' | 'rooms-desc' | 'rooms-asc' | 'ppm
 
 export default function ListingsView({ location, stats, allListings, onBack }: ListingsViewProps) {
     const [sortBy, setSortBy] = useState<SortOption>('price-asc');
-    const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
+    const [selectedListingId, setSelectedListingId] = useState<number | null>(null);
 
     const sortedListings = [...stats.listings].sort((a, b) => {
         switch (sortBy) {
@@ -89,16 +89,16 @@ export default function ListingsView({ location, stats, allListings, onBack }: L
                     <ListingCard
                         key={listing.external_id}
                         listing={listing}
-                        onClick={() => setSelectedListing(listing)}
+                        onClick={() => setSelectedListingId(listing.external_id)}
                     />
                 ))}
             </div>
 
             {/* Modal */}
-            {selectedListing && (
+            {selectedListingId && (
                 <ListingModal
-                    listing={selectedListing}
-                    onClose={() => setSelectedListing(null)}
+                    externalId={selectedListingId}
+                    onClose={() => setSelectedListingId(null)}
                 />
             )}
         </>

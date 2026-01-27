@@ -56,7 +56,7 @@ export default function DepartmentPage() {
     const [isLoadingMore, setIsLoadingMore] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [filter, setFilter] = useState<FilterType>('all');
-    const [selectedListing, setSelectedListing] = useState<CardListing | null>(null);
+    const [selectedListingId, setSelectedListingId] = useState<number | null>(null);
     const loadMoreRef = useRef<HTMLDivElement>(null);
     const [pagination, setPagination] = useState<PaginationState>({
         total: 0,
@@ -276,7 +276,7 @@ export default function DepartmentPage() {
                                         <ListingCard
                                             key={listing.external_id}
                                             listing={listing}
-                                            onClick={() => setSelectedListing(listings.find(l => l.external_id === listing.external_id) || null)}
+                                            onClick={() => setSelectedListingId(listing.external_id)}
                                         />
                                     ))}
                                 </div>
@@ -307,50 +307,12 @@ export default function DepartmentPage() {
                 )}
             </main>
 
-            {/* Modal - simplified for card listings */}
-            {selectedListing && (
-                <div
-                    className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-                    onClick={() => setSelectedListing(null)}
-                >
-                    <div
-                        className="bg-white rounded-xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto"
-                        onClick={e => e.stopPropagation()}
-                    >
-                        {selectedListing.first_image && (
-                            <img
-                                src={selectedListing.first_image}
-                                alt={selectedListing.title}
-                                className="w-full h-48 object-cover rounded-lg mb-4"
-                            />
-                        )}
-                        <h2 className="text-xl font-bold mb-2">{selectedListing.title}</h2>
-                        <p className="text-2xl font-bold text-[var(--primary)] mb-4">
-                            ${selectedListing.price.toLocaleString('en-US')}
-                            {selectedListing.listing_type === 'rent' && <span className="text-sm font-normal text-slate-400">/mes</span>}
-                        </p>
-                        <div className="flex flex-wrap gap-2 mb-4">
-                            {selectedListing.bedrooms && (
-                                <span className="bg-slate-100 px-3 py-1 rounded">🛏️ {selectedListing.bedrooms} hab</span>
-                            )}
-                            {selectedListing.bathrooms && (
-                                <span className="bg-slate-100 px-3 py-1 rounded">🚿 {selectedListing.bathrooms} baños</span>
-                            )}
-                            {selectedListing.area && (
-                                <span className="bg-slate-100 px-3 py-1 rounded">📐 {selectedListing.area} m²</span>
-                            )}
-                        </div>
-                        {selectedListing.municipio && (
-                            <p className="text-slate-600 mb-4">📍 {selectedListing.municipio}</p>
-                        )}
-                        <button
-                            onClick={() => setSelectedListing(null)}
-                            className="w-full btn-secondary"
-                        >
-                            Cerrar
-                        </button>
-                    </div>
-                </div>
+            {/* Modal */}
+            {selectedListingId && (
+                <ListingModal
+                    externalId={selectedListingId}
+                    onClose={() => setSelectedListingId(null)}
+                />
             )}
         </>
     );
