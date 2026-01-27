@@ -1,20 +1,11 @@
 'use client';
 
+import { Listing, ListingSpecs, ListingLocation } from '@/types/listing';
 import LazyImage from './LazyImage';
 
 interface ListingCardProps {
-    listing: {
-        external_id: number;
-        title?: string;
-        price: number;
-        listing_type: 'sale' | 'rent';
-        images?: string[] | null;
-        specs?: Record<string, string | number | undefined> | null;
-        details?: Record<string, string> | null;
-        location?: any;
-        tags?: string[] | null;
-    };
-    onClick: () => void;
+    listing: Listing;
+    onClick?: () => void;
 }
 
 function formatPrice(price: number): string {
@@ -22,7 +13,7 @@ function formatPrice(price: number): string {
     return '$' + price.toLocaleString('en-US');
 }
 
-function getArea(specs: Record<string, string | number | undefined> | null | undefined): number {
+function getArea(specs: ListingSpecs | undefined | null): number {
     if (!specs) return 0;
     const areaStr = specs['Área construida (m²)'] || specs['area'] || specs['m2'] || specs['metros'] || '0';
     return parseFloat(String(areaStr).replace(/[^\d.]/g, '')) || 0;
@@ -37,7 +28,7 @@ function getImageUrl(images: string[] | null | undefined): string {
 }
 
 // Get location-based tags from the listing
-function getLocationTags(location: ListingCardProps['listing']['location'], tags?: string[] | null): string[] {
+function getLocationTags(location: ListingLocation | undefined, tags?: string[] | null): string[] {
     // Prefer the tags array if it exists
     if (tags && tags.length > 0) {
         return tags.slice(0, 3); // Max 3 location tags
@@ -45,9 +36,11 @@ function getLocationTags(location: ListingCardProps['listing']['location'], tags
 
     // Fallback to building from location object
     const locationTags: string[] = [];
-    if (location) {
+    if (location && typeof location === 'object') {
         if (location.municipio_detectado) locationTags.push(location.municipio_detectado);
         if (location.departamento) locationTags.push(location.departamento);
+    } else if (typeof location === 'string') {
+        locationTags.push(location);
     }
     locationTags.push('El Salvador');
 
@@ -55,7 +48,8 @@ function getLocationTags(location: ListingCardProps['listing']['location'], tags
 }
 
 export default function ListingCard({ listing, onClick }: ListingCardProps) {
-    const area = getArea(listing.specs);
+    const specs = listing.specs || {};
+    const area = getArea(specs);
     const locationTags = getLocationTags(listing.location, listing.tags);
 
     return (
@@ -106,22 +100,20 @@ export default function ListingCard({ listing, onClick }: ListingCardProps) {
                     )}
                 </div>
 
-                {/* Specs Row */}
-                <div className="flex items-center gap-2 text-[14px] text-slate-700 mb-3">
-                    {listing.specs?.bedrooms && (
-                        <>
-                            <span><span className="font-bold">{listing.specs.bedrooms}</span> hab</span>
-                            <span className="text-slate-300">|</span>
-                        </>
+                {/* Specs Inline Row */}
+                <div className="flex items-center gap-1.5 text-[13px] text-slate-700 font-medium mb-1">
+                    {specs.bedrooms !== undefined && (
+                        <span><span className="font-bold">{specs.bedrooms}</span> hab</span>
                     )}
-                    {listing.specs?.bathrooms && (
-                        <>
-                            <span><span className="font-bold">{listing.specs.bathrooms}</span> baños</span>
-                            <span className="text-slate-300">|</span>
-                        </>
+                    {(specs.bedrooms !== undefined && specs.bathrooms !== undefined) && <span className="text-slate-300">|</span>}
+                    {specs.bathrooms !== undefined && (
+                        <span><span className="font-bold">{specs.bathrooms}</span> baños</span>
                     )}
                     {area > 0 && (
-                        <span><span className="font-bold">{area.toLocaleString()}</span> m²</span>
+                        <>
+                            <span className="text-slate-300">|</span>
+                            <span><span className="font-bold">{area.toLocaleString()}</span> m²</span>
+                        </>
                     )}
                     <span className="text-slate-400 ml-1">
                         - {listing.listing_type === 'sale' ? 'Venta' : 'Renta'}
@@ -129,7 +121,7 @@ export default function ListingCard({ listing, onClick }: ListingCardProps) {
                 </div>
 
                 {/* Location Tags */}
-                <div className="flex flex-wrap gap-1.5 mb-3">
+                <div className="flex flex-wrap gap-1.5 mb-3 mt-2">
                     {locationTags.map((tag, idx) => (
                         <span
                             key={idx}
@@ -143,7 +135,7 @@ export default function ListingCard({ listing, onClick }: ListingCardProps) {
                 {/* Footer - Source only, no ID */}
                 <div className="pt-2 border-t border-slate-100">
                     <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wide">
-                        Fuente: Encuentra24
+                        Fuente: {listing.source || 'Encuentra24'}
                     </span>
                 </div>
             </div>

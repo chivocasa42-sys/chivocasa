@@ -31,9 +31,9 @@ export default function ListingsView({ location, stats, allListings, onBack }: L
             case 'price-desc':
                 return (b.price || 0) - (a.price || 0);
             case 'rooms-desc':
-                return (b.specs?.bedrooms || 0) - (a.specs?.bedrooms || 0);
+                return (Number(b.specs?.bedrooms) || 0) - (Number(a.specs?.bedrooms) || 0);
             case 'rooms-asc':
-                return (a.specs?.bedrooms || 0) - (b.specs?.bedrooms || 0);
+                return (Number(a.specs?.bedrooms) || 0) - (Number(b.specs?.bedrooms) || 0);
             case 'ppm2-asc': {
                 const ppmA = getArea(a) > 0 ? (a.price || 0) / getArea(a) : Infinity;
                 const ppmB = getArea(b) > 0 ? (b.price || 0) / getArea(b) : Infinity;

@@ -26,7 +26,8 @@ export function calculatePercentile(values: number[], percentile: number): numbe
 }
 
 // Verificar si una fecha está dentro de los últimos N días
-export function isWithinDays(dateStr: string, days: number): boolean {
+export function isWithinDays(dateStr: string | undefined, days: number): boolean {
+    if (!dateStr) return false;
     const date = new Date(dateStr);
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
@@ -59,7 +60,9 @@ export function calculateNationalStats(listings: Listing[]): NationalStats {
     // Calcular nuevos últimos 7 días vs 7-14 días
     const new_7d = listings.filter(l => isWithinDays(l.scraped_at || l.last_updated, 7)).length;
     const new_prev_7d = listings.filter(l => {
-        const date = new Date(l.scraped_at || l.last_updated);
+        const dateStr = l.scraped_at || l.last_updated;
+        if (!dateStr) return false;
+        const date = new Date(dateStr);
         const now = new Date();
         const diffDays = (now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24);
         return diffDays > 7 && diffDays <= 14;
