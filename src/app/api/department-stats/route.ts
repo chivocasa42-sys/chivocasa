@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-export const runtime = 'edge';
+
 
 // Tipos para la vista materializada
 export interface DepartmentStats {

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { slugToDepartamento, isValidDepartamentoSlug } from '@/lib/slugify';
 
-export const runtime = 'edge';
+
 
 const DEFAULT_LIMIT = 24;
 
