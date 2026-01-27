@@ -131,13 +131,6 @@ export default function ListingCard({ listing, onClick }: ListingCardProps) {
                         </span>
                     ))}
                 </div>
-
-                {/* Footer - Source only, no ID */}
-                <div className="pt-2 border-t border-slate-100">
-                    <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wide">
-                        Fuente: {listing.source || 'Encuentra24'}
-                    </span>
-                </div>
             </div>
         </div>
     );

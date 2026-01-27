@@ -18,7 +18,11 @@ export async function GET() {
             throw new Error(`Supabase error: ${res.status}`);
         }
 
-        const data = await res.json();
+        // Get raw text and convert large numbers to strings to prevent precision loss
+        const rawText = await res.text();
+        // Convert external_id large numbers to strings
+        const fixedText = rawText.replace(/"external_id":(\d{15,})/g, '"external_id":"$1"');
+        const data = JSON.parse(fixedText);
         return NextResponse.json(data);
     } catch (error) {
         console.error('Error fetching listings:', error);

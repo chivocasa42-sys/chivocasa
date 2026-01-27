@@ -27,7 +27,7 @@ export interface ListingContactInfo {
  */
 export interface Listing {
     // Core fields required for cards
-    external_id: number;
+    external_id: string | number; // Can be string to prevent precision loss for large IDs
     title: string;
     price: number;
     listing_type: 'sale' | 'rent';

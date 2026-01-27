@@ -22,7 +22,7 @@ type SortOption = 'price-asc' | 'price-desc' | 'rooms-desc' | 'rooms-asc' | 'ppm
 
 export default function ListingsView({ location, stats, allListings, onBack }: ListingsViewProps) {
     const [sortBy, setSortBy] = useState<SortOption>('price-asc');
-    const [selectedListingId, setSelectedListingId] = useState<number | null>(null);
+    const [selectedListingId, setSelectedListingId] = useState<string | number | null>(null);
 
     const sortedListings = [...stats.listings].sort((a, b) => {
         switch (sortBy) {

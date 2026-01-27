@@ -56,7 +56,7 @@ export default function DepartmentPage() {
     const [isLoadingMore, setIsLoadingMore] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [filter, setFilter] = useState<FilterType>('all');
-    const [selectedListingId, setSelectedListingId] = useState<number | null>(null);
+    const [selectedListingId, setSelectedListingId] = useState<string | number | null>(null);
     const loadMoreRef = useRef<HTMLDivElement>(null);
     const [pagination, setPagination] = useState<PaginationState>({
         total: 0,

@@ -5,7 +5,7 @@ export const runtime = 'edge';
 const DEFAULT_LIMIT = 24;
 
 export interface CardListing {
-    external_id: number;
+    external_id: string | number;
     title: string;
     price: number;
     listing_type: 'sale' | 'rent';
@@ -63,7 +63,10 @@ export async function GET(
             throw new Error(`Supabase error: ${res.status}`);
         }
 
-        const data: CardListing[] = await res.json();
+        // Get raw text and convert large numbers to strings to prevent precision loss
+        const rawText = await res.text();
+        const fixedText = rawText.replace(/"external_id":(\d{15,})/g, '"external_id":"$1"');
+        const data: CardListing[] = JSON.parse(fixedText);
 
         // total_count is the same for all rows
         const total = data.length > 0 ? data[0].total_count : 0;

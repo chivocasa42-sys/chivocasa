@@ -4,7 +4,7 @@ import { slugToDepartamento, isValidDepartamentoSlug } from '@/lib/slugify';
 
 
 export interface TopScoredListing {
-    external_id: number;
+    external_id: string | number;
     title: string;
     location: Record<string, unknown>;
     departamento: string;
@@ -63,7 +63,10 @@ export async function GET(
         }
 
         console.time(`[PERF] /api/department/${slug}/top-scored - JSON parse`);
-        const data: TopScoredListing[] = await res.json();
+        // Get raw text and convert large numbers to strings to prevent precision loss
+        const rawText = await res.text();
+        const fixedText = rawText.replace(/"external_id":(\d{15,})/g, '"external_id":"$1"');
+        const data: TopScoredListing[] = JSON.parse(fixedText);
         console.timeEnd(`[PERF] /api/department/${slug}/top-scored - JSON parse`);
 
         // Separar por tipo

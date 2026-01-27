@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import LazyImage from './LazyImage';
 
 interface ListingModalProps {
-    externalId: number;
+    externalId: string | number; // Can be string to prevent precision loss
     onClose: () => void;
 }
 
@@ -281,11 +281,6 @@ export default function ListingModal({ externalId, onClose }: ListingModalProps)
                                     ))}
                                 </div>
                             )}
-
-                            {/* Source */}
-                            <div className="text-xs text-slate-400 pt-3 border-t border-slate-100">
-                                <span>Fuente: <span className="font-medium">{listing.source || 'Encuentra24'}</span></span>
-                            </div>
                         </div>
 
                         {/* Right - CTA Button */}

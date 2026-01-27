@@ -1,14 +1,15 @@
 """
 Multi-Source Housing Scraper - OPTIMIZED
-Uses concurrent requests to scrape listings from Encuentra24, MiCasaSV, and Realtor.com.
+Uses concurrent requests to scrape listings from Encuentra24, MiCasaSV, Realtor.com, and Vivo Latam.
 Inserts results directly into Supabase database (scrappeddata_ingest table).
 
 Usage:
-  python scraper_encuentra24.py --Encuentra24 --limit 100   # Scrape 100 from Encuentra24
-  python scraper_encuentra24.py --MiCasaSV --limit 10       # Scrape 10 from MiCasaSV
-  python scraper_encuentra24.py --Realtor --limit 50        # Scrape 50 from Realtor.com
-  python scraper_encuentra24.py --Encuentra24 --MiCasaSV --Realtor  # Scrape all from all sources
-  python scraper_encuentra24.py                             # Default: scrape all from Encuentra24
+  python scraper_encuentra24.py                             # Default: scrape ALL sources
+  python scraper_encuentra24.py --Encuentra24 --limit 100   # Scrape 100 from Encuentra24 only
+  python scraper_encuentra24.py --MiCasaSV --limit 10       # Scrape 10 from MiCasaSV only
+  python scraper_encuentra24.py --Realtor --limit 50        # Scrape 50 from Realtor.com only
+  python scraper_encuentra24.py --VivoLatam --limit 20      # Scrape 20 from Vivo Latam only
+  python scraper_encuentra24.py --Encuentra24 --MiCasaSV    # Scrape from specific sources
 """
 import argparse
 import requests
@@ -316,6 +317,11 @@ REALTOR_SALE_URL = "https://www.realtor.com/international/sv"
 REALTOR_RENT_URL = "https://www.realtor.com/international/sv?channel=rent"
 REALTOR_PHOTO_CDN = "https://s1.rea.global/img/600x400-prop/"  # Corrected CDN URL with size prefix
 SQFT_TO_M2 = 0.092903  # Conversion factor from sq ft to sq meters
+
+# ============== VIVOLATAM CONFIG ==============
+VIVOLATAM_BASE_URL = "https://www.vivolatam.com"
+VIVOLATAM_LISTINGS_URL = "https://www.vivolatam.com/es/el-salvador/bienes-raices/m"
+VIVOLATAM_CDN = "https://cdn.vivolatam.com"
 
 # How many pages to fetch concurrently
 CONCURRENT_PAGES = 10
@@ -1637,7 +1643,246 @@ def main_encuentra24(limit=None):
     return all_listings, sale_data, rent_data
 
 
-def main(encuentra24=True, micasasv=False, realtor=False, limit=None):
+# ============== VIVOLATAM FUNCTIONS ==============
+
+def get_vivolatam_listing_urls(url_file=None, max_listings=None):
+    """
+    Collect listing URLs from Vivo Latam sitemap.
+    
+    Fetches property URLs from the Vivo Latam sitemap. If a URL file is provided,
+    it will use that instead of the sitemap.
+    
+    Args:
+        url_file: Optional path to file containing property URLs (one per line)
+        max_listings: Maximum number of listings to return
+        
+    Returns:
+        List of property page URLs
+    """
+    all_urls = []
+    
+    # If URL file is provided, use it
+    if url_file and os.path.exists(url_file):
+        print(f"  Reading Vivo Latam URLs from file: {url_file}")
+        with open(url_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                url = line.strip()
+                if url and url.startswith('https://www.vivolatam.com'):
+                    all_urls.append(url)
+        print(f"    Found {len(all_urls)} URLs in file")
+    else:
+        # Fetch from sitemap automatically
+        print(f"  Fetching Vivo Latam URLs from sitemap...")
+        sitemap_url = "https://www.vivolatam.com/sitemap/property_listings.xml"
+        
+        try:
+            resp = requests.get(sitemap_url, headers=HEADERS, timeout=30)
+            if resp.status_code == 200:
+                # Extract Spanish URLs only (avoid duplicates with English versions)
+                urls = re.findall(r'<loc>(https://www\.vivolatam\.com/es/[^<]+/l/[^<]+)</loc>', resp.text)
+                all_urls = list(set(urls))  # Remove duplicates
+                print(f"    Found {len(all_urls)} Spanish listing URLs in sitemap")
+            else:
+                print(f"    Error fetching sitemap: HTTP {resp.status_code}")
+                return []
+        except Exception as e:
+            print(f"    Error fetching sitemap: {e}")
+            return []
+    
+    if max_listings and len(all_urls) > max_listings:
+        print(f"  Limiting to {max_listings} listings")
+        return all_urls[:max_listings]
+    
+    return all_urls
+
+
+def scrape_vivolatam_listing(url, listing_type="sale"):
+    """Scrape a single Vivo Latam listing page."""
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=15)
+        if resp.status_code != 200:
+            print(f"  Failed to fetch {url}: HTTP {resp.status_code}")
+            return None
+            
+        soup = BeautifulSoup(resp.text, "html.parser")
+        page_text = soup.get_text()
+        
+        # Title from h1
+        title_el = soup.find("h1")
+        title = title_el.get_text(strip=True) if title_el else ""
+        
+        if not title:
+            print(f"  No title found for {url}")
+            return None
+        
+        # Price extraction - look for JSON embedded price first (more accurate)
+        # Pattern: "price":{"sale":{"value":4600000}} or "price":{"rent":{"value":1500}}
+        price = None
+        raw_html = resp.text
+        
+        # Try to find price in embedded JSON data
+        sale_price_match = re.search(r'"price":\s*\{\s*"sale":\s*\{\s*"value":\s*(\d+)', raw_html)
+        rent_price_match = re.search(r'"price":\s*\{\s*"rent":\s*\{\s*"value":\s*(\d+)', raw_html)
+        
+        if sale_price_match:
+            price = int(sale_price_match.group(1))
+        elif rent_price_match:
+            price = int(rent_price_match.group(1))
+        else:
+            # Fallback to traditional regex on visible text (skip per-unit prices)
+            # Match prices >= $1000 to avoid matching "$136 por v2"
+            price_matches = re.findall(r'\$([\d,]+)(?:\.\d{2})?', page_text)
+            for pm in price_matches:
+                cleaned = pm.replace(',', '')
+                if cleaned.isdigit() and int(cleaned) >= 1000:
+                    price = int(cleaned)
+                    break
+        
+        # Specs from text
+        specs = {}
+        bedroom_match = re.search(r'(\d+)\s*(?:dormitorio|habitaci)', page_text, re.I)
+        bathroom_match = re.search(r'(\d+)\s*(?:baño|bath)', page_text, re.I)
+        area_match = re.search(r'([\d,]+)\s*(?:m2|metros?\s*cuadrados?|m²)', page_text, re.I)
+        
+        if bedroom_match:
+            specs["habitaciones"] = bedroom_match.group(1)
+        if bathroom_match:
+            specs["banos"] = bathroom_match.group(1)
+        if area_match:
+            specs["area"] = f"{area_match.group(1)} m²"
+        
+        # Description - look for content after "Descripción" heading
+        description = ""
+        desc_section = soup.find("h2", string=re.compile(r"Descripci[oó]n", re.I))
+        if desc_section:
+            # Get next siblings for description content
+            next_el = desc_section.find_next_sibling()
+            if next_el:
+                description = next_el.get_text(strip=True)[:1000]
+        
+        # If no description from heading, try meta description
+        if not description:
+            og_desc = soup.find("meta", {"property": "og:description"})
+            if og_desc and og_desc.get("content"):
+                description = og_desc["content"][:1000]
+        
+        # Location from breadcrumb links
+        location = ""
+        loc_links = soup.select('a[href*="/bienes-raices/m/"]')
+        if loc_links:
+            # Get location from first valid link after the base
+            for link in loc_links:
+                link_text = link.get_text(strip=True)
+                if link_text and link_text != "El Salvador bienes raices":
+                    location = link_text
+                    break
+        
+        # Generate external_id from URL slug
+        slug = url.split('/')[-1]
+        external_id = slug_to_external_id(slug)
+        
+        # Images from og:image meta tag and other sources
+        images = []
+        og_image = soup.find("meta", {"property": "og:image"})
+        if og_image and og_image.get("content"):
+            images.append(og_image["content"])
+        
+        # Also look for other image sources
+        for img in soup.find_all("img"):
+            src = img.get("src", "") or img.get("data-src", "")
+            if src and "cdn.vivolatam.com" in src and src not in images:
+                images.append(src)
+                if len(images) >= 10:  # Cap at 10 images
+                    break
+        
+        # Detect listing type from title/URL
+        title_lower = title.lower()
+        url_lower = url.lower()
+        if "alquiler" in title_lower or "renta" in title_lower or "rent" in url_lower:
+            listing_type = "rent"
+        else:
+            listing_type = "sale"
+        
+        # Detect municipality
+        municipio_info = detect_municipio(location, description, title)
+        
+        listing = {
+            "title": remove_emojis(title[:200]) if title else "",
+            "price": price,
+            "location": location,
+            "published_date": "",  # Not easily available on page
+            "listing_type": listing_type,
+            "url": url,
+            "external_id": str(external_id),
+            "specs": specs,
+            "details": {},
+            "description": remove_emojis(description) if description else "",
+            "images": images,
+            "source": "VivoLatam",
+            "active": True,
+            "municipio_detectado": municipio_info["municipio_detectado"],
+            "departamento": municipio_info["departamento"],
+            "last_updated": datetime.now().isoformat()
+        }
+        
+        print(f"  Scraped: {title[:50]}...")
+        return listing
+        
+    except Exception as e:
+        print(f"  Error scraping {url}: {e}")
+        return None
+
+
+def scrape_vivolatam_listings_concurrent(urls, listing_type="sale", max_workers=5):
+    """Scrape multiple Vivo Latam listings concurrently."""
+    results = []
+    
+    print(f"  Scraping {len(urls)} Vivo Latam listings with {max_workers} workers...")
+    
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_url = {executor.submit(scrape_vivolatam_listing, url, listing_type): url for url in urls}
+        for future in as_completed(future_to_url):
+            url = future_to_url[future]
+            try:
+                result = future.result()
+                if result:
+                    results.append(result)
+            except Exception as e:
+                print(f"  Error processing {url}: {e}")
+    
+    return results
+
+
+def main_vivolatam(limit=None, url_file=None):
+    """Main scraper function for Vivo Latam."""
+    all_listings = []
+    sale_data = []
+    rent_data = []
+    
+    if limit:
+        print(f"\n*** LIMIT MODE: Scraping up to {limit} listings from Vivo Latam ***")
+    
+    # Get listing URLs from file
+    urls = get_vivolatam_listing_urls(url_file=url_file, max_listings=limit)
+    
+    if not urls:
+        print("  No Vivo Latam URLs found to scrape")
+        return [], [], []
+    
+    print(f"\n=== Scraping Vivo Latam Listings ===")
+    listings = scrape_vivolatam_listings_concurrent(urls, "sale")
+    all_listings.extend(listings)
+    
+    # Separate by listing type
+    sale_data = [l for l in all_listings if l.get("listing_type") == "sale"]
+    rent_data = [l for l in all_listings if l.get("listing_type") == "rent"]
+    
+    print(f"  Vivo Latam total: {len(all_listings)} ({len(sale_data)} sales, {len(rent_data)} rentals)")
+    
+    return all_listings, sale_data, rent_data
+
+
+def main(encuentra24=True, micasasv=False, realtor=False, vivolatam=False, limit=None, vivolatam_urls=None):
     """
     Main scraper function that orchestrates scraping from multiple sources.
     
@@ -1645,7 +1890,9 @@ def main(encuentra24=True, micasasv=False, realtor=False, limit=None):
         encuentra24: If True, scrape from Encuentra24
         micasasv: If True, scrape from MiCasaSV
         realtor: If True, scrape from Realtor.com International
+        vivolatam: If True, scrape from Vivo Latam
         limit: Optional max number of listings to scrape (per source if both enabled)
+        vivolatam_urls: Path to file containing Vivo Latam URLs to scrape
     """
     all_listings = []
     total_sale = 0
@@ -1680,6 +1927,16 @@ def main(encuentra24=True, micasasv=False, realtor=False, limit=None):
         all_listings.extend(listings)
         total_sale += len(sale_data)
         total_rent += len(rent_data)
+    
+    # --- VIVOLATAM ---
+    if vivolatam:
+        print("\n" + "="*60)
+        print("SCRAPING SOURCE: Vivo Latam")
+        print("="*60)
+        listings, sale_data, rent_data = main_vivolatam(limit, url_file=vivolatam_urls)
+        all_listings.extend(listings)
+        total_sale += len(sale_data)
+        total_rent += len(rent_data)
 
     # --- INSERT TO SUPABASE ---
     print("\n=== Inserting to Supabase ===")
@@ -1692,6 +1949,27 @@ def main(encuentra24=True, micasasv=False, realtor=False, limit=None):
     with open(output_file, "w", encoding="utf-8") as f:
         json.dump(all_listings, f, ensure_ascii=False, indent=2)
 
+    # --- REFRESH MATERIALIZED VIEW ---
+    print("\n=== Refreshing Materialized View ===")
+    try:
+        refresh_url = f"{SUPABASE_URL}/rest/v1/rpc/refresh_mv_sd_depto_stats"
+        refresh_resp = requests.post(
+            refresh_url,
+            headers={
+                "apikey": SUPABASE_SERVICE_KEY,
+                "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={}
+        )
+        if refresh_resp.status_code in [200, 204]:
+            print("  Materialized view refreshed successfully!")
+        else:
+            print(f"  Warning: Could not refresh view. Status: {refresh_resp.status_code}")
+            print(f"  Response: {refresh_resp.text[:200]}")
+    except Exception as e:
+        print(f"  Warning: Error refreshing view: {e}")
+
     print(f"\n=== DONE ===")
     print(f"Total listings scraped: {len(all_listings)}")
     print(f"  - Sale: {total_sale}")
@@ -1702,7 +1980,7 @@ def main(encuentra24=True, micasasv=False, realtor=False, limit=None):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Multi-source real estate scraper (Encuentra24, MiCasaSV, Realtor.com)"
+        description="Multi-source real estate scraper (Encuentra24, MiCasaSV, Realtor.com, Vivo Latam)"
     )
     parser.add_argument(
         "--Encuentra24",
@@ -1720,6 +1998,17 @@ if __name__ == "__main__":
         help="Scrape listings from Realtor.com International (El Salvador)"
     )
     parser.add_argument(
+        "--VivoLatam",
+        action="store_true",
+        help="Scrape listings from Vivo Latam (El Salvador)"
+    )
+    parser.add_argument(
+        "--vivolatam-urls",
+        type=str,
+        default=None,
+        help="Optional: Path to file containing Vivo Latam URLs to scrape. If not provided, URLs are fetched from sitemap."
+    )
+    parser.add_argument(
         "--limit", "-l",
         type=int,
         default=None,
@@ -1727,13 +2016,25 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     
-    # Default to Encuentra24 if no source specified
+    # Get source flags
     encuentra24 = args.Encuentra24
     micasasv = args.MiCasaSV
     realtor = args.Realtor
+    vivolatam = args.VivoLatam
     
-    if not encuentra24 and not micasasv and not realtor:
-        # Default behavior: scrape from Encuentra24
+    # Default behavior: scrape from ALL sources if no source is specified
+    if not encuentra24 and not micasasv and not realtor and not vivolatam:
         encuentra24 = True
+        micasasv = True
+        realtor = True
+        vivolatam = True
+        print("No source specified. Scraping from ALL sources: Encuentra24, MiCasaSV, Realtor, VivoLatam")
     
-    main(encuentra24=encuentra24, micasasv=micasasv, realtor=realtor, limit=args.limit)
+    main(
+        encuentra24=encuentra24, 
+        micasasv=micasasv, 
+        realtor=realtor, 
+        vivolatam=vivolatam,
+        limit=args.limit,
+        vivolatam_urls=args.vivolatam_urls
+    )
