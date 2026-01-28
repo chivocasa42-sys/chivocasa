@@ -2,6 +2,21 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 
+// INICIO Agregado para el Analitycs MAHR 20260128
+import { Analytics } from "@vercel/analytics/react";
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="es">
+      <body>
+        {children}
+        <Analytics />
+      </body>
+    </html>
+  );
+}
+// FIN Agregado MAHR 20260128
+
 const inter = Inter({
   subsets: ["latin"],
   display: "swap",
