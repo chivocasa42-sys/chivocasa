@@ -81,7 +81,7 @@ export default function HeroSection() {
             <div className="hero-search-overlay" />
             <div className="hero-search-content">
                 <h1 className="hero-search-title">
-                    Más casa por tu dinero.
+                    Inmuebles en El Salvador: compará venta y renta, y pagá lo justo.
                 </h1>
 
                 <form onSubmit={handleSubmit} className="hero-search-form">
@@ -120,6 +120,10 @@ export default function HeroSection() {
                         )}
                     </div>
                 </form>
+
+                <p className="hero-search-slogan">
+                    Más casa por tu dinero.
+                </p>
             </div>
         </section>
     );

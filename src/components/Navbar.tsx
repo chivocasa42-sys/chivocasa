@@ -41,26 +41,8 @@ export default function Navbar({ totalListings, onRefresh }: NavbarProps) {
                         </span>
                     </Link>
 
-                    {/* Nav Links - Desktop */}
+                    {/* Spacer for layout balance */}
                     <div className="hidden md:flex items-center gap-6">
-                        <Link
-                            href="#departamentos"
-                            className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors no-underline"
-                        >
-                            Departamentos
-                        </Link>
-                        <Link
-                            href="#tendencias"
-                            className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors no-underline"
-                        >
-                            Tendencias
-                        </Link>
-                        <Link
-                            href="#rankings"
-                            className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors no-underline"
-                        >
-                            Rankings
-                        </Link>
                     </div>
 
                     {/* Actions */}

@@ -27,7 +27,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from localization_plugin import build_destination_queries
 
 # Import area normalizer for standardizing area units to m²
-from area_normalizer import normalize_specs_area
+from area_normalizer import normalize_listing_specs
 
 # ============== SUPABASE CONFIG ==============
 SUPABASE_URL = "https://zvamupbxzuxdgvzgbssn.supabase.co"
@@ -205,6 +205,237 @@ def insert_listings_batch(listings, batch_size=50):
             errors += len(batch_data)
     
     return success, errors
+
+
+# ============== LISTING VALIDATION FUNCTIONS ==============
+
+def get_stale_active_listings(run_start_time, source=None):
+    """
+    Fetch active listings that were NOT updated in the current run.
+    These are candidates for validation (might be sold/removed).
+    
+    Args:
+        run_start_time: ISO timestamp of when the scrape run started
+        source: Optional source filter (e.g., "Encuentra24", "MiCasaSV")
+    
+    Returns:
+        List of dicts with {external_id, url, source}
+    """
+    headers = {
+        "apikey": SUPABASE_SERVICE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    # Query: active=true AND last_updated < run_start_time
+    url = f"{SUPABASE_URL}/rest/v1/{TABLE_NAME}"
+    params = {
+        "select": "external_id,url,source",
+        "active": "eq.true",
+        "last_updated": f"lt.{run_start_time}"
+    }
+    
+    if source:
+        params["source"] = f"eq.{source}"
+    
+    try:
+        resp = requests.get(url, headers=headers, params=params, timeout=60)
+        if resp.status_code == 200:
+            return resp.json()
+        else:
+            print(f"  Error fetching stale listings: {resp.status_code} - {resp.text[:200]}")
+            return []
+    except Exception as e:
+        print(f"  Exception fetching stale listings: {e}")
+        return []
+
+
+def check_listing_still_active(url, source):
+    """
+    Check if a listing URL is still active (not 404 or sold).
+    
+    Args:
+        url: Listing URL to check
+        source: Source name for source-specific detection
+    
+    Returns:
+        Tuple of (is_active: bool, reason: str)
+    """
+    # Keywords that indicate a listing is no longer available
+    INACTIVE_KEYWORDS = [
+        'vendido', 'vendida', 'sold', 'no disponible', 'not available',
+        'expirado', 'expired', 'eliminado', 'deleted', 'removed',
+        'listing not found', 'no existe', 'does not exist',
+        'página no encontrada', 'page not found', '404'
+    ]
+    
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    }
+    
+    try:
+        # Use GET to check the full page (some sites don't support HEAD properly)
+        resp = requests.get(url, headers=headers, timeout=20, allow_redirects=True)
+        
+        # Check for 404 or other error status codes
+        if resp.status_code == 404:
+            return False, "404 Not Found"
+        
+        if resp.status_code >= 400:
+            return False, f"HTTP Error {resp.status_code}"
+        
+        # Check if redirected to homepage or search page (common for removed listings)
+        final_url = resp.url.lower()
+        if source == "Encuentra24" and "/bienes-raices-venta-de-propiedades" not in final_url and "/bienes-raices-alquiler" not in final_url:
+            # Redirected away from listing detail page
+            if "/bienes-raices" in final_url and len(final_url) < 100:
+                return False, "Redirected to listing index"
+        
+        # Check page content for inactive indicators
+        page_text = resp.text.lower()
+        for keyword in INACTIVE_KEYWORDS:
+            if keyword in page_text[:5000]:  # Check first 5KB for performance
+                # Make sure it's prominent (in title or main content)
+                if f'<title>{keyword}' in page_text or f'<h1>{keyword}' in page_text:
+                    return False, f"Page contains '{keyword}'"
+        
+        # Listing appears active
+        return True, "Active"
+        
+    except requests.exceptions.Timeout:
+        return True, "Timeout (assumed active)"  # Don't deactivate on timeout
+    except requests.exceptions.ConnectionError:
+        return True, "Connection error (assumed active)"
+    except Exception as e:
+        return True, f"Error: {str(e)[:50]} (assumed active)"
+
+
+def validate_and_deactivate_listings(run_start_time, sources=None, max_workers=5):
+    """
+    Validate all active listings that weren't updated in the current run.
+    Marks listings as inactive if they return 404 or are sold/expired.
+    
+    Args:
+        run_start_time: ISO timestamp of when the scrape run started
+        sources: Optional list of sources to validate (None = all sources)
+        max_workers: Number of concurrent validation requests
+    
+    Returns:
+        Tuple of (validated_count, deactivated_count)
+    """
+    print("\n" + "="*60)
+    print("VALIDATION PHASE: Checking for inactive listings")
+    print("="*60)
+    
+    # Get all stale active listings (those not updated in this run)
+    stale_listings = get_stale_active_listings(run_start_time, source=None)
+    
+    if sources:
+        # Filter to only specified sources
+        stale_listings = [l for l in stale_listings if l.get('source') in sources]
+    
+    if not stale_listings:
+        print("  No stale active listings to validate.")
+        return 0, 0
+    
+    print(f"  Found {len(stale_listings)} active listings to validate")
+    
+    # Group by source for reporting
+    by_source = {}
+    for l in stale_listings:
+        src = l.get('source', 'Unknown')
+        by_source[src] = by_source.get(src, 0) + 1
+    for src, count in by_source.items():
+        print(f"    - {src}: {count}")
+    
+    # Validate listings concurrently
+    to_deactivate = []
+    validated = 0
+    
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_listing = {
+            executor.submit(check_listing_still_active, l['url'], l['source']): l 
+            for l in stale_listings
+        }
+        
+        for future in as_completed(future_to_listing):
+            listing = future_to_listing[future]
+            validated += 1
+            
+            try:
+                is_active, reason = future.result()
+                if not is_active:
+                    to_deactivate.append({
+                        'external_id': listing['external_id'],
+                        'reason': reason
+                    })
+                    print(f"    ✗ INACTIVE: {listing['url'][:60]}... ({reason})")
+            except Exception as e:
+                print(f"    ? ERROR checking: {listing['url'][:60]}... ({e})")
+            
+            # Progress update every 50 listings
+            if validated % 50 == 0:
+                print(f"    Validated {validated}/{len(stale_listings)} ({len(to_deactivate)} inactive)")
+    
+    print(f"  Validation complete: {validated} checked, {len(to_deactivate)} to deactivate")
+    
+    # Deactivate listings in database
+    if to_deactivate:
+        deactivated = deactivate_listings([d['external_id'] for d in to_deactivate])
+        print(f"  Deactivated {deactivated} listings in database")
+        return validated, deactivated
+    
+    return validated, 0
+
+
+def deactivate_listings(external_ids):
+    """
+    Set active=false for a list of external_ids.
+    
+    Args:
+        external_ids: List of external_id values to deactivate
+    
+    Returns:
+        Number of successfully deactivated listings
+    """
+    if not external_ids:
+        return 0
+    
+    headers = {
+        "apikey": SUPABASE_SERVICE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal"
+    }
+    
+    deactivated = 0
+    
+    # Process in batches of 100
+    batch_size = 100
+    for i in range(0, len(external_ids), batch_size):
+        batch = external_ids[i:i + batch_size]
+        
+        # Use PATCH with filter to update multiple records
+        # external_id.in.(id1,id2,id3...)
+        ids_param = ",".join(str(eid) for eid in batch)
+        url = f"{SUPABASE_URL}/rest/v1/{TABLE_NAME}?external_id=in.({ids_param})"
+        
+        try:
+            resp = requests.patch(
+                url, 
+                headers=headers, 
+                json={"active": False},
+                timeout=30
+            )
+            if resp.status_code in (200, 204):
+                deactivated += len(batch)
+            else:
+                print(f"    Deactivate batch error: {resp.status_code} - {resp.text[:200]}")
+        except Exception as e:
+            print(f"    Deactivate batch exception: {e}")
+    
+    return deactivated
 
 
 def parse_price(price_str):
@@ -879,7 +1110,7 @@ def scrape_listing(url, listing_type):
             "listing_type": listing_type,
             "url": url,
             "external_id": external_id,
-            "specs": normalize_specs_area(specs),  # Normalize area to m²
+            "specs": normalize_listing_specs(specs),  # Normalize specs (area, beds, baths, etc.)
             "details": details,
             "description": description,
             "images": images,
@@ -930,6 +1161,20 @@ def get_micasasv_listing_urls(base_url, max_listings=None):
     """
     all_urls = []
     
+    # Blacklist: URLs that are not actual property listings (ads, services, etc.)
+    BLACKLIST_PATTERNS = [
+        'sitios-web-inmobiliarios',  # Service ad
+        'diseno-web',
+        'marketing',
+        'publicidad',
+        'servicios',
+        'contacto',
+        'nosotros',
+        'about',
+        'terms',
+        'privacy',
+    ]
+    
     print(f"  Fetching MiCasaSV listings from sitemap...")
     
     # Use the WordPress sitemap to get all listing URLs
@@ -945,6 +1190,13 @@ def get_micasasv_listing_urls(base_url, max_listings=None):
         urls = re.findall(r'<loc>(https://micasasv\.com/listing/[^<]+)</loc>', resp.text)
         
         for url in urls:
+            # Skip blacklisted URLs (non-property content)
+            url_lower = url.lower()
+            is_blacklisted = any(pattern in url_lower for pattern in BLACKLIST_PATTERNS)
+            
+            if is_blacklisted:
+                continue
+                
             if url not in all_urls:
                 all_urls.append(url)
         
@@ -960,6 +1212,7 @@ def get_micasasv_listing_urls(base_url, max_listings=None):
         return all_urls[:max_listings]
     
     return all_urls
+
 
 
 
@@ -1160,7 +1413,7 @@ def scrape_micasasv_listing(url, listing_type):
             "listing_type": listing_type,
             "url": url,
             "external_id": str(external_id),
-            "specs": normalize_specs_area(specs),  # Normalize area to m²
+            "specs": normalize_listing_specs(specs),  # Normalize specs (area, beds, baths, etc.)
             "details": details,
             "description": description,
             "images": images,
@@ -1373,7 +1626,7 @@ def get_realtor_listings_from_page(page_url):
                 "listing_type": listing_type,
                 "url": full_url,
                 "external_id": str(listing_id),
-                "specs": normalize_specs_area(specs),  # Normalize area to m²
+                "specs": normalize_listing_specs(specs),  # Normalize specs (area, beds, baths, etc.)
                 "details": details,
                 "description": description,
                 "images": image_urls,
@@ -1719,40 +1972,121 @@ def scrape_vivolatam_listing(url, listing_type="sale"):
             return None
         
         # Price extraction - look for JSON embedded price first (more accurate)
-        # Pattern: "price":{"sale":{"value":4600000}} or "price":{"rent":{"value":1500}}
+        # Pattern: \"price\":{\"sale\":{\"value\":4600000}} (note: quotes are ESCAPED in HTML)
+        # Rent has extra field: \"rent\":{\"period\":\"month\",\"value\":1800}
         price = None
         raw_html = resp.text
         
-        # Try to find price in embedded JSON data
-        sale_price_match = re.search(r'"price":\s*\{\s*"sale":\s*\{\s*"value":\s*(\d+)', raw_html)
-        rent_price_match = re.search(r'"price":\s*\{\s*"rent":\s*\{\s*"value":\s*(\d+)', raw_html)
+        # Try multiple patterns for embedded JSON data
+        # NOTE: VivoLatam HTML uses ESCAPED quotes like \" not regular "
+        if not price:
+            # Pattern 1: Escaped JSON format (most common in VivoLatam)
+            # Sale: \"sale\":{\"value\":585000}
+            # Rent: \"rent\":{\"period\":\"month\",\"value\":1800}  (note: has period field!)
+            sale_price_match = re.search(r'\\"sale\\":\{\\"value\\":(\d+)', raw_html)
+            # For rent, skip over the "period" field to find "value"
+            rent_price_match = re.search(r'\\"rent\\":\{[^}]*\\"value\\":(\d+)', raw_html)
+            
+            if sale_price_match:
+                price = int(sale_price_match.group(1))
+            elif rent_price_match:
+                price = int(rent_price_match.group(1))
         
-        if sale_price_match:
-            price = int(sale_price_match.group(1))
-        elif rent_price_match:
-            price = int(rent_price_match.group(1))
-        else:
-            # Fallback to traditional regex on visible text (skip per-unit prices)
-            # Match prices >= $1000 to avoid matching "$136 por v2"
-            price_matches = re.findall(r'\$([\d,]+)(?:\.\d{2})?', page_text)
-            for pm in price_matches:
-                cleaned = pm.replace(',', '')
-                if cleaned.isdigit() and int(cleaned) >= 1000:
-                    price = int(cleaned)
-                    break
+        # Pattern 2: Non-escaped JSON (fallback for other formats)
+        if not price:
+            sale_match_alt = re.search(r'"sale"\s*:\s*\{\s*"value"\s*:\s*(\d+)', raw_html)
+            # For rent, use flexible pattern to skip over period field
+            rent_match_alt = re.search(r'"rent"\s*:\s*\{[^}]*"value"\s*:\s*(\d+)', raw_html)
+            
+            if sale_match_alt:
+                price = int(sale_match_alt.group(1))
+            elif rent_match_alt:
+                price = int(rent_match_alt.group(1))
+
+
+        # Fallback to Regex on visible text if no JSON match
+        if not price:
+            # First, check for "Millones" format (e.g., "$1.3 Millones" -> 1300000)
+            # This is common on VivoLatam listings
+            millones_patterns = [
+                r'\$\s*([\d,.]+)\s*(?:millones|millon|mill)',  # $1.3 Millones
+                r'([\d,.]+)\s*(?:millones|millon|mill)\s*(?:de\s*)?(?:dolares|usd|\$)?',  # 1.3 millones de dolares
+            ]
+            for pattern in millones_patterns:
+                match = re.search(pattern, page_text, re.IGNORECASE)
+                if match:
+                    val_str = match.group(1).replace(',', '.')
+                    try:
+                        # Convert "1.3" to 1300000
+                        price = int(float(val_str) * 1000000)
+                        break
+                    except:
+                        pass
+            
+            # Check for "Mil" format (e.g., "$150 Mil" -> 150000)
+            if not price:
+                mil_patterns = [
+                    r'\$\s*([\d,.]+)\s*mil\b',  # $150 Mil
+                    r'([\d,.]+)\s*mil\s*(?:dolares|usd|\$)',  # 150 mil dolares
+                ]
+                for pattern in mil_patterns:
+                    match = re.search(pattern, page_text, re.IGNORECASE)
+                    if match:
+                        val_str = match.group(1).replace(',', '.')
+                        try:
+                            # Convert "150" to 150000
+                            price = int(float(val_str) * 1000)
+                            break
+                        except:
+                            pass
+            
+            # Standard numeric patterns (fallback)
+            if not price:
+                # Patterns to look for price in text
+                # 1. Standard $ format: $ 150,000 or $150.000
+                # 2. USD format: USD 150,000
+                # 3. Label format: Precio: $ 150,000
+                price_patterns = [
+                    r'\$\s*([\d,.]+)',
+                    r'USD\s*([\d,.]+)',
+                    r'US\$\s*([\d,.]+)',
+                    r'Precio\s*[:]?\s*\$\s*([\d,.]+)'
+                ]
+                
+                for pattern in price_patterns:
+                    matches = re.finditer(pattern, page_text, re.IGNORECASE)
+                    for match in matches:
+                        val_str = match.group(1)
+                        # Clean up: remove .00 at end, remove non-digits
+                        cleaned = val_str.strip()
+                        if cleaned.endswith('.00') or cleaned.endswith(',00'):
+                            cleaned = cleaned[:-3]
+                        
+                        # Remove all non-digits to get integer value
+                        digits_only = re.sub(r'[^\d]', '', cleaned)
+                        
+                        if digits_only and digits_only.isdigit():
+                            candidate = int(digits_only)
+                            # Filter out unreasonable values (e.g. "1" or small numbers that might be just noise)
+                            # Property prices usually > 1000 (rent or sale)
+                            if candidate >= 50: # Lowered threshold for rent
+                                price = candidate
+                                break
+                    if price:
+                        break
         
         # Specs from text
         specs = {}
         bedroom_match = re.search(r'(\d+)\s*(?:dormitorio|habitaci)', page_text, re.I)
         bathroom_match = re.search(r'(\d+)\s*(?:baño|bath)', page_text, re.I)
-        area_match = re.search(r'([\d,]+)\s*(?:m2|metros?\s*cuadrados?|m²)', page_text, re.I)
+        area_match = re.search(r'([\d.,]+)\s*(m2|metros?\s*cuadrados?|m²|ft2|sqft|sq\s*ft|pies?\s*cuadrados?|v2|varas?\s*cuadradas?|varas?)', page_text, re.I)
         
         if bedroom_match:
             specs["habitaciones"] = bedroom_match.group(1)
         if bathroom_match:
             specs["banos"] = bathroom_match.group(1)
         if area_match:
-            specs["area"] = f"{area_match.group(1)} m²"
+            specs["area"] = f"{area_match.group(1)} {area_match.group(2)}"
         
         # Description - look for content after "Descripción" heading
         description = ""
@@ -1817,7 +2151,7 @@ def scrape_vivolatam_listing(url, listing_type="sale"):
             "listing_type": listing_type,
             "url": url,
             "external_id": str(external_id),
-            "specs": normalize_specs_area(specs),  # Normalize area to m²
+            "specs": normalize_listing_specs(specs),  # Normalize specs (area, beds, baths, etc.)
             "details": {},
             "description": remove_emojis(description) if description else "",
             "images": images,
@@ -1885,7 +2219,7 @@ def main_vivolatam(limit=None, url_file=None):
     return all_listings, sale_data, rent_data
 
 
-def main(encuentra24=True, micasasv=False, realtor=False, vivolatam=False, limit=None, vivolatam_urls=None):
+def main(encuentra24=True, micasasv=False, realtor=False, vivolatam=False, limit=None, vivolatam_urls=None, skip_validation=False):
     """
     Main scraper function that orchestrates scraping from multiple sources.
     
@@ -1896,16 +2230,26 @@ def main(encuentra24=True, micasasv=False, realtor=False, vivolatam=False, limit
         vivolatam: If True, scrape from Vivo Latam
         limit: Optional max number of listings to scrape (per source if both enabled)
         vivolatam_urls: Path to file containing Vivo Latam URLs to scrape
+        skip_validation: If True, skip the validation phase (checking for inactive listings)
     """
+    # Record start time for validation phase (to identify stale listings)
+    run_start_time = datetime.now().isoformat()
+    print(f"Scrape run started at: {run_start_time}")
+    
     all_listings = []
     total_sale = 0
     total_rent = 0
     
+    # Track which sources we're scraping (for targeted validation)
+    active_sources = []
+    
     # --- ENCUENTRA24 ---
     if encuentra24:
+        active_sources.append("Encuentra24")
         print("\n" + "="*60)
         print("SCRAPING SOURCE: Encuentra24")
         print("="*60)
+
         listings, sale_data, rent_data = main_encuentra24(limit)
         all_listings.extend(listings)
         total_sale += len(sale_data)
@@ -1913,6 +2257,7 @@ def main(encuentra24=True, micasasv=False, realtor=False, vivolatam=False, limit
     
     # --- MICASASV ---
     if micasasv:
+        active_sources.append("MiCasaSV")
         print("\n" + "="*60)
         print("SCRAPING SOURCE: MiCasaSV")
         print("="*60)
@@ -1923,6 +2268,7 @@ def main(encuentra24=True, micasasv=False, realtor=False, vivolatam=False, limit
     
     # --- REALTOR.COM ---
     if realtor:
+        active_sources.append("Realtor")
         print("\n" + "="*60)
         print("SCRAPING SOURCE: Realtor.com International")
         print("="*60)
@@ -1933,6 +2279,7 @@ def main(encuentra24=True, micasasv=False, realtor=False, vivolatam=False, limit
     
     # --- VIVOLATAM ---
     if vivolatam:
+        active_sources.append("VivoLatam")
         print("\n" + "="*60)
         print("SCRAPING SOURCE: Vivo Latam")
         print("="*60)
@@ -1951,6 +2298,17 @@ def main(encuentra24=True, micasasv=False, realtor=False, vivolatam=False, limit
     os.makedirs(DATA_DIR, exist_ok=True)
     with open(output_file, "w", encoding="utf-8") as f:
         json.dump(all_listings, f, ensure_ascii=False, indent=2)
+
+    # --- VALIDATION PHASE: Check for inactive listings ---
+    validated_count = 0
+    deactivated_count = 0
+    if not skip_validation:
+        validated_count, deactivated_count = validate_and_deactivate_listings(
+            run_start_time, 
+            sources=active_sources if active_sources else None
+        )
+    else:
+        print("\n=== Skipping validation phase (--skip-validation flag) ===")
 
     # --- REFRESH MATERIALIZED VIEW ---
     print("\n=== Refreshing Materialized View ===")
@@ -1978,6 +2336,8 @@ def main(encuentra24=True, micasasv=False, realtor=False, vivolatam=False, limit
     print(f"  - Sale: {total_sale}")
     print(f"  - Rent: {total_rent}")
     print(f"Supabase: {success} inserted, {errors} errors")
+    if not skip_validation:
+        print(f"Validation: {validated_count} checked, {deactivated_count} deactivated")
     print(f"JSON backup: {output_file}")
 
 
@@ -2017,6 +2377,11 @@ if __name__ == "__main__":
         default=None,
         help="Optional: Limit total number of listings to scrape per source (e.g., 10, 30, 100). If not set, scrapes all."
     )
+    parser.add_argument(
+        "--skip-validation",
+        action="store_true",
+        help="Skip the validation phase (checking for inactive/removed listings)"
+    )
     args = parser.parse_args()
     
     # Get source flags
@@ -2039,5 +2404,6 @@ if __name__ == "__main__":
         realtor=realtor, 
         vivolatam=vivolatam,
         limit=args.limit,
-        vivolatam_urls=args.vivolatam_urls
+        vivolatam_urls=args.vivolatam_urls,
+        skip_validation=args.skip_validation
     )

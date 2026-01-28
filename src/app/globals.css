@@ -128,10 +128,10 @@ body {
 .hero-search {
   position: relative;
   width: 100%;
-  height: 500px;
-  background-image: url('/images/hero-bg.jpg');
+  height: 520px;
+  background-image: url('/jardin-ca-01.webp');
   background-size: cover;
-  background-position: center;
+  background-position: center 40%;
   background-repeat: no-repeat;
   display: flex;
   align-items: center;
@@ -140,13 +140,30 @@ body {
   overflow: hidden;
 }
 
+.hero-search-slogan {
+  display: inline-block;
+  font-size: clamp(1.1rem, 2.5vw, 1.5rem);
+  font-weight: 600;
+  color: #ffffff;
+  letter-spacing: 0.02em;
+  margin-top: 1.5rem;
+  margin-bottom: 0;
+  padding: 0.5rem 1.25rem;
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.85) 0%, rgba(59, 130, 246, 0.75) 100%);
+  border-radius: 999px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  text-shadow: none;
+}
+
 .hero-search-overlay {
   position: absolute;
   inset: 0;
   background: linear-gradient(to bottom,
-      rgba(0, 0, 0, 0.5) 0%,
-      rgba(0, 0, 0, 0.4) 50%,
-      rgba(0, 0, 0, 0.6) 100%);
+      rgba(15, 23, 42, 0.55) 0%,
+      rgba(15, 23, 42, 0.45) 50%,
+      rgba(15, 23, 42, 0.65) 100%);
   z-index: 1;
 }
 
@@ -154,19 +171,19 @@ body {
   position: relative;
   z-index: 2;
   text-align: center;
-  max-width: 700px;
-  padding: 0 1rem;
+  max-width: 1200px;
+  padding: 0 1.5rem;
   width: 100%;
 }
 
 .hero-search-title {
-  font-size: clamp(2.5rem, 5vw, 3.5rem);
-  font-weight: 700;
-  color: white;
-  letter-spacing: -0.02em;
-  line-height: 1.1;
-  margin-bottom: 2rem;
-  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  font-size: clamp(2rem, 4.5vw, 3rem);
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  margin-bottom: 1rem;
+  text-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
 }
 
 .hero-search-form {

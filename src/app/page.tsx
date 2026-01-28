@@ -208,12 +208,8 @@ export default function Home() {
 
               <div className="mb-8">
                 <HomeHeader
-                  period={period}
                   view={view}
-                  orderBy={orderBy}
-                  onPeriodChange={setPeriod}
                   onViewChange={setView}
-                  onOrderChange={setOrderBy}
                 />
               </div>
 
