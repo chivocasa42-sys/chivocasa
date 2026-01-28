@@ -21,10 +21,10 @@ function getArea(specs: ListingSpecs | undefined | null): number {
 
 function getImageUrl(images: string[] | null | undefined): string {
     if (!images || images.length === 0) {
-        return 'https://via.placeholder.com/600x400?text=Sin+Imagen';
+        return '/placeholder.webp';
     }
     const firstImage = Array.isArray(images) ? images[0] : images;
-    return firstImage || 'https://via.placeholder.com/600x400?text=Sin+Imagen';
+    return firstImage || '/placeholder.webp';
 }
 
 // Get location-based tags from the listing
@@ -63,7 +63,7 @@ export default function ListingCard({ listing, onClick }: ListingCardProps) {
                     src={getImageUrl(listing.images)}
                     alt="Propiedad"
                     className="w-full h-full group-hover:scale-105 transition-transform duration-500"
-                    placeholderSrc="https://via.placeholder.com/600x400?text=Sin+Imagen"
+                    placeholderSrc="/placeholder.webp"
                 />
 
                 {/* Top-left Label */}

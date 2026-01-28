@@ -45,16 +45,31 @@ type FilterType = 'all' | 'sale' | 'rent';
 
 const PAGE_SIZE = 24;
 
+// Map URL filter to API filter type
+function filterToType(filter: string | undefined): FilterType {
+    if (filter === 'venta') return 'sale';
+    if (filter === 'alquiler') return 'rent';
+    return 'all';
+}
+
 export default function TagPage() {
     const params = useParams();
     const slug = params.tag as string;
-    const [tagName, setTagName] = useState<string>('');
 
+    // Get filter from URL path
+    const filterParam = params.filter as string[] | undefined;
+    const filterSlug = filterParam?.[0];
+    const filter: FilterType = filterToType(filterSlug);
+
+
+
+
+
+    const [tagName, setTagName] = useState<string>('');
     const [listings, setListings] = useState<CardListing[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isLoadingMore, setIsLoadingMore] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [filter, setFilter] = useState<FilterType>('all');
     const [selectedListingId, setSelectedListingId] = useState<string | number | null>(null);
     const loadMoreRef = useRef<HTMLDivElement>(null);
     const [pagination, setPagination] = useState<PaginationState>({
@@ -145,13 +160,7 @@ export default function TagPage() {
         return () => observer.disconnect();
     }, [handleLoadMore, pagination.hasMore, isLoadingMore, isLoading]);
 
-    // Handle filter change - reset and reload
-    const handleFilterChange = (newFilter: FilterType) => {
-        if (newFilter === filter) return;
-        setFilter(newFilter);
-        setListings([]);
-        setPagination({ total: 0, limit: PAGE_SIZE, offset: 0, hasMore: false });
-    };
+
 
     // Convert CardListing to format expected by ListingCard
     const listingsForCard = useMemo(() => {
@@ -212,24 +221,24 @@ export default function TagPage() {
 
                     {/* Filters */}
                     <div className="pill-group">
-                        <button
-                            onClick={() => handleFilterChange('all')}
+                        <Link
+                            href={`/tag/${slug}`}
                             className={`pill-btn ${filter === 'all' ? 'active' : ''}`}
                         >
                             Todos
-                        </button>
-                        <button
-                            onClick={() => handleFilterChange('sale')}
+                        </Link>
+                        <Link
+                            href={`/tag/${slug}/venta`}
                             className={`pill-btn ${filter === 'sale' ? 'active' : ''}`}
                         >
                             Venta
-                        </button>
-                        <button
-                            onClick={() => handleFilterChange('rent')}
+                        </Link>
+                        <Link
+                            href={`/tag/${slug}/alquiler`}
                             className={`pill-btn ${filter === 'rent' ? 'active' : ''}`}
                         >
                             Alquiler
-                        </button>
+                        </Link>
                     </div>
                 </div>
 

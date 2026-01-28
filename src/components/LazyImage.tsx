@@ -15,7 +15,7 @@ export default function LazyImage({
     src,
     alt,
     className = '',
-    placeholderSrc = 'https://via.placeholder.com/400x200?text=Sin+Imagen',
+    placeholderSrc = '/placeholder.webp',
     onError,
 }: LazyImageProps) {
     const [imageSrc, setImageSrc] = useState<string | null>(null);
