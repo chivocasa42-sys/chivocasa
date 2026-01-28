@@ -26,6 +26,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # Import localization plugin for generating searchable tags
 from localization_plugin import build_destination_queries
 
+# Import area normalizer for standardizing area units to m²
+from area_normalizer import normalize_specs_area
+
 # ============== SUPABASE CONFIG ==============
 SUPABASE_URL = "https://zvamupbxzuxdgvzgbssn.supabase.co"
 SUPABASE_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp2YW11cGJ4enV4ZGd2emdic3NuIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTA5MDMwNSwiZXhwIjoyMDg0NjY2MzA1fQ.VfONseJg19pMEymrc6FbdEQJUWxTzJdNlVTboAaRgEs"
@@ -876,7 +879,7 @@ def scrape_listing(url, listing_type):
             "listing_type": listing_type,
             "url": url,
             "external_id": external_id,
-            "specs": specs,
+            "specs": normalize_specs_area(specs),  # Normalize area to m²
             "details": details,
             "description": description,
             "images": images,
@@ -1157,7 +1160,7 @@ def scrape_micasasv_listing(url, listing_type):
             "listing_type": listing_type,
             "url": url,
             "external_id": str(external_id),
-            "specs": specs,
+            "specs": normalize_specs_area(specs),  # Normalize area to m²
             "details": details,
             "description": description,
             "images": images,
@@ -1370,7 +1373,7 @@ def get_realtor_listings_from_page(page_url):
                 "listing_type": listing_type,
                 "url": full_url,
                 "external_id": str(listing_id),
-                "specs": specs,
+                "specs": normalize_specs_area(specs),  # Normalize area to m²
                 "details": details,
                 "description": description,
                 "images": image_urls,
@@ -1814,7 +1817,7 @@ def scrape_vivolatam_listing(url, listing_type="sale"):
             "listing_type": listing_type,
             "url": url,
             "external_id": str(external_id),
-            "specs": specs,
+            "specs": normalize_specs_area(specs),  # Normalize area to m²
             "details": {},
             "description": remove_emojis(description) if description else "",
             "images": images,
