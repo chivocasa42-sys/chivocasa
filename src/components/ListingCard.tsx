@@ -15,8 +15,33 @@ function formatPrice(price: number): string {
 
 function getArea(specs: ListingSpecs | undefined | null): number {
     if (!specs) return 0;
-    const areaStr = specs['Área construida (m²)'] || specs['area'] || specs['m2'] || specs['metros'] || '0';
-    return parseFloat(String(areaStr).replace(/[^\d.]/g, '')) || 0;
+
+    // Priority: area_m2 (normalized) > specific fields > generic area
+    // Check normalized area first (set by area_normalizer.py)
+    if (specs.area_m2 && typeof specs.area_m2 === 'number') {
+        return specs.area_m2;
+    }
+
+    // Check various area field names
+    const areaFields = [
+        'Área construida (m²)',
+        'area',
+        'terreno',          // Land size from Realtor
+        'Área del terreno',
+        'm2',
+        'metros',
+        'habitaciones',     // Sometimes area is here
+    ];
+
+    for (const field of areaFields) {
+        const value = specs[field];
+        if (value) {
+            const numValue = parseFloat(String(value).replace(/[^\d.]/g, ''));
+            if (numValue > 0) return numValue;
+        }
+    }
+
+    return 0;
 }
 
 function getImageUrl(images: string[] | null | undefined): string {
