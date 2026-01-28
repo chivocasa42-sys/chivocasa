@@ -36,8 +36,22 @@ function formatPrice(price: number): string {
 
 function getArea(specs: Record<string, string | number | undefined> | null | undefined): number {
     if (!specs) return 0;
-    const areaStr = specs['Área construida (m²)'] || specs['area'] || specs['m2'] || specs['metros'] || '0';
-    return parseFloat(String(areaStr).replace(/[^\d.]/g, '')) || 0;
+
+    // Priority: area_m2 (normalized) > specific fields > generic area
+    if (specs.area_m2 && typeof specs.area_m2 === 'number') {
+        return specs.area_m2;
+    }
+
+    const areaFields = ['Área construida (m²)', 'area', 'terreno', 'Área del terreno', 'm2', 'metros'];
+    for (const field of areaFields) {
+        const value = specs[field];
+        if (value) {
+            const numValue = parseFloat(String(value).replace(/[^\d.]/g, ''));
+            if (numValue > 0) return numValue;
+        }
+    }
+
+    return 0;
 }
 
 // Use location tags from the listing

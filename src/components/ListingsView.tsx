@@ -14,8 +14,22 @@ interface ListingsViewProps {
 
 function getArea(listing: Listing): number {
     const specs = listing.specs || {};
-    const areaStr = specs['Área construida (m²)'] || specs['area'] || specs['m2'] || specs['metros'] || '0';
-    return parseFloat(String(areaStr).replace(/[^\d.]/g, '')) || 0;
+
+    // Priority: area_m2 (normalized) > specific fields > generic area
+    if (specs.area_m2 && typeof specs.area_m2 === 'number') {
+        return specs.area_m2;
+    }
+
+    const areaFields = ['Área construida (m²)', 'area', 'terreno', 'Área del terreno', 'm2', 'metros'];
+    for (const field of areaFields) {
+        const value = specs[field];
+        if (value) {
+            const numValue = parseFloat(String(value).replace(/[^\d.]/g, ''));
+            if (numValue > 0) return numValue;
+        }
+    }
+
+    return 0;
 }
 
 type SortOption = 'price-asc' | 'price-desc' | 'rooms-desc' | 'rooms-asc' | 'ppm2-asc' | 'ppm2-desc';
