@@ -1761,100 +1761,109 @@ body {
   margin: 0 0 20px;
 }
 
-/* Oferta Section */
+/* Oferta Section - PREMIUM LEGIBILITY */
 .dept-card__oferta {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
+  padding-top: 4px;
 }
 
 .dept-card__oferta-label {
-  font-size: 16px;
-  font-weight: 400;
+  font-size: 15px;
+  font-weight: 500;
   font-style: italic;
-  color: #64748b;
-  padding-left: 4px;
+  color: #475569;
+  padding-left: 2px;
+  letter-spacing: 0.01em;
 }
 
-/* Pills Row */
+/* Pills Row - More breathing room */
 .dept-card__pills-row {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 16px;
+  justify-content: flex-start;
+  gap: 20px;
 }
 
-/* Pill */
+/* Pill - Enhanced definition */
 .dept-card__pill {
   display: flex;
   align-items: center;
   background: #ffffff;
-  border-radius: 999px;
-  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  border: 1.5px solid #cbd5e1;
   overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.06),
+    0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 .dept-card__pill-label {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  padding: 8px 12px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  padding: 10px 14px;
   text-transform: uppercase;
 }
 
 .dept-card__pill-label--venta {
-  background: #bfdbfe;
-  color: #1e40af;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: #ffffff;
 }
 
 .dept-card__pill-label--renta {
-  background: #d1d5db;
-  color: #374151;
+  background: linear-gradient(135deg, #64748b 0%, #475569 100%);
+  color: #ffffff;
 }
 
 .dept-card__pill-value {
-  font-size: 16px;
-  font-weight: 700;
-  color: #1e293b;
-  padding: 6px 14px 6px 10px;
+  font-size: 18px;
+  font-weight: 800;
+  color: #0f172a;
+  padding: 8px 16px 8px 12px;
+  letter-spacing: -0.01em;
 }
 
-/* Vertical Divider between pills */
+/* Vertical Divider between pills - Stronger */
 .dept-card__pill-divider {
-  width: 1px;
-  height: 24px;
-  background: #e2e8f0;
+  width: 2px;
+  height: 32px;
+  background: linear-gradient(180deg, transparent 0%, #cbd5e1 20%, #cbd5e1 80%, transparent 100%);
+  border-radius: 999px;
 }
 
-/* Rango Pill */
+/* Rango Pill - Premium with dominant value */
 .dept-card__rango {
   display: flex;
   align-items: center;
   justify-content: center;
-  align-self: center;
+  align-self: flex-start;
   background: #ffffff;
-  border-radius: 999px;
-  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  border: 1.5px solid #cbd5e1;
   overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.06),
+    0 1px 2px rgba(0, 0, 0, 0.04);
+  margin-top: 4px;
 }
 
 .dept-card__rango-label {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  padding: 8px 12px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  padding: 10px 14px;
   text-transform: uppercase;
-  background: #e2e8f0;
-  color: #64748b;
+  background: linear-gradient(135deg, #94a3b8 0%, #64748b 100%);
+  color: #ffffff;
 }
 
 .dept-card__rango-value {
-  font-size: 14px;
-  font-weight: 600;
-  color: #1e293b;
-  padding: 6px 14px 6px 10px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+  padding: 8px 16px 8px 12px;
   letter-spacing: 0.01em;
 }
 
@@ -1864,8 +1873,8 @@ body {
 
 @media (max-width: 479px) {
   .dept-card {
-    padding: 20px 18px 16px;
-    min-height: 280px;
+    padding: 20px 16px 18px;
+    min-height: 300px;
     border-radius: 16px;
   }
 
@@ -1878,7 +1887,7 @@ body {
 
   .dept-card__header {
     padding-top: 12px;
-    padding-bottom: 18px;
+    padding-bottom: 16px;
   }
 
   .dept-card__label {
@@ -1886,39 +1895,56 @@ body {
   }
 
   .dept-card__price {
-    font-size: 32px;
+    font-size: 30px;
   }
 
   .dept-card__name {
-    font-size: 18px;
+    font-size: 17px;
+  }
+
+  .dept-card__oferta {
+    gap: 12px;
   }
 
   .dept-card__oferta-label {
-    font-size: 14px;
+    font-size: 13px;
   }
 
   .dept-card__pills-row {
-    gap: 10px;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .dept-card__pill {
+    border-radius: 8px;
   }
 
   .dept-card__pill-label {
-    font-size: 10px;
-    padding: 6px 10px;
+    font-size: 9px;
+    padding: 8px 10px;
   }
 
   .dept-card__pill-value {
-    font-size: 14px;
-    padding: 5px 10px 5px 8px;
+    font-size: 15px;
+    padding: 6px 12px 6px 8px;
+  }
+
+  .dept-card__pill-divider {
+    height: 28px;
+  }
+
+  .dept-card__rango {
+    border-radius: 8px;
   }
 
   .dept-card__rango-label {
-    font-size: 10px;
-    padding: 6px 10px;
+    font-size: 9px;
+    padding: 8px 10px;
   }
 
   .dept-card__rango-value {
-    font-size: 12px;
-    padding: 5px 10px 5px 8px;
+    font-size: 13px;
+    padding: 6px 12px 6px 8px;
   }
 }
 
