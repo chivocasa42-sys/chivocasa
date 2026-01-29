@@ -15,9 +15,11 @@ interface ListingsViewProps {
 function getArea(listing: Listing): number {
     const specs = listing.specs || {};
 
-    // Priority: area_m2 (normalized) > specific fields > generic area
-    if (specs.area_m2 && typeof specs.area_m2 === 'number') {
-        return specs.area_m2;
+    // Priority: area_m2 (normalized by scraper) > fallback fields
+    // area_m2 can be stored as string or number
+    if (specs.area_m2) {
+        const numValue = parseFloat(String(specs.area_m2));
+        if (numValue > 0) return numValue;
     }
 
     const areaFields = ['Área construida (m²)', 'area', 'terreno', 'Área del terreno', 'm2', 'metros'];

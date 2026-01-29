@@ -2,6 +2,7 @@
 
 import { Listing, ListingSpecs, ListingLocation } from '@/types/listing';
 import LazyImage from './LazyImage';
+import Link from 'next/link';
 
 interface ListingCardProps {
     listing: Listing;
@@ -16,10 +17,11 @@ function formatPrice(price: number): string {
 function getArea(specs: ListingSpecs | undefined | null): number {
     if (!specs) return 0;
 
-    // Priority: area_m2 (normalized) > specific fields > generic area
-    // Check normalized area first (set by area_normalizer.py)
-    if (specs.area_m2 && typeof specs.area_m2 === 'number') {
-        return specs.area_m2;
+    // Priority: area_m2 (normalized by scraper) > fallback fields
+    // area_m2 can be stored as string or number
+    if (specs.area_m2) {
+        const numValue = parseFloat(String(specs.area_m2));
+        if (numValue > 0) return numValue;
     }
 
     // Check various area field names
@@ -140,12 +142,14 @@ export default function ListingCard({ listing, onClick }: ListingCardProps) {
                 {/* Location Tags */}
                 <div className="flex flex-wrap gap-1.5 mb-3 mt-2">
                     {locationTags.map((tag, idx) => (
-                        <span
+                        <Link
                             key={idx}
-                            className="bg-slate-100 text-slate-600 text-[11px] font-medium px-2 py-0.5 rounded"
+                            href={`/tag/${tag.toLowerCase().replace(/\s+/g, '-')}`}
+                            className="bg-slate-100 text-slate-600 text-[11px] font-medium px-2 py-0.5 rounded hover:bg-blue-100 hover:text-blue-700 transition-colors"
+                            onClick={(e) => e.stopPropagation()}
                         >
                             {tag}
-                        </span>
+                        </Link>
                     ))}
                 </div>
             </div>

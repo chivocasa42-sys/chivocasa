@@ -43,6 +43,7 @@ interface PaginationState {
 }
 
 type FilterType = 'all' | 'sale' | 'rent';
+type SortOption = 'recent' | 'price_asc' | 'price_desc';
 
 const PAGE_SIZE = 24;
 
@@ -71,6 +72,7 @@ export default function DepartmentPage() {
     const filter: FilterType = tipoToFilter(filterSlug);
 
     const [listings, setListings] = useState<CardListing[]>([]);
+    const [sortBy, setSortBy] = useState<SortOption>('price_asc');
     const [isLoading, setIsLoading] = useState(true);
     const [isLoadingMore, setIsLoadingMore] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -88,9 +90,9 @@ export default function DepartmentPage() {
     const [bestRent, setBestRent] = useState<TopScoredListing | null>(null);
 
     // Fetch listings with pagination
-    const fetchListings = useCallback(async (offset: number, type: FilterType, append: boolean = false) => {
+    const fetchListings = useCallback(async (offset: number, type: FilterType, sort: SortOption, append: boolean = false) => {
         const typeParam = type === 'all' ? '' : `&type=${type}`;
-        const res = await fetch(`/api/department/${slug}?limit=${PAGE_SIZE}&offset=${offset}${typeParam}`);
+        const res = await fetch(`/api/department/${slug}?limit=${PAGE_SIZE}&offset=${offset}${typeParam}&sort=${sort}`);
 
         if (!res.ok) {
             if (res.status === 404) {
@@ -120,7 +122,7 @@ export default function DepartmentPage() {
             try {
                 // Fetch listings and best opportunities in parallel
                 const [, topScoredRes] = await Promise.all([
-                    fetchListings(0, filter),
+                    fetchListings(0, filter, sortBy),
                     fetch(`/api/department/${slug}/top-scored?type=all&limit=1`)
                 ]);
 
@@ -138,7 +140,7 @@ export default function DepartmentPage() {
         }
 
         if (slug) fetchData();
-    }, [slug, fetchListings, filter]);
+    }, [slug, fetchListings, filter, sortBy]);
 
     // Load more handler
     const handleLoadMore = useCallback(async () => {
@@ -147,13 +149,13 @@ export default function DepartmentPage() {
         setIsLoadingMore(true);
         try {
             const newOffset = pagination.offset + PAGE_SIZE;
-            await fetchListings(newOffset, filter, true);
+            await fetchListings(newOffset, filter, sortBy, true);
         } catch (err) {
             console.error('Error loading more:', err);
         } finally {
             setIsLoadingMore(false);
         }
-    }, [isLoadingMore, pagination.hasMore, pagination.offset, filter, fetchListings]);
+    }, [isLoadingMore, pagination.hasMore, pagination.offset, filter, sortBy, fetchListings]);
 
     // Intersection Observer for infinite scroll
     useEffect(() => {
@@ -235,26 +237,37 @@ export default function DepartmentPage() {
                         </p>
                     </div>
 
-                    {/* Filter Links - SEO friendly navigation */}
-                    <div className="pill-group">
-                        <Link
-                            href={`/${slug}`}
-                            className={`pill-btn ${filter === 'all' ? 'active' : ''}`}
+                    {/* Filter Links and Sort - SEO friendly navigation */}
+                    <div className="flex flex-wrap items-center gap-4">
+                        <div className="pill-group">
+                            <Link
+                                href={`/${slug}`}
+                                className={`pill-btn ${filter === 'all' ? 'active' : ''}`}
+                            >
+                                Todos
+                            </Link>
+                            <Link
+                                href={`/${slug}/venta`}
+                                className={`pill-btn ${filter === 'sale' ? 'active' : ''}`}
+                            >
+                                Venta
+                            </Link>
+                            <Link
+                                href={`/${slug}/renta`}
+                                className={`pill-btn ${filter === 'rent' ? 'active' : ''}`}
+                            >
+                                Renta
+                            </Link>
+                        </div>
+                        <select
+                            value={sortBy}
+                            onChange={(e) => setSortBy(e.target.value as SortOption)}
+                            className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                         >
-                            Todos
-                        </Link>
-                        <Link
-                            href={`/${slug}/venta`}
-                            className={`pill-btn ${filter === 'sale' ? 'active' : ''}`}
-                        >
-                            Venta
-                        </Link>
-                        <Link
-                            href={`/${slug}/renta`}
-                            className={`pill-btn ${filter === 'rent' ? 'active' : ''}`}
-                        >
-                            Renta
-                        </Link>
+                            <option value="price_asc">Precio: menor a mayor</option>
+                            <option value="price_desc">Precio: mayor a menor</option>
+                            <option value="recent">Más recientes</option>
+                        </select>
                     </div>
                 </div>
 

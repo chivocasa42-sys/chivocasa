@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import LazyImage from './LazyImage';
+import Link from 'next/link';
 
 interface ListingModalProps {
     externalId: string | number; // Can be string to prevent precision loss
@@ -37,11 +38,14 @@ function formatPrice(price: number): string {
 function getArea(specs: Record<string, string | number | undefined> | null | undefined): number {
     if (!specs) return 0;
 
-    // Priority: area_m2 (normalized) > specific fields > generic area
-    if (specs.area_m2 && typeof specs.area_m2 === 'number') {
-        return specs.area_m2;
+    // Priority: area_m2 (normalized by scraper) > fallback fields
+    // area_m2 can be stored as string or number
+    if (specs.area_m2) {
+        const numValue = parseFloat(String(specs.area_m2));
+        if (numValue > 0) return numValue;
     }
 
+    // Fallback for legacy data
     const areaFields = ['Área construida (m²)', 'area', 'terreno', 'Área del terreno', 'm2', 'metros'];
     for (const field of areaFields) {
         const value = specs[field];
@@ -286,12 +290,13 @@ export default function ListingModal({ externalId, onClose }: ListingModalProps)
                             {tags.length > 0 && (
                                 <div className="flex flex-wrap gap-2 mb-4">
                                     {tags.map((tag, idx) => (
-                                        <span
+                                        <Link
                                             key={idx}
-                                            className="bg-slate-100 text-slate-700 text-sm font-medium px-3 py-1 rounded-lg"
+                                            href={`/tag/${tag.toLowerCase().replace(/\s+/g, '-')}`}
+                                            className="bg-slate-100 text-slate-700 text-sm font-medium px-3 py-1 rounded-lg hover:bg-blue-100 hover:text-blue-700 transition-colors"
                                         >
                                             {tag}
-                                        </span>
+                                        </Link>
                                     ))}
                                 </div>
                             )}

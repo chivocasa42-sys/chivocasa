@@ -58,7 +58,8 @@ BEGIN
 
     NULLIF(regexp_replace(f.specs->>'bedrooms', '[^0-9.]', '', 'g'), '')::numeric::int AS bedrooms,
     NULLIF(regexp_replace(f.specs->>'bathrooms', '[^0-9.]', '', 'g'), '')::numeric AS bathrooms,
-    NULLIF(regexp_replace(f.specs->>'Área construida (m²)', '[^0-9.]', '', 'g'), '')::numeric AS area,
+    -- Use normalized area_m2 key, strip non-numeric chars in case of legacy "200.0 m²" format
+    NULLIF(regexp_replace(f.specs->>'area_m2', '[^0-9.]', '', 'g'), '')::numeric AS area,
 
     f.location->>'municipio_detectado' AS municipio,
 

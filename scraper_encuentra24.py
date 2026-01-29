@@ -266,7 +266,16 @@ def check_listing_still_active(url, source):
         'vendido', 'vendida', 'sold', 'no disponible', 'not available',
         'expirado', 'expired', 'eliminado', 'deleted', 'removed',
         'listing not found', 'no existe', 'does not exist',
-        'página no encontrada', 'page not found', '404'
+        'página no encontrada', 'page not found', '404',
+        'desactivado'  # Added for Encuentra24
+    ]
+    
+    # Exact phrases that definitely indicate inactive (Encuentra24 specific)
+    INACTIVE_PHRASES = [
+        'este anuncio esta desactivado o expirado',
+        'este anuncio está desactivado o expirado',
+        'anuncio desactivado',
+        'anuncio expirado',
     ]
     
     headers = {
@@ -294,6 +303,13 @@ def check_listing_still_active(url, source):
         
         # Check page content for inactive indicators
         page_text = resp.text.lower()
+        
+        # Check for exact inactive phrases first (most reliable)
+        for phrase in INACTIVE_PHRASES:
+            if phrase in page_text:
+                return False, f"Page contains '{phrase}'"
+        
+        # Check for keywords in title or h1
         for keyword in INACTIVE_KEYWORDS:
             if keyword in page_text[:5000]:  # Check first 5KB for performance
                 # Make sure it's prominent (in title or main content)
@@ -448,6 +464,97 @@ def parse_price(price_str):
         return float(cleaned)
     except:
         return None
+
+
+def correct_listing_type(listing_type, title, description, price):
+    """
+    Correct listing_type based on content analysis.
+    Users sometimes list sale properties in the rent section and vice versa.
+    
+    Detection heuristics:
+    1. Strong sale keywords: "VENDO", "VENTA", "EN VENTA", "SE VENDE"
+    2. Strong rent keywords: "ALQUILO", "RENTA", "ALQUILER", "MENSUAL"
+    3. Price heuristics:
+       - Sale prices are typically > $50,000 (for most properties)
+       - Rent prices are typically < $5,000/month
+    
+    Args:
+        listing_type: Current listing_type ('sale' or 'rent')
+        title: Listing title
+        description: Listing description
+        price: Parsed price (float)
+        
+    Returns:
+        Corrected listing_type ('sale' or 'rent')
+    """
+    if not title and not description:
+        return listing_type
+    
+    # Combine title and description for analysis (uppercase for matching)
+    text = f"{title or ''} {description or ''}".upper()
+    
+    # Strong sale indicators
+    sale_keywords = [
+        r'\bVENDO\b',
+        r'\bVENTA\b', 
+        r'\bEN VENTA\b',
+        r'\bSE VENDE\b',
+        r'\bVENDER\b',
+        r'\bPRECIO DE VENTA\b',
+    ]
+    
+    # Strong rent indicators
+    rent_keywords = [
+        r'\bALQUILO\b',
+        r'\bALQUILER\b',
+        r'\bRENTA\b',
+        r'\bEN RENTA\b',
+        r'\bSE ALQUILA\b',
+        r'\bMENSUAL\b',
+        r'\bPOR MES\b',
+        r'\b/MES\b',
+    ]
+    
+    # Count keyword matches
+    sale_matches = sum(1 for pattern in sale_keywords if re.search(pattern, text))
+    rent_matches = sum(1 for pattern in rent_keywords if re.search(pattern, text))
+    
+    # Price-based heuristics (in USD)
+    price_suggests_sale = False
+    price_suggests_rent = False
+    
+    if price:
+        # Very high prices (>$50,000) are almost always sales
+        if price > 50000:
+            price_suggests_sale = True
+        # Very low prices (<$500) could be rent
+        elif price < 500:
+            price_suggests_rent = True
+        # Mid-range ($500-$5000) is ambiguous, rely on keywords
+        elif price < 5000:
+            price_suggests_rent = True if rent_matches > sale_matches else False
+    
+    # Decision logic
+    original_type = listing_type
+    corrected_type = listing_type
+    
+    if listing_type == 'rent':
+        # Currently marked as rent - check if it should be sale
+        if sale_matches > rent_matches and (sale_matches >= 2 or price_suggests_sale):
+            corrected_type = 'sale'
+        elif sale_matches > 0 and price_suggests_sale:
+            corrected_type = 'sale'
+    elif listing_type == 'sale':
+        # Currently marked as sale - check if it should be rent
+        if rent_matches > sale_matches and (rent_matches >= 2 or price_suggests_rent):
+            corrected_type = 'rent'
+        elif rent_matches > 0 and price_suggests_rent and price and price < 5000:
+            corrected_type = 'rent'
+    
+    if corrected_type != original_type:
+        print(f"    ⚠️ Corrected listing_type: {original_type} → {corrected_type} (sale_kw={sale_matches}, rent_kw={rent_matches}, price=${price})")
+    
+    return corrected_type
 
 
 def generate_location_tags(listing):
@@ -1247,11 +1354,10 @@ def scrape_listing(url, listing_type):
 
 
 
-        # Price-based listing type adjustment:
-        # If marked as sale but price < $1000, it's likely a rent listing
+        # Correct listing_type based on content analysis (title, description, price)
+        # Users sometimes list sale properties in the rent section and vice versa
         price_value = parse_price(price)
-        if listing_type == "sale" and price_value and price_value < 1000:
-            listing_type = "rent"
+        listing_type = correct_listing_type(listing_type, title, description, price_value)
 
         # Detect municipality from location, description and title
         municipio_info = detect_municipio(location, description, title)
@@ -1622,11 +1728,10 @@ def scrape_micasasv_listing(url, listing_type):
                 except:
                     pass
         
-        # Price-based listing type adjustment:
-        # If marked as sale but price < $1000, it's likely a rent listing
+        # Correct listing_type based on content analysis (title, description, price)
+        # Users sometimes list sale properties in the rent section and vice versa
         price_value = parse_price(price)
-        if listing_type == "sale" and price_value and price_value < 1000:
-            listing_type = "rent"
+        listing_type = correct_listing_type(listing_type, title, description, price_value)
         
         # Detect municipality from location, description and title
         municipio_info = detect_municipio(location, description, title)
@@ -1806,10 +1911,9 @@ def get_realtor_listings_from_page(page_url):
             # Determine listing type from channel parameter in URL or default to sale
             listing_type = "sale"  # Default
             
-            # Parse price for type adjustment
+            # Correct listing_type based on content analysis (title, description, price)
             price_value = parse_price(price_str)
-            if listing_type == "sale" and price_value and price_value < 1000:
-                listing_type = "rent"
+            listing_type = correct_listing_type(listing_type, title, description, price_value)
             
             # Property type - extract from JSON format
             prop_types_key = 'propertyTypes({"language":"en"})'
@@ -2374,6 +2478,10 @@ def scrape_vivolatam_listing(url, listing_type="sale"):
             listing_type = "rent"
         else:
             listing_type = "sale"
+        
+        # Correct listing_type based on content analysis (title, description, price)
+        price_value = parse_price(price)
+        listing_type = correct_listing_type(listing_type, title, description, price_value)
         
         # Detect municipality
         municipio_info = detect_municipio(location, description, title)

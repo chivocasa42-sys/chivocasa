@@ -42,6 +42,7 @@ interface PaginationState {
 }
 
 type FilterType = 'all' | 'sale' | 'rent';
+type SortOption = 'recent' | 'price_asc' | 'price_desc';
 
 const PAGE_SIZE = 24;
 
@@ -66,6 +67,7 @@ export default function TagPage() {
 
 
     const [tagName, setTagName] = useState<string>('');
+    const [sortBy, setSortBy] = useState<SortOption>('price_asc');
     const [listings, setListings] = useState<CardListing[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -84,9 +86,9 @@ export default function TagPage() {
     const [bestRent, setBestRent] = useState<TopScoredListing | null>(null);
 
     // Fetch listings with pagination
-    const fetchListings = useCallback(async (offset: number, type: FilterType, append: boolean = false) => {
+    const fetchListings = useCallback(async (offset: number, type: FilterType, sort: SortOption, append: boolean = false) => {
         const typeParam = type === 'all' ? '' : `&type=${type}`;
-        const res = await fetch(`/api/tag/${slug}?limit=${PAGE_SIZE}&offset=${offset}${typeParam}`);
+        const res = await fetch(`/api/tag/${slug}?limit=${PAGE_SIZE}&offset=${offset}${typeParam}&sort=${sort}`);
 
         if (!res.ok) {
             if (res.status === 404) {
@@ -114,7 +116,7 @@ export default function TagPage() {
             setIsLoading(true);
             setError(null);
             try {
-                await fetchListings(0, filter);
+                await fetchListings(0, filter, sortBy);
             } catch (err) {
                 setError(err instanceof Error ? err.message : 'No pudimos cargar los datos. Intentá de nuevo.');
                 console.error(err);
@@ -124,7 +126,7 @@ export default function TagPage() {
         }
 
         if (slug) fetchData();
-    }, [slug, fetchListings, filter]);
+    }, [slug, fetchListings, filter, sortBy]);
 
     // Load more handler
     const handleLoadMore = useCallback(async () => {
@@ -133,13 +135,13 @@ export default function TagPage() {
         setIsLoadingMore(true);
         try {
             const newOffset = pagination.offset + PAGE_SIZE;
-            await fetchListings(newOffset, filter, true);
+            await fetchListings(newOffset, filter, sortBy, true);
         } catch (err) {
             console.error('Error loading more:', err);
         } finally {
             setIsLoadingMore(false);
         }
-    }, [isLoadingMore, pagination.hasMore, pagination.offset, filter, fetchListings]);
+    }, [isLoadingMore, pagination.hasMore, pagination.offset, filter, sortBy, fetchListings]);
 
     // Intersection Observer for infinite scroll
     useEffect(() => {
@@ -219,26 +221,37 @@ export default function TagPage() {
                         </p>
                     </div>
 
-                    {/* Filters */}
-                    <div className="pill-group">
-                        <Link
-                            href={`/tag/${slug}`}
-                            className={`pill-btn ${filter === 'all' ? 'active' : ''}`}
+                    {/* Filters and Sort */}
+                    <div className="flex flex-wrap items-center gap-4">
+                        <div className="pill-group">
+                            <Link
+                                href={`/tag/${slug}`}
+                                className={`pill-btn ${filter === 'all' ? 'active' : ''}`}
+                            >
+                                Todos
+                            </Link>
+                            <Link
+                                href={`/tag/${slug}/venta`}
+                                className={`pill-btn ${filter === 'sale' ? 'active' : ''}`}
+                            >
+                                Venta
+                            </Link>
+                            <Link
+                                href={`/tag/${slug}/alquiler`}
+                                className={`pill-btn ${filter === 'rent' ? 'active' : ''}`}
+                            >
+                                Renta
+                            </Link>
+                        </div>
+                        <select
+                            value={sortBy}
+                            onChange={(e) => setSortBy(e.target.value as SortOption)}
+                            className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                         >
-                            Todos
-                        </Link>
-                        <Link
-                            href={`/tag/${slug}/venta`}
-                            className={`pill-btn ${filter === 'sale' ? 'active' : ''}`}
-                        >
-                            Venta
-                        </Link>
-                        <Link
-                            href={`/tag/${slug}/alquiler`}
-                            className={`pill-btn ${filter === 'rent' ? 'active' : ''}`}
-                        >
-                            Renta
-                        </Link>
+                            <option value="price_asc">Precio: menor a mayor</option>
+                            <option value="price_desc">Precio: mayor a menor</option>
+                            <option value="recent">Más recientes</option>
+                        </select>
                     </div>
                 </div>
 

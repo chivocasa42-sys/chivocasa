@@ -30,6 +30,7 @@ export async function GET(
         const limit = parseInt(searchParams.get('limit') || String(DEFAULT_LIMIT));
         const offset = parseInt(searchParams.get('offset') || '0');
         const listingType = searchParams.get('type'); // 'sale', 'rent', or null for all
+        const sortBy = searchParams.get('sort') || 'recent'; // 'recent', 'price_asc', 'price_desc'
 
         // Validar slug
         if (!isValidDepartamentoSlug(slug)) {
@@ -56,7 +57,8 @@ export async function GET(
                 p_departamento: departamento,
                 p_listing_type: listingType || null,
                 p_limit: limit,
-                p_offset: offset
+                p_offset: offset,
+                p_sort_by: sortBy
             }),
             next: { revalidate: 60 } // Cache for 1 minute
         });
