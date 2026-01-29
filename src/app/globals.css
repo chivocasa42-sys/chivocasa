@@ -1704,34 +1704,70 @@ body {
     inset 0 1px 0 0 rgba(255, 255, 255, 0.8);
 }
 
-/* Badge - Top Right */
-.dept-card__badge {
+/* Badge Pill - Top Right (Compact Mockup Style) */
+.dept-card__badge-pill {
   position: absolute;
-  top: 16px;
-  right: 16px;
-  background: #1e293b;
-  color: #ffffff;
-  font-size: 13px;
-  font-weight: 600;
-  padding: 4px 12px;
-  border-radius: 999px;
-  letter-spacing: 0.01em;
+  top: 12px;
+  right: 12px;
+  z-index: 1;
 }
 
-/* Header Section */
+.dept-card__badge-pill .dept-card__pill {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  border: none;
+  box-shadow:
+    0 2px 8px -2px rgba(37, 99, 235, 0.35),
+    0 1px 3px -1px rgba(0, 0, 0, 0.1);
+}
+
+.dept-card__badge-pill .dept-card__pill-label {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 6px 4px 6px 10px;
+  margin: 0;
+  box-shadow: none;
+  border-radius: 0;
+  letter-spacing: 0.05em;
+  line-height: 1;
+}
+
+.dept-card__badge-pill .dept-card__pill-value {
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 5px 12px 5px 4px;
+  line-height: 1;
+}
+
+/* Renta variant for badge */
+.dept-card__badge-pill .dept-card__pill--renta {
+  background: linear-gradient(135deg, #64748b 0%, #475569 100%);
+  box-shadow:
+    0 2px 8px -2px rgba(71, 85, 105, 0.35),
+    0 1px 3px -1px rgba(0, 0, 0, 0.1);
+}
+
+/* Legacy Badge - Hidden */
+.dept-card__badge {
+  display: none;
+}
+
+/* Header Section - With safe margin for badge */
 .dept-card__header {
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-  padding-top: 16px;
-  padding-bottom: 24px;
+  padding-top: 40px;
+  padding-bottom: 20px;
 }
 
 .dept-card__label {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   color: #64748b;
   text-transform: uppercase;
   margin-bottom: 4px;
@@ -1765,6 +1801,7 @@ body {
 .dept-card__oferta {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 14px;
   padding-top: 4px;
 }
@@ -1774,120 +1811,215 @@ body {
   font-weight: 500;
   font-style: italic;
   color: #475569;
-  padding-left: 2px;
   letter-spacing: 0.01em;
+  text-align: center;
 }
 
-/* Pills Row - More breathing room */
+/* Pills Row - Horizontal centered */
 .dept-card__pills-row {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  gap: 20px;
+  justify-content: center;
+  gap: 12px;
 }
 
-/* Pill - Enhanced definition */
+/* Hide divider on small cards */
+.dept-card__pill-divider {
+  display: none;
+}
+
 .dept-card__pill {
   display: flex;
   align-items: center;
-  background: #ffffff;
-  border-radius: 10px;
-  border: 1.5px solid #cbd5e1;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border-radius: 999px;
+  border: 1px solid rgba(203, 213, 225, 0.6);
   overflow: hidden;
   box-shadow:
-    0 2px 4px rgba(0, 0, 0, 0.06),
-    0 1px 2px rgba(0, 0, 0, 0.04);
+    0 1px 3px rgba(0, 0, 0, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 
 .dept-card__pill-label {
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  padding: 10px 14px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 7px 11px;
   text-transform: uppercase;
+  border-radius: 999px;
+  margin: 2px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .dept-card__pill-label--venta {
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  background: linear-gradient(145deg, #60a5fa 0%, #3b82f6 50%, #2563eb 100%);
   color: #ffffff;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.15);
 }
 
 .dept-card__pill-label--renta {
-  background: linear-gradient(135deg, #64748b 0%, #475569 100%);
+  background: linear-gradient(145deg, #94a3b8 0%, #64748b 50%, #475569 100%);
   color: #ffffff;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.15);
 }
 
 .dept-card__pill-value {
-  font-size: 18px;
-  font-weight: 800;
-  color: #0f172a;
-  padding: 8px 16px 8px 12px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #1e293b;
+  padding: 6px 14px 6px 8px;
   letter-spacing: -0.01em;
 }
 
-/* Vertical Divider between pills - Stronger */
-.dept-card__pill-divider {
-  width: 2px;
-  height: 32px;
-  background: linear-gradient(180deg, transparent 0%, #cbd5e1 20%, #cbd5e1 80%, transparent 100%);
-  border-radius: 999px;
-}
-
-/* Rango Pill - Premium with dominant value */
-.dept-card__rango {
-  display: flex;
+/* Simple Price Range Pill - Single Capsule */
+.dept-card__price-range {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  align-self: flex-start;
-  background: #ffffff;
-  border-radius: 10px;
-  border: 1.5px solid #cbd5e1;
-  overflow: hidden;
-  box-shadow:
-    0 2px 4px rgba(0, 0, 0, 0.06),
-    0 1px 2px rgba(0, 0, 0, 0.04);
-  margin-top: 4px;
-}
-
-.dept-card__rango-label {
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  padding: 10px 14px;
-  text-transform: uppercase;
-  background: linear-gradient(135deg, #94a3b8 0%, #64748b 100%);
-  color: #ffffff;
-}
-
-.dept-card__rango-value {
-  font-size: 15px;
-  font-weight: 700;
-  color: #0f172a;
-  padding: 8px 16px 8px 12px;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border-radius: 999px;
+  border: 1px solid rgba(203, 213, 225, 0.7);
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
   letter-spacing: 0.01em;
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+/* Legacy Rango styles - Hidden */
+.dept-card__rango {
+  display: none;
 }
 
 /* =============================================
-   DEPARTMENT CARD - RESPONSIVE
+   DEPARTMENT CARD - RESPONSIVE (MOBILE-FIRST UX)
    ============================================= */
 
+/* Mobile Small (320-479px) - Compact & Efficient */
 @media (max-width: 479px) {
   .dept-card {
-    padding: 20px 16px 18px;
-    min-height: 300px;
+    padding: 16px 14px 14px;
+    min-height: auto;
+    border-radius: 14px;
+    gap: 0;
+  }
+
+  /* Badge - Prominent and legible */
+  .dept-card__badge-pill {
+    top: 12px;
+    right: 12px;
+  }
+
+  .dept-card__badge-pill .dept-card__pill {
+    box-shadow:
+      0 3px 10px -2px rgba(37, 99, 235, 0.4),
+      0 2px 4px -1px rgba(0, 0, 0, 0.1);
+  }
+
+  .dept-card__badge-pill .dept-card__pill-label {
+    font-size: 10px;
+    padding: 7px 4px 7px 10px;
+    line-height: 1;
+    letter-spacing: 0.04em;
+  }
+
+  .dept-card__badge-pill .dept-card__pill-value {
+    font-size: 14px;
+    padding: 6px 12px 6px 4px;
+    line-height: 1;
+  }
+
+  /* Header - Safe margin for larger badge */
+  .dept-card__header {
+    padding-top: 48px;
+    padding-bottom: 12px;
+  }
+
+  .dept-card__label {
+    font-size: 9px;
+    margin-bottom: 2px;
+    letter-spacing: 0.08em;
+  }
+
+  .dept-card__price {
+    font-size: 28px;
+    margin-bottom: 2px;
+  }
+
+  .dept-card__name {
+    font-size: 16px;
+  }
+
+  /* Divider */
+  .dept-card__divider {
+    margin: 8px 0;
+  }
+
+  /* Bottom section - Compact */
+  .dept-card__oferta {
+    gap: 8px;
+    padding-top: 2px;
+  }
+
+  .dept-card__oferta-label {
+    font-size: 12px;
+  }
+
+  /* Price Range Pill - Compact */
+  .dept-card__price-range {
+    font-size: 12px;
+    padding: 6px 12px;
+  }
+
+  /* Legacy pills */
+  .dept-card__pills-row {
+    gap: 8px;
+  }
+
+  .dept-card__pill {
+    border-radius: 999px;
+  }
+
+  .dept-card__pill-label {
+    font-size: 8px;
+    padding: 6px 8px;
+  }
+
+  .dept-card__pill-value {
+    font-size: 13px;
+    padding: 5px 10px 5px 6px;
+  }
+}
+
+/* Mobile Medium (480-639px) - Balanced */
+@media (min-width: 480px) and (max-width: 639px) {
+  .dept-card {
+    padding: 18px 16px 16px;
+    min-height: auto;
     border-radius: 16px;
   }
 
-  .dept-card__badge {
-    top: 12px;
-    right: 12px;
+  .dept-card__badge-pill {
+    top: 14px;
+    right: 14px;
+  }
+
+  .dept-card__badge-pill .dept-card__pill-label {
     font-size: 12px;
-    padding: 3px 10px;
+    padding: 7px 5px 7px 12px;
+  }
+
+  .dept-card__badge-pill .dept-card__pill-value {
+    font-size: 15px;
+    padding: 6px 12px 6px 5px;
   }
 
   .dept-card__header {
-    padding-top: 12px;
-    padding-bottom: 16px;
+    padding-top: 44px;
+    padding-bottom: 14px;
   }
 
   .dept-card__label {
@@ -1895,63 +2027,36 @@ body {
   }
 
   .dept-card__price {
-    font-size: 30px;
+    font-size: 32px;
   }
 
   .dept-card__name {
-    font-size: 17px;
+    font-size: 18px;
   }
 
   .dept-card__oferta {
-    gap: 12px;
+    gap: 10px;
   }
 
   .dept-card__oferta-label {
     font-size: 13px;
   }
 
-  .dept-card__pills-row {
-    gap: 12px;
-    flex-wrap: wrap;
-  }
-
-  .dept-card__pill {
-    border-radius: 8px;
-  }
-
-  .dept-card__pill-label {
-    font-size: 9px;
-    padding: 8px 10px;
-  }
-
-  .dept-card__pill-value {
-    font-size: 15px;
-    padding: 6px 12px 6px 8px;
-  }
-
-  .dept-card__pill-divider {
-    height: 28px;
-  }
-
-  .dept-card__rango {
-    border-radius: 8px;
-  }
-
-  .dept-card__rango-label {
-    font-size: 9px;
-    padding: 8px 10px;
-  }
-
-  .dept-card__rango-value {
-    font-size: 13px;
-    padding: 6px 12px 6px 8px;
+  .dept-card__price-range {
+    font-size: 12px;
+    padding: 7px 14px;
   }
 }
 
-@media (min-width: 480px) and (max-width: 767px) {
+/* Tablet (640-767px) */
+@media (min-width: 640px) and (max-width: 767px) {
   .dept-card {
-    padding: 22px 20px 18px;
-    min-height: 300px;
+    padding: 20px 18px 16px;
+  }
+
+  .dept-card__header {
+    padding-top: 38px;
+    padding-bottom: 16px;
   }
 
   .dept-card__price {
@@ -1959,11 +2064,11 @@ body {
   }
 
   .dept-card__name {
-    font-size: 20px;
+    font-size: 19px;
   }
 }
 
-/* Disable hover on touch */
+/* Disable hover on touch devices */
 @media (hover: none) {
   .dept-card:hover {
     transform: none;

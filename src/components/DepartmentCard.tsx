@@ -38,14 +38,25 @@ export default function DepartmentCard({
 }: DepartmentCardProps) {
     const filterSegment = getFilterSegment(activeFilter);
 
+    // Determine which pill to show and its count
+    const showVenta = activeFilter === 'sale' || !activeFilter;
+    const showRenta = activeFilter === 'rent';
+    const pillCount = activeFilter === 'rent' ? (rentCount ?? 0) : (saleCount ?? 0);
+    const pillLabel = activeFilter === 'rent' ? 'RENTA' : 'VENTA';
+    const pillClass = activeFilter === 'rent' ? 'dept-card__pill--renta' : 'dept-card__pill--venta';
+    const pillLabelClass = activeFilter === 'rent' ? 'dept-card__pill-label--renta' : 'dept-card__pill-label--venta';
+
     return (
         <Link
             href={`/${slug}${filterSegment}`}
             className="dept-card"
         >
-            {/* Badge - Top Right */}
-            <div className="dept-card__badge">
-                {totalCount}
+            {/* Top-Right Badge: VENTA/RENTA Pill */}
+            <div className="dept-card__badge-pill">
+                <div className={`dept-card__pill ${pillClass}`}>
+                    <span className={`dept-card__pill-label ${pillLabelClass}`}>{pillLabel}</span>
+                    <span className="dept-card__pill-value">{pillCount}</span>
+                </div>
             </div>
 
             {/* Header Section */}
@@ -58,33 +69,13 @@ export default function DepartmentCard({
             {/* Divider */}
             <div className="dept-card__divider" />
 
-            {/* Oferta Section */}
+            {/* Rango de precios Section */}
             <div className="dept-card__oferta">
-                <span className="dept-card__oferta-label">Oferta</span>
+                <span className="dept-card__oferta-label">Rango de precios</span>
 
-                <div className="dept-card__pills-row">
-                    {/* Venta Pill */}
-                    <div className="dept-card__pill dept-card__pill--venta">
-                        <span className="dept-card__pill-label dept-card__pill-label--venta">VENTA</span>
-                        <span className="dept-card__pill-value">{saleCount ?? 0}</span>
-                    </div>
-
-                    {/* Vertical Divider */}
-                    <div className="dept-card__pill-divider" />
-
-                    {/* Renta Pill */}
-                    <div className="dept-card__pill dept-card__pill--renta">
-                        <span className="dept-card__pill-label dept-card__pill-label--renta">RENTA</span>
-                        <span className="dept-card__pill-value">{rentCount ?? 0}</span>
-                    </div>
-                </div>
-
-                {/* Rango Pill */}
-                <div className="dept-card__rango">
-                    <span className="dept-card__rango-label">RANGO</span>
-                    <span className="dept-card__rango-value">
-                        {formatPriceCompact(priceRangeMin)}→{formatPriceCompact(priceRangeMax)}
-                    </span>
+                {/* Simple Price Range Pill */}
+                <div className="dept-card__price-range">
+                    {formatPriceCompact(priceRangeMin)} → {formatPriceCompact(priceRangeMax)}
                 </div>
             </div>
         </Link>
