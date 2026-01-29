@@ -11,6 +11,7 @@ interface DepartmentCardProps {
     priceRangeMin: number;
     priceRangeMax: number;
     slug: string;
+    activeFilter?: 'sale' | 'rent'; // Pass current filter to persist in navigation
 }
 
 function formatPrice(price: number): string {
@@ -25,35 +26,44 @@ function formatPriceCompact(price: number): string {
     return '$' + Math.round(price).toLocaleString();
 }
 
+// Map filter to URL segment
+function getFilterSegment(filter?: 'sale' | 'rent'): string {
+    if (filter === 'sale') return '/venta';
+    if (filter === 'rent') return '/renta';
+    return ''; // Default: no segment (shows all)
+}
+
 export default function DepartmentCard({
     departamento, totalCount, saleCount, rentCount,
-    medianPrice, priceRangeMin, priceRangeMax, slug
+    medianPrice, priceRangeMin, priceRangeMax, slug, activeFilter
 }: DepartmentCardProps) {
+    const filterSegment = getFilterSegment(activeFilter);
+
     return (
         <Link
-            href={`/${slug}`}
-            className="card-float card-float-interactive flex flex-col pt-6 pb-4 relative"
+            href={`/${slug}${filterSegment}`}
+            className="card-float card-float-interactive flex flex-col pt-4 sm:pt-6 pb-3 sm:pb-4 relative min-h-[140px] sm:min-h-[160px]"
         >
             {/* Total Count Bubble - Top Right Absolute */}
-            <div className="absolute top-4 right-4">
+            <div className="absolute top-3 sm:top-4 right-3 sm:right-4">
                 <span className="badge-count">
                     {totalCount}
                 </span>
             </div>
 
             {/* Precio Típico Section */}
-            <div className="px-5 mt-4 mb-2 text-center">
-                <div className="kpi-label mb-1 text-xs uppercase tracking-wider text-[var(--text-muted)]">
+            <div className="px-4 sm:px-5 mt-3 sm:mt-4 mb-1 sm:mb-2 text-center">
+                <div className="kpi-label mb-0.5 sm:mb-1 text-[10px] sm:text-xs uppercase tracking-wider text-[var(--text-muted)]">
                     PRECIO MEDIO
                 </div>
-                <div className="text-3xl font-bold text-[var(--text-primary)]">
+                <div className="text-2xl sm:text-3xl font-bold text-[var(--text-primary)]">
                     {formatPrice(medianPrice)}
                 </div>
             </div>
 
             {/* Department Name */}
-            <div className="px-5 mb-4 text-center">
-                <h3 className="font-semibold text-lg text-[var(--text-primary)]">
+            <div className="px-4 sm:px-5 mb-3 sm:mb-4 text-center">
+                <h3 className="font-semibold text-base sm:text-lg text-[var(--text-primary)]">
                     {departamento}
                 </h3>
 

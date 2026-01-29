@@ -194,7 +194,7 @@ export default function Home() {
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 lg:gap-5">
                 {filteredDepartments.map((dept) => {
                   const stats = getDisplayStats(dept);
 
@@ -209,6 +209,7 @@ export default function Home() {
                       priceRangeMin={stats.min}
                       priceRangeMax={stats.max}
                       slug={departamentoToSlug(dept.departamento)}
+                      activeFilter={view}
                     />
                   );
                 })}

@@ -49,7 +49,7 @@ const PAGE_SIZE = 24;
 // Map URL tipo to API filter type
 function tipoToFilter(tipo: string | undefined): FilterType {
     if (tipo === 'venta') return 'sale';
-    if (tipo === 'alquiler') return 'rent';
+    if (tipo === 'renta') return 'rent';
     return 'all';
 }
 
@@ -250,7 +250,7 @@ export default function DepartmentPage() {
                             Venta
                         </Link>
                         <Link
-                            href={`/${slug}/alquiler`}
+                            href={`/${slug}/renta`}
                             className={`pill-btn ${filter === 'rent' ? 'active' : ''}`}
                         >
                             Renta
