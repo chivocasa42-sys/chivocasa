@@ -5,8 +5,8 @@
  * All functions return plain objects ready for JSON.stringify().
  */
 
-const SITE_URL = 'https://chivocasa.com';
-const SITE_NAME = 'ChivoCasa';
+const SITE_URL = 'https://sivarcasas.com';
+const SITE_NAME = 'sivarcasas';
 
 /**
  * Organization Schema
@@ -29,8 +29,8 @@ export function generateOrganizationSchema() {
             name: 'El Salvador',
         },
         sameAs: [
-            'https://twitter.com/chivocasa',
-            'https://facebook.com/chivocasa',
+            'https://twitter.com/sivarcasas',
+            'https://facebook.com/sivarcasas',
         ],
     };
 }

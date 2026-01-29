@@ -38,23 +38,23 @@ export async function generateMetadata({ params }: { params: Promise<{ tag: stri
     }
 
     const canonical = filter
-        ? `https://chivocasa.com/tag/${resolvedParams.tag}/${filter}`
-        : `https://chivocasa.com/tag/${resolvedParams.tag}`;
+        ? `https://sivarcasas.com/tag/${resolvedParams.tag}/${filter}`
+        : `https://sivarcasas.com/tag/${resolvedParams.tag}`;
 
     return {
         title,
         description,
         openGraph: {
-            title: `${title} | ChivoCasa`,
+            title: `${title} | SivarCasas`,
             description,
             type: 'website',
             locale: 'es_SV',
-            siteName: 'ChivoCasa',
+            siteName: 'SivarCasas',
             url: canonical,
         },
         twitter: {
             card: 'summary_large_image',
-            title: `${title} | ChivoCasa`,
+            title: `${title} | SivarCasas`,
             description,
         },
         alternates: {
@@ -70,15 +70,15 @@ export default async function TagLayout({ params, children }: Props) {
 
     // Build breadcrumb items
     const breadcrumbItems = [
-        { name: 'Inicio', url: 'https://chivocasa.com' },
-        { name: tagName, url: `https://chivocasa.com/tag/${resolvedParams.tag}` },
+        { name: 'Inicio', url: 'https://sivarcasas.com' },
+        { name: tagName, url: `https://sivarcasas.com/tag/${resolvedParams.tag}` },
     ];
 
     if (filter) {
         const filterName = filter === 'venta' ? 'En Venta' : 'En Renta';
         breadcrumbItems.push({
             name: filterName,
-            url: `https://chivocasa.com/tag/${resolvedParams.tag}/${filter}`,
+            url: `https://sivarcasas.com/tag/${resolvedParams.tag}/${filter}`,
         });
     }
 
@@ -90,7 +90,7 @@ export default async function TagLayout({ params, children }: Props) {
         '@type': 'CollectionPage',
         name: `Propiedades en ${tagName}`,
         description: `Encuentra propiedades inmobiliarias en ${tagName}, El Salvador.`,
-        url: `https://chivocasa.com/tag/${resolvedParams.tag}`,
+        url: `https://sivarcasas.com/tag/${resolvedParams.tag}`,
         about: {
             '@type': 'Place',
             name: tagName,

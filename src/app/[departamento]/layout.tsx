@@ -31,23 +31,23 @@ export async function generateMetadata({ params }: { params: Promise<{ departame
     }
 
     const canonical = filter
-        ? `https://chivocasa.com/${resolvedParams.departamento}/${filter}`
-        : `https://chivocasa.com/${resolvedParams.departamento}`;
+        ? `https://sivarcasas.com/${resolvedParams.departamento}/${filter}`
+        : `https://sivarcasas.com/${resolvedParams.departamento}`;
 
     return {
         title,
         description,
         openGraph: {
-            title: `${title} | ChivoCasa`,
+            title: `${title} | SivarCasas`,
             description,
             type: 'website',
             locale: 'es_SV',
-            siteName: 'ChivoCasa',
+            siteName: 'SivarCasas',
             url: canonical,
         },
         twitter: {
             card: 'summary_large_image',
-            title: `${title} | ChivoCasa`,
+            title: `${title} | SivarCasas`,
             description,
         },
         alternates: {
@@ -63,15 +63,15 @@ export default async function DepartmentLayout({ params, children }: Props) {
 
     // Build breadcrumb items
     const breadcrumbItems = [
-        { name: 'Inicio', url: 'https://chivocasa.com' },
-        { name: departamento, url: `https://chivocasa.com/${resolvedParams.departamento}` },
+        { name: 'Inicio', url: 'https://sivarcasas.com' },
+        { name: departamento, url: `https://sivarcasas.com/${resolvedParams.departamento}` },
     ];
 
     if (filter) {
         const filterName = filter === 'venta' ? 'En Venta' : 'En Renta';
         breadcrumbItems.push({
             name: filterName,
-            url: `https://chivocasa.com/${resolvedParams.departamento}/${filter}`,
+            url: `https://sivarcasas.com/${resolvedParams.departamento}/${filter}`,
         });
     }
 
@@ -83,7 +83,7 @@ export default async function DepartmentLayout({ params, children }: Props) {
         '@type': 'CollectionPage',
         name: `Propiedades en ${departamento}`,
         description: `Encuentra propiedades inmobiliarias en ${departamento}, El Salvador.`,
-        url: `https://chivocasa.com/${resolvedParams.departamento}`,
+        url: `https://sivarcasas.com/${resolvedParams.departamento}`,
         about: {
             '@type': 'Place',
             name: departamento,

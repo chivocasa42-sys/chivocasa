@@ -37,7 +37,7 @@ export default function Navbar({ totalListings, onRefresh }: NavbarProps) {
                             </svg>
                         </div>
                         <span className="text-xl font-extrabold tracking-tight text-slate-900">
-                            Chivo<span className="text-blue-600">Casa</span>
+                            Sivar<span className="text-blue-600">Casas</span>
                         </span>
                     </Link>
 
