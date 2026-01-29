@@ -1153,6 +1153,78 @@ def slug_to_external_id(slug):
     return int(hash_hex[:15], 16)
 
 
+def is_service_listing(listing_data):
+    """
+    Check if a MiCasaSV listing is a service ad (not a real estate property).
+    
+    Service listings typically have:
+    - Service-related categories (electricista, limpieza, fontanero, etc.)
+    - Service-related title keywords
+    - No price
+    - Empty specs
+    
+    Returns True if listing should be EXCLUDED (is a service).
+    """
+    if not listing_data:
+        return True
+    
+    # Service category keywords
+    SERVICE_CATEGORIES = [
+        'servicio de limpieza', 'limpieza de piscinas', 'limpieza de ventanas',
+        'electricista', 'fontanero', 'plomero', 'carpintero', 'pintor',
+        'aire acondicionado', 'climatización', 'mantenimiento',
+        'jardinería', 'jardinero', 'mudanza', 'transporte',
+        'remodelación', 'remodelacion', 'construcción', 'construccion',
+        'diseño web', 'diseno web', 'marketing', 'publicidad',
+        'abogado', 'contador', 'asesor', 'consultor',
+        'seguridad', 'vigilancia', 'cerrajero',
+        'fumigación', 'fumigacion', 'control de plagas',
+        'reparación', 'reparacion', 'técnico', 'tecnico',
+    ]
+    
+    # Service title keywords
+    SERVICE_TITLE_KEYWORDS = [
+        'servicio de', 'servicios de', 'mantenimiento de', 'reparación de',
+        'limpieza de', 'instalación de', 'instalacion de',
+        'fontanero', 'electricista', 'plomero', 'carpintero',
+        'se busca', 'plaza disponible', 'vacante', 'empleo',
+        'trabajo de', 'ofrecemos', 'ofrezco',
+    ]
+    
+    # Check categories
+    categorias = listing_data.get('details', {}).get('categorias', '').lower()
+    for service_cat in SERVICE_CATEGORIES:
+        if service_cat in categorias:
+            return True  # Is a service listing
+    
+    # Check title
+    title = (listing_data.get('title', '') or '').lower()
+    for keyword in SERVICE_TITLE_KEYWORDS:
+        if keyword in title:
+            return True  # Is a service listing
+    
+    # Additional heuristic: No price AND empty specs AND empty departamento
+    # These are strong indicators of non-property listings
+    price = listing_data.get('price')
+    specs = listing_data.get('specs', {})
+    departamento = listing_data.get('departamento', '')
+    
+    has_no_price = not price or price == ''
+    has_empty_specs = not specs or len(specs) == 0
+    has_no_location = not departamento or departamento == ''
+    
+    # If all three conditions are true, likely a service listing
+    if has_no_price and has_empty_specs and has_no_location:
+        # Extra check: does title contain any property-related words?
+        property_keywords = ['casa', 'apartamento', 'terreno', 'local', 'bodega', 
+                           'oficina', 'venta', 'alquiler', 'habitacion', 'cuarto']
+        title_lower = title.lower()
+        has_property_keyword = any(kw in title_lower for kw in property_keywords)
+        if not has_property_keyword:
+            return True  # Likely a service listing
+    
+    return False  # Is a valid property listing
+
 def get_micasasv_listing_urls(base_url, max_listings=None):
     """Collect listing URLs from MiCasaSV sitemap.
     
@@ -1431,6 +1503,7 @@ def scrape_micasasv_listing(url, listing_type):
 def scrape_micasasv_listings_concurrent(urls, listing_type, max_workers=5):
     """Scrape multiple MiCasaSV listings concurrently."""
     results = []
+    skipped_services = 0
     total = len(urls)
     completed = 0
     
@@ -1441,11 +1514,19 @@ def scrape_micasasv_listings_concurrent(urls, listing_type, max_workers=5):
             completed += 1
             data = future.result()
             if data and data.get("title"):
-                results.append(data)
+                # Filter out service listings (not real estate)
+                if is_service_listing(data):
+                    skipped_services += 1
+                else:
+                    results.append(data)
             if completed % 20 == 0 or completed == total:
-                print(f"    Scraped {completed}/{total} ({len(results)} with data)")
+                print(f"    Scraped {completed}/{total} ({len(results)} properties, {skipped_services} services skipped)")
+    
+    if skipped_services > 0:
+        print(f"    Filtered out {skipped_services} service listings (not real estate)")
     
     return results
+
 
 
 # ============== REALTOR.COM FUNCTIONS ==============

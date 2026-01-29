@@ -20,14 +20,14 @@ export async function generateMetadata({ params }: { params: Promise<{ departame
     const filter = resolvedParams.filter?.[0];
 
     let title = `Propiedades en ${departamento}`;
-    let description = `Encuentra casas y apartamentos en ${departamento}, El Salvador. Compará precios y opciones de venta y alquiler.`;
+    let description = `Encuentra casas y apartamentos en ${departamento}, El Salvador. Compará precios y opciones de venta y renta.`;
 
     if (filter === 'venta') {
         title = `Casas en venta en ${departamento}`;
         description = `Propiedades en venta en ${departamento}, El Salvador. Encuentra tu próximo hogar al mejor precio.`;
     } else if (filter === 'alquiler') {
-        title = `Alquiler en ${departamento}`;
-        description = `Apartamentos y casas en alquiler en ${departamento}, El Salvador. Opciones para todos los presupuestos.`;
+        title = `Renta en ${departamento}`;
+        description = `Apartamentos y casas en renta en ${departamento}, El Salvador. Opciones para todos los presupuestos.`;
     }
 
     const canonical = filter
@@ -68,7 +68,7 @@ export default async function DepartmentLayout({ params, children }: Props) {
     ];
 
     if (filter) {
-        const filterName = filter === 'venta' ? 'En Venta' : 'En Alquiler';
+        const filterName = filter === 'venta' ? 'En Venta' : 'En Renta';
         breadcrumbItems.push({
             name: filterName,
             url: `https://chivocasa.com/${resolvedParams.departamento}/${filter}`,

@@ -91,7 +91,7 @@ export default async function Image() {
                         }}
                     >
                         <div style={{ fontSize: 40, fontWeight: 700, color: '#38bdf8' }}>
-                            Alquiler
+                            Renta
                         </div>
                         <div style={{ fontSize: 16, color: '#64748b' }}>
                             Mensual

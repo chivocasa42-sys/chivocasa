@@ -237,7 +237,7 @@ export default function TagPage() {
                             href={`/tag/${slug}/alquiler`}
                             className={`pill-btn ${filter === 'rent' ? 'active' : ''}`}
                         >
-                            Alquiler
+                            Renta
                         </Link>
                     </div>
                 </div>
@@ -291,7 +291,7 @@ export default function TagPage() {
                         ) : (
                             <div className="card-float p-8 text-center">
                                 <p className="text-[var(--text-secondary)]">
-                                    No hay propiedades {filter === 'sale' ? 'en venta' : filter === 'rent' ? 'en alquiler' : ''} con este tag.
+                                    No hay propiedades {filter === 'sale' ? 'en venta' : filter === 'rent' ? 'en renta' : ''} con este tag.
                                 </p>
                             </div>
                         )}

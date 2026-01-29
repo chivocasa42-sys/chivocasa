@@ -56,7 +56,7 @@ function tipoToFilter(tipo: string | undefined): FilterType {
 // Get display text for current filter
 function getFilterDisplayText(filter: FilterType): string {
     if (filter === 'sale') return 'en venta';
-    if (filter === 'rent') return 'en alquiler';
+    if (filter === 'rent') return 'en renta';
     return '';
 }
 
@@ -253,7 +253,7 @@ export default function DepartmentPage() {
                             href={`/${slug}/alquiler`}
                             className={`pill-btn ${filter === 'rent' ? 'active' : ''}`}
                         >
-                            Alquiler
+                            Renta
                         </Link>
                     </div>
                 </div>
@@ -284,7 +284,7 @@ export default function DepartmentPage() {
                         {listingsForCard.length > 0 ? (
                             <>
                                 <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4">
-                                    {filter === 'sale' ? 'Propiedades en venta' : filter === 'rent' ? 'Propiedades en alquiler' : 'Todas las propiedades'}
+                                    {filter === 'sale' ? 'Propiedades en venta' : filter === 'rent' ? 'Propiedades en renta' : 'Todas las propiedades'}
                                 </h2>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
                                     {listingsForCard.map((listing) => (

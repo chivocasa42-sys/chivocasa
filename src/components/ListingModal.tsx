@@ -208,7 +208,7 @@ export default function ListingModal({ externalId, onClose }: ListingModalProps)
                     {/* Sale/Rent Badge */}
                     <div className="absolute top-3 left-3 bg-white/95 backdrop-blur-sm px-3 py-1 rounded text-xs font-bold uppercase tracking-wide text-slate-800 flex items-center gap-2 shadow">
                         <span className="w-2 h-2 rounded-full bg-red-500"></span>
-                        {listing.listing_type === 'sale' ? 'En Venta' : 'En Alquiler'}
+                        {listing.listing_type === 'sale' ? 'En Venta' : 'En Renta'}
                     </div>
                 </div>
 

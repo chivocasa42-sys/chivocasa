@@ -27,14 +27,14 @@ export async function generateMetadata({ params }: { params: Promise<{ tag: stri
     const filter = resolvedParams.filter?.[0];
 
     let title = `${tagName} - Propiedades`;
-    let description = `Encuentra propiedades en ${tagName}, El Salvador. Casas y apartamentos en venta y alquiler.`;
+    let description = `Encuentra propiedades en ${tagName}, El Salvador. Casas y apartamentos en venta y renta.`;
 
     if (filter === 'venta') {
         title = `${tagName} - Propiedades en venta`;
         description = `Casas y apartamentos en venta en ${tagName}, El Salvador.`;
     } else if (filter === 'alquiler') {
-        title = `${tagName} - Propiedades en alquiler`;
-        description = `Casas y apartamentos en alquiler en ${tagName}, El Salvador.`;
+        title = `${tagName} - Propiedades en renta`;
+        description = `Casas y apartamentos en renta en ${tagName}, El Salvador.`;
     }
 
     const canonical = filter
@@ -75,7 +75,7 @@ export default async function TagLayout({ params, children }: Props) {
     ];
 
     if (filter) {
-        const filterName = filter === 'venta' ? 'En Venta' : 'En Alquiler';
+        const filterName = filter === 'venta' ? 'En Venta' : 'En Renta';
         breadcrumbItems.push({
             name: filterName,
             url: `https://chivocasa.com/tag/${resolvedParams.tag}/${filter}`,

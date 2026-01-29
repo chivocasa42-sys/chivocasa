@@ -44,7 +44,7 @@ export function generateWebSiteSchema() {
         '@type': 'WebSite',
         name: SITE_NAME,
         url: SITE_URL,
-        description: 'Encuentra casas y apartamentos en venta y alquiler en El Salvador',
+        description: 'Encuentra casas y apartamentos en venta y renta en El Salvador',
         potentialAction: {
             '@type': 'SearchAction',
             target: {
@@ -204,7 +204,7 @@ export function generateDepartmentPageSchema(
         '@context': 'https://schema.org',
         '@type': 'CollectionPage',
         name: `Propiedades en ${departmentName}`,
-        description: `${stats.totalCount} propiedades en ${departmentName}, El Salvador. ${stats.saleCount || 0} en venta y ${stats.rentCount || 0} en alquiler.`,
+        description: `${stats.totalCount} propiedades en ${departmentName}, El Salvador. ${stats.saleCount || 0} en venta y ${stats.rentCount || 0} en renta.`,
         url: `${SITE_URL}/${departmentName.toLowerCase().replace(/\s+/g, '-')}`,
         about: {
             '@type': 'Place',

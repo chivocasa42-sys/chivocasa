@@ -66,7 +66,7 @@ export default function DepartmentCard({
                         </span>
                     )}
                     {rentCount !== undefined && rentCount > 0 && (
-                        <span className="flex items-center gap-1.5" title="Propiedades en alquiler">
+                        <span className="flex items-center gap-1.5" title="Propiedades en renta">
                             <span>🔑</span>
                             <span className="font-medium">{rentCount}</span>
                         </span>

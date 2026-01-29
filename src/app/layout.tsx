@@ -16,8 +16,8 @@ export const metadata: Metadata = {
     template: '%s | ChivoCasa',
   },
   description:
-    'Encuentra casas y apartamentos en venta y alquiler en El Salvador. Compará precios por departamento y descubrí las mejores oportunidades del mercado inmobiliario.',
-  keywords: ['inmuebles', 'propiedades', 'casas', 'apartamentos', 'El Salvador', 'venta', 'alquiler', 'bienes raíces'],
+    'Encuentra casas y apartamentos en venta y renta en El Salvador. Compará precios por departamento y descubrí las mejores oportunidades del mercado inmobiliario.',
+  keywords: ['inmuebles', 'propiedades', 'casas', 'apartamentos', 'El Salvador', 'venta', 'renta', 'bienes raíces'],
   authors: [{ name: 'ChivoCasa' }],
   creator: 'ChivoCasa',
   publisher: 'ChivoCasa',
@@ -37,7 +37,7 @@ export const metadata: Metadata = {
     locale: 'es_SV',
     siteName: 'ChivoCasa',
     title: 'ChivoCasa - Propiedades en El Salvador',
-    description: 'Encuentra casas y apartamentos en venta y alquiler en El Salvador.',
+    description: 'Encuentra casas y apartamentos en venta y renta en El Salvador.',
     images: [
       {
         url: '/og-image.png',
@@ -50,7 +50,7 @@ export const metadata: Metadata = {
   twitter: {
     card: 'summary_large_image',
     title: 'ChivoCasa - Propiedades en El Salvador',
-    description: 'Encuentra casas y apartamentos en venta y alquiler en El Salvador.',
+    description: 'Encuentra casas y apartamentos en venta y renta en El Salvador.',
     images: ['/og-image.png'],
     creator: '@chivocasa',
   },
