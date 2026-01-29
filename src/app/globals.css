@@ -1348,7 +1348,8 @@ body {
   flex: 1;
   padding: 12px 20px;
   font-size: 14px;
-  min-height: 44px; /* Touch target */
+  min-height: 44px;
+  /* Touch target */
 }
 
 @media (min-width: 480px) {
@@ -1620,19 +1621,19 @@ body {
   .card-float:active {
     transform: scale(0.98);
   }
-  
+
   .card-float-interactive:active {
     background: #fafafa;
   }
-  
+
   .btn-primary:active {
     transform: scale(0.96);
   }
-  
+
   .segmented-btn:active {
     background: rgba(0, 0, 0, 0.05);
   }
-  
+
   .pill-btn:active {
     background: rgba(0, 0, 0, 0.05);
   }
@@ -1644,7 +1645,7 @@ body {
     transform: none;
     box-shadow: var(--shadow-card);
   }
-  
+
   .feature-card:hover {
     transform: none;
   }
@@ -1654,7 +1655,8 @@ body {
    PREVENT HORIZONTAL SCROLL
    ============================================= */
 
-html, body {
+html,
+body {
   overflow-x: hidden;
   max-width: 100vw;
 }
@@ -1670,5 +1672,282 @@ html, body {
 @media (min-width: 768px) {
   .scroll-mt-24 {
     scroll-margin-top: 7rem;
+  }
+}
+
+/* =============================================
+   DEPARTMENT CARD - PIXEL PERFECT (MOCKUP)
+   ============================================= */
+
+.dept-card {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+  border-radius: 20px;
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  box-shadow:
+    0 4px 20px -4px rgba(0, 0, 0, 0.06),
+    0 2px 8px -2px rgba(0, 0, 0, 0.04),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.8);
+  padding: 24px 24px 20px;
+  min-height: 320px;
+  text-decoration: none;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.dept-card:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 8px 30px -6px rgba(0, 0, 0, 0.1),
+    0 4px 12px -4px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.8);
+}
+
+/* Badge - Top Right */
+.dept-card__badge {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: #1e293b;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 999px;
+  letter-spacing: 0.01em;
+}
+
+/* Header Section */
+.dept-card__header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding-top: 16px;
+  padding-bottom: 24px;
+}
+
+.dept-card__label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: #64748b;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.dept-card__price {
+  font-size: 42px;
+  font-weight: 700;
+  color: #1e293b;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  margin-bottom: 4px;
+}
+
+.dept-card__name {
+  font-size: 22px;
+  font-weight: 600;
+  color: #1e293b;
+  margin: 0;
+  line-height: 1.3;
+}
+
+/* Divider */
+.dept-card__divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, #e2e8f0 20%, #e2e8f0 80%, transparent 100%);
+  margin: 0 0 20px;
+}
+
+/* Oferta Section */
+.dept-card__oferta {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.dept-card__oferta-label {
+  font-size: 16px;
+  font-weight: 400;
+  font-style: italic;
+  color: #64748b;
+  padding-left: 4px;
+}
+
+/* Pills Row */
+.dept-card__pills-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+
+/* Pill */
+.dept-card__pill {
+  display: flex;
+  align-items: center;
+  background: #ffffff;
+  border-radius: 999px;
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.dept-card__pill-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 8px 12px;
+  text-transform: uppercase;
+}
+
+.dept-card__pill-label--venta {
+  background: #bfdbfe;
+  color: #1e40af;
+}
+
+.dept-card__pill-label--renta {
+  background: #d1d5db;
+  color: #374151;
+}
+
+.dept-card__pill-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1e293b;
+  padding: 6px 14px 6px 10px;
+}
+
+/* Vertical Divider between pills */
+.dept-card__pill-divider {
+  width: 1px;
+  height: 24px;
+  background: #e2e8f0;
+}
+
+/* Rango Pill */
+.dept-card__rango {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  background: #ffffff;
+  border-radius: 999px;
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.dept-card__rango-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 8px 12px;
+  text-transform: uppercase;
+  background: #e2e8f0;
+  color: #64748b;
+}
+
+.dept-card__rango-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e293b;
+  padding: 6px 14px 6px 10px;
+  letter-spacing: 0.01em;
+}
+
+/* =============================================
+   DEPARTMENT CARD - RESPONSIVE
+   ============================================= */
+
+@media (max-width: 479px) {
+  .dept-card {
+    padding: 20px 18px 16px;
+    min-height: 280px;
+    border-radius: 16px;
+  }
+
+  .dept-card__badge {
+    top: 12px;
+    right: 12px;
+    font-size: 12px;
+    padding: 3px 10px;
+  }
+
+  .dept-card__header {
+    padding-top: 12px;
+    padding-bottom: 18px;
+  }
+
+  .dept-card__label {
+    font-size: 10px;
+  }
+
+  .dept-card__price {
+    font-size: 32px;
+  }
+
+  .dept-card__name {
+    font-size: 18px;
+  }
+
+  .dept-card__oferta-label {
+    font-size: 14px;
+  }
+
+  .dept-card__pills-row {
+    gap: 10px;
+  }
+
+  .dept-card__pill-label {
+    font-size: 10px;
+    padding: 6px 10px;
+  }
+
+  .dept-card__pill-value {
+    font-size: 14px;
+    padding: 5px 10px 5px 8px;
+  }
+
+  .dept-card__rango-label {
+    font-size: 10px;
+    padding: 6px 10px;
+  }
+
+  .dept-card__rango-value {
+    font-size: 12px;
+    padding: 5px 10px 5px 8px;
+  }
+}
+
+@media (min-width: 480px) and (max-width: 767px) {
+  .dept-card {
+    padding: 22px 20px 18px;
+    min-height: 300px;
+  }
+
+  .dept-card__price {
+    font-size: 36px;
+  }
+
+  .dept-card__name {
+    font-size: 20px;
+  }
+}
+
+/* Disable hover on touch */
+@media (hover: none) {
+  .dept-card:hover {
+    transform: none;
+    box-shadow:
+      0 4px 20px -4px rgba(0, 0, 0, 0.06),
+      0 2px 8px -2px rgba(0, 0, 0, 0.04),
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.8);
+  }
+
+  .dept-card:active {
+    transform: scale(0.98);
   }
 }
