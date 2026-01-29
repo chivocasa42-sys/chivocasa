@@ -23,32 +23,28 @@ export default function KPIStrip({ stats }: KPIStripProps) {
         <div className="mb-8">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
                 <KPICard
-                    label="PRECIO TÍPICO VENTA"
+                    label="PRECIO MEDIO VENTA"
                     value={formatPrice(stats.medianSale)}
                     trend={stats.saleTrend}
                     trendDirection={stats.saleTrend && stats.saleTrend > 0 ? 'up' : stats.saleTrend && stats.saleTrend < 0 ? 'down' : 'neutral'}
-                    subtitle="Mediana nacional"
                 />
 
                 <KPICard
-                    label="RENTA TÍPICA MENSUAL"
+                    label="RENTA MEDIA MENSUAL"
                     value={`${formatPrice(stats.medianRent)}/m`}
                     trend={stats.rentTrend}
                     trendDirection={stats.rentTrend && stats.rentTrend > 0 ? 'up' : stats.rentTrend && stats.rentTrend < 0 ? 'down' : 'neutral'}
-                    subtitle="Mediana nacional"
                 />
 
                 <KPICard
                     label="ACTIVOS HOY"
                     value={stats.totalActive.toLocaleString()}
-                    subtitle="Propiedades activas"
                 />
 
                 <KPICard
                     label="NUEVOS (7 DÍAS)"
                     value={stats.new7d > 0 ? `+${stats.new7d}` : 'N/A'}
                     trendDirection={stats.new7d > 0 ? 'up' : 'neutral'}
-                    subtitle="Últimos 7 días"
                 />
             </div>
         </div>

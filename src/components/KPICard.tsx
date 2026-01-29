@@ -24,14 +24,14 @@ export default function KPICard({ label, value, trend, trendDirection = 'neutral
 
     return (
         <div className="card-float card-kpi p-5 text-center">
-            {/* Label */}
-            <div className="kpi-label mb-3">
-                {label}
-            </div>
-
             {/* Value */}
             <div className="kpi-value text-[var(--primary)]">
                 {value}
+            </div>
+
+            {/* Label */}
+            <div className="kpi-label mb-3">
+                {label}
             </div>
 
             {/* Trend */}

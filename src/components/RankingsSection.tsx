@@ -25,10 +25,8 @@ export default function RankingsSection({ topExpensive, topCheap, topActive }: R
     return (
         <div className="mb-8">
             <SectionHeader
-                title={['Rankings', 'clave del mercado']}
-                subtitle="Comparativa por precio típico y volumen"
-                actionLabel="Ver todo"
-                actionHref="#"
+                title={['Ranking del mercado', 'inmobiliario en El Salvador']}
+                subtitle="Top de departamentos según precio mediano y nivel de oferta inmobiliaria."
             />
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">

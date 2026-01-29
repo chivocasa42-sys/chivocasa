@@ -21,7 +21,7 @@ interface DepartmentStats {
 }
 
 type PeriodType = '7d' | '30d' | '90d';
-type ViewType = 'all' | 'sale' | 'rent';
+type ViewType = 'sale' | 'rent';
 type OrderType = 'activity' | 'price' | 'variation';
 
 export default function Home() {
@@ -31,7 +31,7 @@ export default function Home() {
 
   // Controles
   const [period, setPeriod] = useState<PeriodType>('30d');
-  const [view, setView] = useState<ViewType>('all');
+  const [view, setView] = useState<ViewType>('sale');
   const [orderBy, setOrderBy] = useState<OrderType>('activity');
 
   useEffect(() => {
@@ -180,30 +180,11 @@ export default function Home() {
             {/* KPI Strip */}
             <KPIStrip stats={kpiStats} />
 
-            {/* Rankings */}
-            <div id="rankings">
-              <RankingsSection
-                topExpensive={rankings.topExpensive}
-                topCheap={rankings.topCheap}
-                topActive={rankings.topActive}
-              />
-            </div>
-
-            {/* Tendencias */}
-            <div id="tendencias">
-              <TrendsSection
-                departmentData={departments}
-                period={period}
-              />
-            </div>
-
             {/* Departamentos Grid */}
             <div id="departamentos" className="mb-8 scroll-mt-24">
               <SectionHeader
-                title={['Panorama', 'por departamento']}
-                subtitle="Precio típico en venta (P50-P85) y nuevos en 7 días por región"
-                actionLabel="Ver detalles"
-                actionHref="#"
+                title={['Precios y oferta', 'por departamento']}
+                subtitle="Comparativo de precios y oferta inmobiliaria para decidir dónde conviene buscar en El Salvador"
               />
 
               <div className="mb-8">
@@ -232,6 +213,23 @@ export default function Home() {
                   );
                 })}
               </div>
+            </div>
+
+            {/* Rankings */}
+            <div id="rankings">
+              <RankingsSection
+                topExpensive={rankings.topExpensive}
+                topCheap={rankings.topCheap}
+                topActive={rankings.topActive}
+              />
+            </div>
+
+            {/* Tendencias */}
+            <div id="tendencias">
+              <TrendsSection
+                departmentData={departments}
+                period={period}
+              />
             </div>
 
             {/* No Clasificado - solo mostrar si hay data */}

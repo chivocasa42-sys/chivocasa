@@ -77,10 +77,8 @@ export default function TrendsSection({ departmentData, period }: TrendsSectionP
     return (
         <div className="mb-8">
             <SectionHeader
-                title={['Señales', 'del mercado']}
-                subtitle={`Subidas, bajadas y oportunidades en el periodo seleccionado`}
-                actionLabel="Ver tendencias"
-                actionHref="#"
+                title={['Tendencias', 'del mercado inmobiliario']}
+                subtitle={`Qué departamentos subieron o bajaron y dónde hay mejores oportunidades este mes.`}
             />
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
