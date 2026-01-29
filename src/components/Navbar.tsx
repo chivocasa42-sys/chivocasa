@@ -46,11 +46,12 @@ export default function Navbar({ totalListings, onRefresh }: NavbarProps) {
                     </div>
 
                     {/* Actions */}
-                    <div className="flex items-center gap-3">
-                        {/* Badge */}
-                        <span className="hidden sm:inline-flex items-center gap-1.5 text-sm text-[var(--text-secondary)]">
-                            <span className="w-2 h-2 bg-[var(--success)] rounded-full animate-pulse"></span>
-                            {totalListings.toLocaleString()} activos
+                    <div className="flex items-center gap-2 sm:gap-3">
+                        {/* Badge - Visible on all devices */}
+                        <span className="inline-flex items-center gap-1 sm:gap-1.5 text-xs sm:text-sm text-[var(--text-secondary)]">
+                            <span className="w-1.5 sm:w-2 h-1.5 sm:h-2 bg-[var(--success)] rounded-full animate-pulse"></span>
+                            <span className="font-medium">{totalListings.toLocaleString()}</span>
+                            <span className="hidden sm:inline">activos</span>
                         </span>
 
                         {/* Refresh */}
