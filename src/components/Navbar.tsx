@@ -25,20 +25,13 @@ export default function Navbar({ totalListings, onRefresh }: NavbarProps) {
                     {/* Logo */}
                     <Link
                         href="/"
-                        className="flex items-center gap-2.5 no-underline group"
+                        className="flex items-center gap-2 no-underline group"
                     >
-                        <div className="flex items-center justify-center w-9 h-9 bg-blue-50 rounded-xl group-hover:scale-105 transition-transform">
-                            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-6 h-6">
-                                <path d="M3 10L12 3L21 10V20C21 20.5523 20.5523 21 20 21H4C3.44772 21 3 20.5523 3 20V10Z" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                <rect x="7" y="14" width="2" height="3" rx="0.5" fill="#2563eb" />
-                                <rect x="11" y="11" width="2" height="6" rx="0.5" fill="#2563eb" />
-                                <rect x="15" y="13" width="2" height="4" rx="0.5" fill="#3b82f6" />
-                                <path d="M7 14L11 11L15 13" stroke="#2563eb" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                            </svg>
-                        </div>
-                        <span className="text-xl font-extrabold tracking-tight text-slate-900">
-                            Sivar<span className="text-blue-600">Casas</span>
-                        </span>
+                        <img
+                            src="/logo.webp"
+                            alt="SivarCasas"
+                            className="h-10 w-auto group-hover:scale-105 transition-transform"
+                        />
                     </Link>
 
                     {/* Spacer for layout balance */}
