@@ -311,7 +311,7 @@ export default function ListingModal({ externalId, onClose }: ListingModalProps)
                                 Ver más información
                             </a>
                             <div className="mt-3 text-center text-[10px] text-slate-400 font-medium uppercase tracking-wide">
-                                Indexado por <span className="font-black italic text-slate-600">CHIVO<span className="text-blue-600">CASA</span></span>
+                                Indexado por <span className="font-black italic text-slate-600">SIVAR<span className="text-blue-600">CASAS</span></span>
                             </div>
                         </div>
                     </div>

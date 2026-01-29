@@ -103,7 +103,7 @@ export default function ListingCard({ listing, onClick }: ListingCardProps) {
 
                 {/* Bottom-right Logo */}
                 <div className="absolute bottom-2 right-2 bg-white/90 backdrop-blur-sm px-2 py-0.5 rounded text-[9px] font-black italic tracking-tight text-slate-800 shadow-sm">
-                    CHIVO<span className="text-blue-600">CASA</span>
+                    SIVAR<span className="text-blue-600">CASAS</span>
                 </div>
             </div>
 

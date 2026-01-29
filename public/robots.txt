@@ -3,4 +3,4 @@ User-agent: *
 Allow: /
 
 # Sitemap
-Sitemap: https://chivocasa.com/sitemap.xml
+Sitemap: https://sivarcasas.com/sitemap.xml

@@ -508,7 +508,11 @@ def detect_property_subtype(title, description="", details=None, url=""):
     """
     Detect property subtype from listing content.
     
-    Subtypes (in order of specificity):
+    Priority:
+    1. Check details.property_type (explicit classification from source)
+    2. Keyword matching in title/description/url
+    
+    Subtypes (in order of specificity for keyword matching):
     - Apartamento: apartments, condos, flats
     - Local: commercial spaces, offices, warehouses
     - Terreno: land, lots, undeveloped property
@@ -517,32 +521,43 @@ def detect_property_subtype(title, description="", details=None, url=""):
     Args:
         title: Listing title
         description: Listing description
-        details: Details dict (will be converted to string)
+        details: Details dict (may contain property_type field)
         url: Listing URL
         
     Returns:
         One of ["Apartamento", "Local", "Casa", "Terreno"] or None
     """
-    # Combine all text sources for searching
-    details_str = ""
-    if details:
-        if isinstance(details, dict):
-            details_str = " ".join(str(v) for v in details.values())
-        else:
-            details_str = str(details)
+    # First, check explicit property_type from source (most reliable)
+    if details and isinstance(details, dict):
+        property_type = str(details.get("property_type", "")).lower()
+        
+        # Map explicit property types to our categories
+        if property_type in ["land", "lot", "lots"]:
+            return "Terreno"
+        elif property_type in ["apartment", "condo", "condominium", "flat"]:
+            return "Apartamento"
+        elif property_type in ["house", "home", "single family", "townhouse"]:
+            return "Casa"
+        elif property_type in ["commercial", "office", "retail", "warehouse"]:
+            return "Local"
     
-    combined = f"{title or ''} {description or ''} {details_str} {url or ''}".lower()
+    # Combine text sources for keyword searching (excluding details to avoid false positives)
+    # Note: We don't include details_str because it may contain location info like "Department"
+    combined = f"{title or ''} {description or ''}".lower()
+    
+    # Also check URL for property type hints (but be careful with it)
+    url_lower = (url or "").lower()
     
     # Keywords for each subtype (ordered by specificity)
     # Check in order: Apartamento → Local → Terreno → Casa
     
-    # Apartamento patterns (most specific first)
+    # Apartamento patterns (removed 'departamento' - too ambiguous with geographic regions)
     apartamento_keywords = [
-        'apartamento', 'apto', 'apto.', 'depto', 'departamento',
+        'apartamento', 'apto', 'apto.', 'depto',
         'penthouse', 'pent house', 'pent-house',
         'condominio', 'condo',
-        'apartment', 'flat', 'unit',
-        'torre', 'piso'  # tower/floor often indicate apartments
+        'apartment', 'flat',
+        'torre residencial'  # residential tower
     ]
     
     # Local/Commercial patterns
@@ -557,7 +572,7 @@ def detect_property_subtype(title, description="", details=None, url=""):
         'clinica', 'clínica'  # clinic
     ]
     
-    # Terreno/Land patterns
+    # Terreno/Land patterns (check before Casa since some land descriptions mention "casa")
     terreno_keywords = [
         'terreno', 'lote', 'solar',
         'parcela', 'finca',

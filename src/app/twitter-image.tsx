@@ -46,8 +46,8 @@ export default async function Image() {
                             letterSpacing: '-0.02em',
                         }}
                     >
-                        Chivo
-                        <span style={{ color: '#38bdf8' }}>Casa</span>
+                        Sivar
+                        <span style={{ color: '#38bdf8' }}>Casas</span>
                     </div>
                 </div>
 
