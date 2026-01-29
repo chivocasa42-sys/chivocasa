@@ -510,13 +510,12 @@ def detect_property_subtype(title, description="", details=None, url=""):
     
     Priority:
     1. Check details.property_type (explicit classification from source)
-    2. Keyword matching in title/description/url
+    2. Check URL path for category hints (e.g., /casas/, /terrenos/)
+    3. Check TITLE for keywords (most reliable text indicator)
+    4. Check DESCRIPTION for keywords (less reliable, may have false positives)
     
-    Subtypes (in order of specificity for keyword matching):
-    - Apartamento: apartments, condos, flats
-    - Local: commercial spaces, offices, warehouses
-    - Terreno: land, lots, undeveloped property
-    - Casa: houses (default for residential if not apartment)
+    Order of keyword checking: Apartamento → Local → Casa → Terreno
+    (Casa before Terreno because houses often mention "terreno" as lot size)
     
     Args:
         title: Listing title
@@ -541,26 +540,26 @@ def detect_property_subtype(title, description="", details=None, url=""):
         elif property_type in ["commercial", "office", "retail", "warehouse"]:
             return "Local"
     
-    # Combine text sources for keyword searching (excluding details to avoid false positives)
-    # Note: We don't include details_str because it may contain location info like "Department"
-    combined = f"{title or ''} {description or ''}".lower()
-    
-    # Also check URL for property type hints (but be careful with it)
+    # Check URL for category hints (very reliable for Encuentra24)
     url_lower = (url or "").lower()
+    if "/casas/" in url_lower or "/alquiler-casas/" in url_lower or "bienes-raices-alquiler-casas" in url_lower or "bienes-raices-venta-casas" in url_lower:
+        return "Casa"
+    if "/apartamentos/" in url_lower or "/alquiler-apartamentos/" in url_lower or "bienes-raices-alquiler-apartamentos" in url_lower or "bienes-raices-venta-apartamentos" in url_lower:
+        return "Apartamento"
+    if "/terrenos/" in url_lower or "bienes-raices-venta-terrenos" in url_lower:
+        return "Terreno"
+    if "/locales/" in url_lower or "/oficinas/" in url_lower or "bienes-raices-alquiler-locales" in url_lower:
+        return "Local"
     
-    # Keywords for each subtype (ordered by specificity)
-    # Check in order: Apartamento → Local → Terreno → Casa
-    
-    # Apartamento patterns (removed 'departamento' - too ambiguous with geographic regions)
+    # Keyword lists
     apartamento_keywords = [
         'apartamento', 'apto', 'apto.', 'depto',
         'penthouse', 'pent house', 'pent-house',
         'condominio', 'condo',
         'apartment', 'flat',
-        'torre residencial'  # residential tower
+        'torre residencial'
     ]
     
-    # Local/Commercial patterns
     local_keywords = [
         'local comercial', 'local-comercial',
         'oficina', 'office',
@@ -568,20 +567,10 @@ def detect_property_subtype(title, description="", details=None, url=""):
         'nave industrial', 'nave-industrial',
         'comercial', 'commercial',
         'retail', 'tienda',
-        'negocio',  # business
-        'clinica', 'clínica'  # clinic
+        'negocio',
+        'clinica', 'clínica'
     ]
     
-    # Terreno/Land patterns (check before Casa since some land descriptions mention "casa")
-    terreno_keywords = [
-        'terreno', 'lote', 'solar',
-        'parcela', 'finca',
-        'tierra', 'land', 'lot', 'plot',
-        'hectarea', 'hectárea', 'manzana',
-        'predio'
-    ]
-    
-    # Casa/House patterns
     casa_keywords = [
         'casa', 'house', 'home',
         'residencia', 'residence',
@@ -590,22 +579,66 @@ def detect_property_subtype(title, description="", details=None, url=""):
         'duplex', 'dúplex'
     ]
     
-    # Check in order of specificity
+    # More specific terreno patterns to avoid matching "X m2 de terreno"
+    terreno_keywords = [
+        'venta de terreno', 'terreno en venta',
+        'lote en venta', 'venta de lote',
+        'solar', 'parcela', 'finca',
+        'land for sale', 'lot for sale',
+        'hectarea', 'hectárea',
+        'predio'
+    ]
+    
+    # Simple terreno keywords (less specific, check last)
+    terreno_simple = ['terreno', 'lote', 'land', 'lot']
+    
+    title_lower = (title or "").lower()
+    description_lower = (description or "").lower()
+    
+    # STEP 1: Check TITLE first (most reliable)
+    # Order: Apartamento → Local → Casa → Terreno
     for keyword in apartamento_keywords:
-        if keyword in combined:
+        if keyword in title_lower:
             return "Apartamento"
     
     for keyword in local_keywords:
-        if keyword in combined:
+        if keyword in title_lower:
             return "Local"
     
+    for keyword in casa_keywords:
+        if keyword in title_lower:
+            return "Casa"
+    
+    # Check specific terreno patterns in title
     for keyword in terreno_keywords:
-        if keyword in combined:
+        if keyword in title_lower:
             return "Terreno"
     
+    # Check simple terreno keywords in title (if no casa found yet)
+    for keyword in terreno_simple:
+        if keyword in title_lower:
+            return "Terreno"
+    
+    # STEP 2: Check DESCRIPTION (less reliable, Casa/Apto/Local takes priority over Terreno)
+    for keyword in apartamento_keywords:
+        if keyword in description_lower:
+            return "Apartamento"
+    
+    for keyword in local_keywords:
+        if keyword in description_lower:
+            return "Local"
+    
     for keyword in casa_keywords:
-        if keyword in combined:
+        if keyword in description_lower:
             return "Casa"
+    
+    # Only classify as Terreno from description if using specific patterns
+    # Avoid matching "1000 m2 de terreno" which just describes lot size
+    for keyword in terreno_keywords:
+        if keyword in description_lower:
+            return "Terreno"
+    
+    # Don't use simple terreno keywords from description (too many false positives)
     
     return None
 

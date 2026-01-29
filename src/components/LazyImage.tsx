@@ -22,6 +22,7 @@ export default function LazyImage({
     const [isLoading, setIsLoading] = useState(true);
     const [hasError, setHasError] = useState(false);
     const [isInView, setIsInView] = useState(false);
+    const [useFallback, setUseFallback] = useState(false); // Try direct URL on CORS failure
     const imgRef = useRef<HTMLDivElement>(null);
 
     // Intersection Observer for lazy loading
@@ -70,23 +71,29 @@ export default function LazyImage({
                 if (objectUrl) {
                     setImageSrc(objectUrl);
                 } else {
-                    setHasError(true);
-                    onError?.();
+                    // Cache returned null, try direct URL fallback
+                    setUseFallback(true);
                 }
                 setIsLoading(false);
             })
             .catch(() => {
-                setHasError(true);
+                // CORS error or other failure - try loading directly
+                // This works for CDNs that block fetch but allow <img src>
+                setUseFallback(true);
                 setIsLoading(false);
-                onError?.();
             });
-    }, [isInView, src, onError]);
+    }, [isInView, src]);
 
     const handleNativeError = useCallback(() => {
         setHasError(true);
         setIsLoading(false);
         onError?.();
     }, [onError]);
+
+    // Determine which src to use
+    const finalSrc = hasError
+        ? placeholderSrc
+        : (useFallback ? src : imageSrc) || placeholderSrc;
 
     return (
         <div ref={imgRef} className={`relative overflow-hidden ${className}`}>
@@ -96,9 +103,9 @@ export default function LazyImage({
             )}
 
             {/* Actual image */}
-            {(imageSrc || hasError) && (
+            {(imageSrc || useFallback || hasError) && (
                 <img
-                    src={hasError ? placeholderSrc : imageSrc || placeholderSrc}
+                    src={finalSrc}
                     alt={alt}
                     className={`w-full h-full object-cover transition-opacity duration-300 ${isLoading ? 'opacity-0' : 'opacity-100'
                         }`}
@@ -106,11 +113,13 @@ export default function LazyImage({
                     decoding="async"
                     onError={handleNativeError}
                     onLoad={() => setIsLoading(false)}
+                    // Add referrerPolicy to help with some CDNs
+                    referrerPolicy="no-referrer"
                 />
             )}
 
             {/* Placeholder while loading */}
-            {!imageSrc && !hasError && !isLoading && isInView && (
+            {!imageSrc && !useFallback && !hasError && !isLoading && isInView && (
                 <img
                     src={placeholderSrc}
                     alt={alt}
