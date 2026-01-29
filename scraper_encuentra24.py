@@ -454,14 +454,16 @@ def generate_location_tags(listing):
     """
     Generate searchable location tags for a listing using the localization plugin.
     Uses the build_destination_queries function to create location query strings
-    that serve as searchable tags.
+    that serve as searchable tags. Also includes property subtype tag.
     
     Args:
         listing: Dict with listing data including location info
         
     Returns:
-        List of tag strings for the listing
+        List of tag strings for the listing (location tags + property subtype)
     """
+    tags = []
+    
     try:
         # Build a listing dict in the format expected by localization_plugin
         loc_listing = {
@@ -476,17 +478,121 @@ def generate_location_tags(listing):
         
         # Generate tags using the localization plugin's query builder
         # Only keep the first (most specific) tag, then split into separate tags
-        tags = build_destination_queries(loc_listing)
+        location_tags = build_destination_queries(loc_listing)
         
-        if tags:
+        if location_tags:
             # Split the first tag by ", " to get individual tags
             # e.g., "Santa Rosa, Santa Tecla, La Libertad, El Salvador" 
             # becomes ["Santa Rosa", "Santa Tecla", "La Libertad", "El Salvador"]
-            return [t.strip() for t in tags[0].split(",") if t.strip()]
-        return []
+            tags = [t.strip() for t in location_tags[0].split(",") if t.strip()]
     except Exception as e:
-        print(f"  Warning: Could not generate tags: {e}")
-        return []
+        print(f"  Warning: Could not generate location tags: {e}")
+    
+    # Detect property subtype and add to tags
+    try:
+        subtype = detect_property_subtype(
+            listing.get("title", ""),
+            listing.get("description", ""),
+            listing.get("details"),
+            listing.get("url", "")
+        )
+        if subtype and subtype not in tags:
+            tags.append(subtype)
+    except Exception as e:
+        print(f"  Warning: Could not detect property subtype: {e}")
+    
+    return tags
+
+
+def detect_property_subtype(title, description="", details=None, url=""):
+    """
+    Detect property subtype from listing content.
+    
+    Subtypes (in order of specificity):
+    - Apartamento: apartments, condos, flats
+    - Local: commercial spaces, offices, warehouses
+    - Terreno: land, lots, undeveloped property
+    - Casa: houses (default for residential if not apartment)
+    
+    Args:
+        title: Listing title
+        description: Listing description
+        details: Details dict (will be converted to string)
+        url: Listing URL
+        
+    Returns:
+        One of ["Apartamento", "Local", "Casa", "Terreno"] or None
+    """
+    # Combine all text sources for searching
+    details_str = ""
+    if details:
+        if isinstance(details, dict):
+            details_str = " ".join(str(v) for v in details.values())
+        else:
+            details_str = str(details)
+    
+    combined = f"{title or ''} {description or ''} {details_str} {url or ''}".lower()
+    
+    # Keywords for each subtype (ordered by specificity)
+    # Check in order: Apartamento → Local → Terreno → Casa
+    
+    # Apartamento patterns (most specific first)
+    apartamento_keywords = [
+        'apartamento', 'apto', 'apto.', 'depto', 'departamento',
+        'penthouse', 'pent house', 'pent-house',
+        'condominio', 'condo',
+        'apartment', 'flat', 'unit',
+        'torre', 'piso'  # tower/floor often indicate apartments
+    ]
+    
+    # Local/Commercial patterns
+    local_keywords = [
+        'local comercial', 'local-comercial',
+        'oficina', 'office',
+        'bodega', 'warehouse', 'galera',
+        'nave industrial', 'nave-industrial',
+        'comercial', 'commercial',
+        'retail', 'tienda',
+        'negocio',  # business
+        'clinica', 'clínica'  # clinic
+    ]
+    
+    # Terreno/Land patterns
+    terreno_keywords = [
+        'terreno', 'lote', 'solar',
+        'parcela', 'finca',
+        'tierra', 'land', 'lot', 'plot',
+        'hectarea', 'hectárea', 'manzana',
+        'predio'
+    ]
+    
+    # Casa/House patterns
+    casa_keywords = [
+        'casa', 'house', 'home',
+        'residencia', 'residence',
+        'chalet', 'vivienda',
+        'quinta', 'townhouse', 'town house', 'town-house',
+        'duplex', 'dúplex'
+    ]
+    
+    # Check in order of specificity
+    for keyword in apartamento_keywords:
+        if keyword in combined:
+            return "Apartamento"
+    
+    for keyword in local_keywords:
+        if keyword in combined:
+            return "Local"
+    
+    for keyword in terreno_keywords:
+        if keyword in combined:
+            return "Terreno"
+    
+    for keyword in casa_keywords:
+        if keyword in combined:
+            return "Casa"
+    
+    return None
 
 
 def parse_date(date_str):
