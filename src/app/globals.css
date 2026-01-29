@@ -129,15 +129,22 @@ body {
   position: relative;
   width: 100%;
   height: 520px;
-  background-image: url('/jardin-ca-01.webp');
-  background-size: cover;
-  background-position: center 40%;
-  background-repeat: no-repeat;
   display: flex;
   align-items: center;
   justify-content: center;
   margin-bottom: 4rem;
   overflow: hidden;
+}
+
+/* LCP Image - replaces CSS background-image for better Core Web Vitals */
+.hero-search-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 40%;
+  z-index: 0;
 }
 
 .hero-search-slogan {

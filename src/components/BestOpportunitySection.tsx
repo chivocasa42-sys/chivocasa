@@ -37,7 +37,7 @@ export default function BestOpportunitySection({
 
     const renderOpportunityCard = (listing: TopScoredListing, type: 'sale' | 'rent') => {
         const isRent = type === 'rent';
-        const badgeClass = isRent ? 'bg-blue-600' : 'bg-emerald-500';
+        const badgeClass = isRent ? 'bg-blue-700' : 'bg-emerald-600';
         const badgeText = isRent ? 'RENTA' : 'VENTA';
 
         return (
@@ -111,7 +111,7 @@ export default function BestOpportunitySection({
                     {/* Score */}
                     <div className="border-t border-slate-50 pt-4">
                         <div className="flex items-center justify-between mb-2">
-                            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Score de oportunidad</span>
+                            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Score de oportunidad</span>
                             <span className="text-sm font-black text-[var(--primary)]">
                                 {listing.score.toFixed(2)}
                             </span>

@@ -102,7 +102,7 @@ export default function TrendsSection({ departmentData, period }: TrendsSectionP
                                 >
                                     <div className="flex justify-between items-center">
                                         <span className="font-medium text-[var(--text-primary)]">{item.departamento}</span>
-                                        <span className="font-semibold text-[var(--success)]">
+                                        <span className="font-semibold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full text-xs">
                                             +{item.change.toFixed(1)}%
                                         </span>
                                     </div>
@@ -137,7 +137,7 @@ export default function TrendsSection({ departmentData, period }: TrendsSectionP
                                 >
                                     <div className="flex justify-between items-center">
                                         <span className="font-medium text-[var(--text-primary)]">{item.departamento}</span>
-                                        <span className="font-semibold text-[var(--danger)]">
+                                        <span className="font-semibold text-red-700 bg-red-100 px-2 py-0.5 rounded-full text-xs">
                                             {item.change.toFixed(1)}%
                                         </span>
                                     </div>

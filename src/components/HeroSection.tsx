@@ -78,6 +78,15 @@ export default function HeroSection() {
 
     return (
         <section className="hero-search">
+            {/* LCP Image - Preloaded with high priority for Core Web Vitals */}
+            <img
+                src="/jardin-ca-01.webp"
+                alt=""
+                aria-hidden="true"
+                fetchPriority="high"
+                decoding="sync"
+                className="hero-search-bg"
+            />
             <div className="hero-search-overlay" />
             <div className="hero-search-content">
                 <h1 className="hero-search-title">

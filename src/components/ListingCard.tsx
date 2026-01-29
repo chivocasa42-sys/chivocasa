@@ -132,7 +132,7 @@ export default function ListingCard({ listing, onClick }: ListingCardProps) {
                             <span><span className="font-bold">{area.toLocaleString()}</span> m²</span>
                         </>
                     )}
-                    <span className="text-slate-400 ml-1">
+                    <span className="text-slate-500 ml-1">
                         - {listing.listing_type === 'sale' ? 'Venta' : 'Renta'}
                     </span>
                 </div>
