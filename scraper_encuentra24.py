@@ -207,6 +207,358 @@ def insert_listings_batch(listings, batch_size=50):
     return success, errors
 
 
+# ============== UPDATE MODE FUNCTIONS ==============
+
+def get_active_listings_from_db(source=None, limit=None):
+    """
+    Fetch all active listings from the database.
+    Uses pagination to bypass Supabase's default 1000-row limit.
+    Includes retry logic and continues on error.
+    
+    Args:
+        source: Optional filter by source (e.g., "Encuentra24", "MiCasaSV")
+        limit: Optional limit on number of results
+        
+    Returns:
+        List of dicts with {external_id, url, source, listing_type}
+    """
+    headers = {
+        "apikey": SUPABASE_SERVICE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+        "Prefer": "count=exact"  # Get total count in response headers
+    }
+    
+    all_listings = []
+    page_size = 1000  # Fetch 1000 at a time
+    offset = 0
+    max_retries = 3
+    consecutive_failures = 0
+    max_consecutive_failures = 5  # Stop if 5 batches in a row fail
+    
+    while True:
+        url = f"{SUPABASE_URL}/rest/v1/{TABLE_NAME}?select=external_id,url,source,listing_type&active=eq.true&order=external_id&offset={offset}&limit={page_size}"
+        
+        if source:
+            url += f"&source=eq.{source}"
+        
+        batch = None
+        for attempt in range(max_retries):
+            try:
+                resp = requests.get(url, headers=headers, timeout=60)
+                # 200 = OK, 206 = Partial Content (used for paginated results with count header)
+                if resp.status_code in (200, 206):
+                    batch = resp.json()
+                    consecutive_failures = 0  # Reset on success
+                    break
+                else:
+                    print(f"  Attempt {attempt + 1}/{max_retries} failed: {resp.status_code} - {resp.text[:100]}")
+                    if attempt < max_retries - 1:
+                        time.sleep(2)  # Wait before retry
+            except Exception as e:
+                print(f"  Attempt {attempt + 1}/{max_retries} exception: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(2)
+        
+        if batch is None:
+            # All retries failed for this batch
+            consecutive_failures += 1
+            print(f"  ⚠️ Failed to fetch batch at offset {offset} after {max_retries} attempts, skipping...")
+            
+            if consecutive_failures >= max_consecutive_failures:
+                print(f"  ❌ Too many consecutive failures ({consecutive_failures}), stopping pagination")
+                break
+            
+            # Continue to next batch
+            offset += page_size
+            continue
+        
+        if not batch:
+            # Empty batch = no more records
+            break
+        
+        all_listings.extend(batch)
+        print(f"  Fetched {len(all_listings)} active listings so far...")
+        
+        # Check if we've hit the user-specified limit
+        if limit and len(all_listings) >= limit:
+            all_listings = all_listings[:limit]
+            break
+        
+        # If we got fewer than page_size, we're done
+        if len(batch) < page_size:
+            break
+        
+        offset += page_size
+    
+    print(f"  Total: {len(all_listings)} active listings fetched from database")
+    return all_listings
+
+
+def update_listings_batch(listings, batch_size=50):
+    """
+    Update multiple listings in Supabase by external_id.
+    Uses PATCH requests to update existing records.
+    
+    Args:
+        listings: List of listing dicts to update
+        batch_size: Number of records to update per batch
+        
+    Returns:
+        Tuple of (success_count, error_count)
+    """
+    if not listings:
+        return 0, 0
+    
+    headers = {
+        "apikey": SUPABASE_SERVICE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal"
+    }
+    
+    success = 0
+    errors = 0
+    
+    for listing in listings:
+        # Parse external_id to bigint
+        external_id_str = listing.get("external_id", "")
+        try:
+            external_id = int(external_id_str)
+        except (ValueError, TypeError):
+            errors += 1
+            continue
+        
+        # Parse published_date - convert DD/MM/YYYY to YYYY-MM-DD
+        pub_date = listing.get("published_date")
+        parsed_date = None
+        if pub_date and pub_date.strip():
+            try:
+                parts = pub_date.strip().split("/")
+                if len(parts) == 3:
+                    day, month, year = parts
+                    parsed_date = f"{year}-{month.zfill(2)}-{day.zfill(2)}"
+            except:
+                parsed_date = None
+        
+        # Build location JSONB with breakdown
+        location_data = {
+            "location_original": listing.get("location", ""),
+            "municipio_detectado": listing.get("municipio_detectado", "No identificado"),
+            "departamento": listing.get("departamento", "")
+        }
+        
+        # Get tags (pre-computed or generate now)
+        tags = listing.get("tags")
+        if not tags:
+            tags = generate_location_tags(listing)
+        
+        # Build update data (exclude external_id as it's the filter key)
+        update_data = {
+            "title": listing.get("title"),
+            "price": parse_price(listing.get("price", "")),
+            "location": location_data,
+            "published_date": parsed_date,
+            "listing_type": listing.get("listing_type"),
+            "url": listing.get("url"),
+            "specs": listing.get("specs", {}),
+            "details": listing.get("details", {}),
+            "description": listing.get("description"),
+            "images": listing.get("images", []),
+            "source": listing.get("source"),
+            "active": listing.get("active", True),
+            "tags": tags
+        }
+        
+        # PATCH request to update by external_id
+        url = f"{SUPABASE_URL}/rest/v1/{TABLE_NAME}?external_id=eq.{external_id}"
+        try:
+            resp = requests.patch(url, headers=headers, json=update_data, timeout=30)
+            if resp.status_code in (200, 204):
+                success += 1
+            else:
+                print(f"  Update error for {external_id}: {resp.status_code} - {resp.text[:200]}")
+                errors += 1
+        except Exception as e:
+            print(f"  Update exception for {external_id}: {e}")
+            errors += 1
+        
+        # Progress update every 50 listings
+        if (success + errors) % 50 == 0:
+            print(f"  Updated {success + errors}/{len(listings)} ({success} success, {errors} errors)")
+    
+    return success, errors
+
+
+def run_update_mode(sources=None, limit=None):
+    """
+    Update mode: re-scrape existing active listings from DB and update them.
+    Also marks listings as inactive if they fail to scrape (404, sold, expired).
+    
+    Args:
+        sources: List of sources to update (None = all sources)
+        limit: Optional limit per source
+    """
+    print("\n" + "="*60)
+    print("UPDATE MODE: Re-scraping and updating existing listings")
+    print("="*60)
+    
+    # Determine which sources to update
+    all_sources = ["Encuentra24", "MiCasaSV", "Realtor", "VivoLatam"]
+    if sources:
+        sources_to_update = [s for s in sources if s in all_sources]
+    else:
+        sources_to_update = all_sources
+    
+    print(f"Sources to update: {', '.join(sources_to_update)}")
+    
+    total_updated = 0
+    total_errors = 0
+    total_deactivated = 0
+    
+    for source in sources_to_update:
+        print(f"\n--- Processing {source} ---")
+        
+        # Fetch active listings for this source
+        active_listings = get_active_listings_from_db(source=source, limit=limit)
+        
+        if not active_listings:
+            print(f"  No active listings found for {source}")
+            continue
+        
+        print(f"  Found {len(active_listings)} listings to re-scrape")
+        
+        # Build URL -> external_id mapping to track which listings fail to scrape
+        url_to_id = {l['url']: l['external_id'] for l in active_listings}
+        original_urls = set(url_to_id.keys())
+        
+        # Group by listing_type
+        sale_urls = [(l['url'], l['external_id']) for l in active_listings if l.get('listing_type') == 'sale']
+        rent_urls = [(l['url'], l['external_id']) for l in active_listings if l.get('listing_type') == 'rent']
+        
+        scraped_listings = []
+        
+        # Re-scrape based on source
+        if source == "Encuentra24":
+            if sale_urls:
+                print(f"  Re-scraping {len(sale_urls)} sale listings...")
+                scraped = scrape_listings_concurrent([u[0] for u in sale_urls], "sale", max_workers=10)
+                scraped_listings.extend(scraped)
+            if rent_urls:
+                print(f"  Re-scraping {len(rent_urls)} rent listings...")
+                scraped = scrape_listings_concurrent([u[0] for u in rent_urls], "rent", max_workers=10)
+                scraped_listings.extend(scraped)
+                
+        elif source == "MiCasaSV":
+            if sale_urls:
+                print(f"  Re-scraping {len(sale_urls)} sale listings...")
+                scraped = scrape_micasasv_listings_concurrent([u[0] for u in sale_urls], "sale", max_workers=5)
+                scraped_listings.extend(scraped)
+            if rent_urls:
+                print(f"  Re-scraping {len(rent_urls)} rent listings...")
+                scraped = scrape_micasasv_listings_concurrent([u[0] for u in rent_urls], "rent", max_workers=5)
+                scraped_listings.extend(scraped)
+                
+        elif source == "Realtor":
+            # Realtor uses page-based scraping - re-fetch all from paginated pages
+            print(f"  Re-fetching Realtor listings from pages (page-based scraping)...")
+            
+            # Fetch sale listings
+            sale_listings = get_realtor_all_listings(REALTOR_SALE_URL, max_listings=limit, listing_type="sale")
+            if sale_listings:
+                print(f"  Fetched {len(sale_listings)} sale listings")
+                # Enrich with descriptions
+                enriched_sale = enrich_realtor_listings(sale_listings, max_workers=5)
+                scraped_listings.extend(enriched_sale)
+            
+            # Fetch rent listings  
+            rent_listings = get_realtor_all_listings(REALTOR_RENT_URL, max_listings=limit, listing_type="rent")
+            if rent_listings:
+                print(f"  Fetched {len(rent_listings)} rent listings")
+                enriched_rent = enrich_realtor_listings(rent_listings, max_workers=5)
+                scraped_listings.extend(enriched_rent)
+            
+            # For Realtor, check which active listings from DB are no longer on the site
+            # SAFEGUARD: Only deactivate if we successfully scraped at least 50% of expected listings
+            # This prevents mass deactivation if scraping fails completely
+            if len(scraped_listings) >= len(active_listings) * 0.5:
+                scraped_external_ids = {str(l.get('external_id')) for l in scraped_listings if l.get('external_id')}
+                db_external_ids = {str(l['external_id']) for l in active_listings}
+                missing_ids = db_external_ids - scraped_external_ids
+                
+                if missing_ids:
+                    print(f"  ⚠️ {len(missing_ids)} Realtor listings no longer on site, deactivating...")
+                    deactivated = deactivate_listings([int(eid) for eid in missing_ids])
+                    total_deactivated += deactivated
+                    print(f"  Deactivated {deactivated} Realtor listings")
+            else:
+                print(f"  ⚠️ Scrape returned too few results ({len(scraped_listings)}/{len(active_listings)}), skipping deactivation to prevent data loss")
+            
+        elif source == "VivoLatam":
+            all_urls = [u[0] for u in sale_urls + rent_urls]
+            if all_urls:
+                print(f"  Re-scraping {len(all_urls)} listings...")
+                scraped = scrape_vivolatam_listings_concurrent(all_urls, "sale", max_workers=5)
+                scraped_listings.extend(scraped)
+        
+        # Determine which listings failed to scrape
+        scraped_urls = {l.get('url') for l in scraped_listings if l.get('url')}
+        failed_urls = original_urls - scraped_urls
+        
+        if failed_urls:
+            print(f"  ⚠️ {len(failed_urls)} listings failed to scrape, verifying if truly inactive...")
+            # Verify each failed URL to confirm it's actually 404/sold (not just rate limited)
+            confirmed_inactive_ids = []
+            for url in failed_urls:
+                is_active, reason = check_listing_still_active(url, source)
+                if not is_active:
+                    confirmed_inactive_ids.append(url_to_id[url])
+                    print(f"    ✗ Confirmed inactive: {url[:60]}... ({reason})")
+                else:
+                    print(f"    ? Skipping (may be transient): {url[:60]}... ({reason})")
+            
+            if confirmed_inactive_ids:
+                deactivated = deactivate_listings(confirmed_inactive_ids)
+                total_deactivated += deactivated
+                print(f"  Deactivated {deactivated} confirmed inactive listings")
+        
+        if scraped_listings:
+            print(f"  Successfully scraped {len(scraped_listings)} listings")
+            print(f"  Inserting/updating database (DB trigger handles upsert)...")
+            success, errors = insert_listings_batch(scraped_listings)
+            total_updated += success
+            total_errors += errors
+            print(f"  {source}: {success} upserted, {errors} errors")
+        else:
+            print(f"  No listings scraped for {source}")
+    
+    # Refresh materialized view after updates
+    print("\n=== Refreshing Materialized View ===")
+    try:
+        refresh_url = f"{SUPABASE_URL}/rest/v1/rpc/refresh_mv_sd_depto_stats"
+        refresh_resp = requests.post(
+            refresh_url,
+            headers={
+                "apikey": SUPABASE_SERVICE_KEY,
+                "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={}
+        )
+        if refresh_resp.status_code in [200, 204]:
+            print("  Materialized view refreshed successfully!")
+        else:
+            print(f"  Warning: Could not refresh view. Status: {refresh_resp.status_code}")
+    except Exception as e:
+        print(f"  Warning: Error refreshing view: {e}")
+    
+    print(f"\n=== UPDATE MODE COMPLETE ===")
+    print(f"Total updated: {total_updated}")
+    print(f"Total deactivated: {total_deactivated}")
+    print(f"Total errors: {total_errors}")
+    
+    return total_updated, total_deactivated, total_errors
+
+
 # ============== LISTING VALIDATION FUNCTIONS ==============
 
 def get_stale_active_listings(run_start_time, source=None):
@@ -466,15 +818,16 @@ def parse_price(price_str):
         return None
 
 
-def correct_listing_type(listing_type, title, description, price):
+def correct_listing_type(listing_type, title, description, price, url=None):
     """
     Correct listing_type based on content analysis.
     Users sometimes list sale properties in the rent section and vice versa.
     
     Detection heuristics:
-    1. Strong sale keywords: "VENDO", "VENTA", "EN VENTA", "SE VENDE"
-    2. Strong rent keywords: "ALQUILO", "RENTA", "ALQUILER", "MENSUAL"
-    3. Price heuristics:
+    1. URL path (most reliable for Encuentra24): "alquiler" = rent, "venta" = sale
+    2. Strong sale keywords: "VENDO", "VENTA", "EN VENTA", "SE VENDE"
+    3. Strong rent keywords: "ALQUILO", "RENTA", "ALQUILER", "MENSUAL"
+    4. Price heuristics:
        - Sale prices are typically > $50,000 (for most properties)
        - Rent prices are typically < $5,000/month
     
@@ -483,15 +836,31 @@ def correct_listing_type(listing_type, title, description, price):
         title: Listing title
         description: Listing description
         price: Parsed price (float)
+        url: Optional URL for path-based detection
         
     Returns:
         Corrected listing_type ('sale' or 'rent')
     """
+    original_type = listing_type
+    
+    # 1. URL-based detection (most reliable for Encuentra24)
+    if url:
+        url_lower = url.lower()
+        if 'alquiler' in url_lower or '-alquiler-' in url_lower:
+            if listing_type == 'sale':
+                print(f"    ⚠️ URL indicates rent but marked as sale, correcting to rent")
+            return 'rent'
+        elif 'venta' in url_lower or '-venta-' in url_lower:
+            if listing_type == 'rent':
+                print(f"    ⚠️ URL indicates sale but marked as rent, correcting to sale")
+            return 'sale'
+    
     if not title and not description:
         return listing_type
     
     # Combine title and description for analysis (uppercase for matching)
     text = f"{title or ''} {description or ''}".upper()
+    title_upper = (title or '').upper()
     
     # Strong sale indicators
     sale_keywords = [
@@ -519,26 +888,31 @@ def correct_listing_type(listing_type, title, description, price):
     sale_matches = sum(1 for pattern in sale_keywords if re.search(pattern, text))
     rent_matches = sum(1 for pattern in rent_keywords if re.search(pattern, text))
     
+    # Check for strong indicators in TITLE specifically (more weight)
+    title_has_rent = any(re.search(pattern, title_upper) for pattern in [r'\bALQUILER\b', r'\bALQUILO\b', r'\bRENTA\b', r'\bSE ALQUILA\b'])
+    title_has_sale = any(re.search(pattern, title_upper) for pattern in [r'\bVENTA\b', r'\bVENDO\b', r'\bSE VENDE\b'])
+    
     # Price-based heuristics (in USD)
     price_suggests_sale = False
     price_suggests_rent = False
     
     if price:
-        # Very high prices (>$50,000) are almost always sales
-        if price > 50000:
-            price_suggests_sale = True
         # Very low prices (<$500) could be rent
-        elif price < 500:
+        if price < 500:
             price_suggests_rent = True
         # Mid-range ($500-$5000) is ambiguous, rely on keywords
         elif price < 5000:
             price_suggests_rent = True if rent_matches > sale_matches else False
     
     # Decision logic
-    original_type = listing_type
     corrected_type = listing_type
     
-    if listing_type == 'rent':
+    # If title explicitly says one type, trust it
+    if title_has_rent and not title_has_sale:
+        corrected_type = 'rent'
+    elif title_has_sale and not title_has_rent:
+        corrected_type = 'sale'
+    elif listing_type == 'rent':
         # Currently marked as rent - check if it should be sale
         if sale_matches > rent_matches and (sale_matches >= 2 or price_suggests_sale):
             corrected_type = 'sale'
@@ -546,7 +920,7 @@ def correct_listing_type(listing_type, title, description, price):
             corrected_type = 'sale'
     elif listing_type == 'sale':
         # Currently marked as sale - check if it should be rent
-        if rent_matches > sale_matches and (rent_matches >= 2 or price_suggests_rent):
+        if rent_matches > sale_matches and (rent_matches >= 1 or price_suggests_rent):
             corrected_type = 'rent'
         elif rent_matches > 0 and price_suggests_rent and price and price < 5000:
             corrected_type = 'rent'
@@ -1252,12 +1626,44 @@ def scrape_listing(url, listing_type):
         if not title or "borrado" in title.lower() or "eliminado" in title.lower():
             return None
 
-        # Price
+        # Price - extract from multiple sources and use the most complete one
+        price = ""
+        price_candidates = []
+        
+        # Source 1: Price element on page
         price_el = soup.select_one(".estate-price") or soup.select_one(".d3-price")
-        price = price_el.get_text(strip=True) if price_el else ""
-        if not price:
-            match = re.search(r"\$[\d,\.]+", soup.get_text())
-            price = match.group(0) if match else ""
+        if price_el:
+            el_price = price_el.get_text(strip=True)
+            if el_price:
+                price_candidates.append(el_price)
+        
+        # Source 2: Look for price in title (common pattern: "por XXXXX.00")
+        title_price_match = re.search(r'por\s+(?:USD\s+)?([\d,\.]+)', title, re.IGNORECASE)
+        if title_price_match:
+            price_candidates.append(f"${title_price_match.group(1)}")
+        
+        # Source 3: Look for $ price in title
+        title_dollar_match = re.search(r'\$\s*([\d,\.]+)', title)
+        if title_dollar_match:
+            price_candidates.append(f"${title_dollar_match.group(1)}")
+        
+        # Source 4: Fallback - search full page text
+        if not price_candidates:
+            page_match = re.search(r"\$[\d,\.]+", soup.get_text())
+            if page_match:
+                price_candidates.append(page_match.group(0))
+        
+        # Choose the largest price (to get full price, not truncated display)
+        best_price = 0
+        for candidate in price_candidates:
+            parsed = parse_price(candidate)
+            if parsed and parsed > best_price:
+                best_price = parsed
+                price = candidate
+        
+        # If no named price found, use empty
+        if not price and price_candidates:
+            price = price_candidates[0]
 
         # Specs - from insight attributes (bedrooms, bathrooms, area, etc.)
         specs = {}
@@ -1357,7 +1763,7 @@ def scrape_listing(url, listing_type):
         # Correct listing_type based on content analysis (title, description, price)
         # Users sometimes list sale properties in the rent section and vice versa
         price_value = parse_price(price)
-        listing_type = correct_listing_type(listing_type, title, description, price_value)
+        listing_type = correct_listing_type(listing_type, title, description, price_value, url=url)
 
         # Detect municipality from location, description and title
         municipio_info = detect_municipio(location, description, title)
@@ -1911,9 +2317,14 @@ def get_realtor_listings_from_page(page_url):
             # Determine listing type from channel parameter in URL or default to sale
             listing_type = "sale"  # Default
             
+            # Extract description directly (available in JSON) - needed for correct_listing_type
+            description = value.get("description", "")
+            if description:
+                description = remove_emojis(description[:1000])
+            
             # Correct listing_type based on content analysis (title, description, price)
             price_value = parse_price(price_str)
-            listing_type = correct_listing_type(listing_type, title, description, price_value)
+            listing_type = correct_listing_type(listing_type, title, description, price_value, url=full_url)
             
             # Property type - extract from JSON format
             prop_types_key = 'propertyTypes({"language":"en"})'
@@ -1926,11 +2337,6 @@ def get_realtor_listings_from_page(page_url):
                     property_type = prop_list[0]
             elif isinstance(prop_types_raw, list) and len(prop_types_raw) > 0:
                 property_type = prop_types_raw[0] if isinstance(prop_types_raw[0], str) else ""
-            
-            # Extract description directly (available in JSON)
-            description = value.get("description", "")
-            if description:
-                description = remove_emojis(description[:1000])
             
             # Extract published date
             published_date = ""
@@ -2481,7 +2887,7 @@ def scrape_vivolatam_listing(url, listing_type="sale"):
         
         # Correct listing_type based on content analysis (title, description, price)
         price_value = parse_price(price)
-        listing_type = correct_listing_type(listing_type, title, description, price_value)
+        listing_type = correct_listing_type(listing_type, title, description, price_value, url=url)
         
         # Detect municipality
         municipio_info = detect_municipio(location, description, title)
@@ -2725,6 +3131,11 @@ if __name__ == "__main__":
         action="store_true",
         help="Skip the validation phase (checking for inactive/removed listings)"
     )
+    parser.add_argument(
+        "--update",
+        action="store_true",
+        help="Update mode: re-scrape existing active listings from DB and update them (instead of scraping new listings)"
+    )
     args = parser.parse_args()
     
     # Get source flags
@@ -2733,20 +3144,41 @@ if __name__ == "__main__":
     realtor = args.Realtor
     vivolatam = args.VivoLatam
     
-    # Default behavior: scrape from ALL sources if no source is specified
-    if not encuentra24 and not micasasv and not realtor and not vivolatam:
-        encuentra24 = True
-        micasasv = True
-        realtor = True
-        vivolatam = True
-        print("No source specified. Scraping from ALL sources: Encuentra24, MiCasaSV, Realtor, VivoLatam")
+    # Build sources list for update mode
+    sources = []
+    if encuentra24:
+        sources.append("Encuentra24")
+    if micasasv:
+        sources.append("MiCasaSV")
+    if realtor:
+        sources.append("Realtor")
+    if vivolatam:
+        sources.append("VivoLatam")
     
-    main(
-        encuentra24=encuentra24, 
-        micasasv=micasasv, 
-        realtor=realtor, 
-        vivolatam=vivolatam,
-        limit=args.limit,
-        vivolatam_urls=args.vivolatam_urls,
-        skip_validation=args.skip_validation
-    )
+    # If no sources specified, use all
+    if not sources:
+        sources = None  # run_update_mode will use all sources
+    
+    # Check for update mode
+    if args.update:
+        # Update mode: re-scrape and update existing active listings
+        run_update_mode(sources=sources, limit=args.limit)
+    else:
+        # Normal scrape mode
+        # Default behavior: scrape from ALL sources if no source is specified
+        if not encuentra24 and not micasasv and not realtor and not vivolatam:
+            encuentra24 = True
+            micasasv = True
+            realtor = True
+            vivolatam = True
+            print("No source specified. Scraping from ALL sources: Encuentra24, MiCasaSV, Realtor, VivoLatam")
+        
+        main(
+            encuentra24=encuentra24, 
+            micasasv=micasasv, 
+            realtor=realtor, 
+            vivolatam=vivolatam,
+            limit=args.limit,
+            vivolatam_urls=args.vivolatam_urls,
+            skip_validation=args.skip_validation
+        )
