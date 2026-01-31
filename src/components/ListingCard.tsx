@@ -56,9 +56,14 @@ function getImageUrl(images: string[] | null | undefined): string {
 
 // Get location-based tags from the listing
 function getLocationTags(location: ListingLocation | undefined, tags?: string[] | null): string[] {
+    // Tags to exclude from display (all listings are in El Salvador, so redundant)
+    const excludedTags = ['el salvador', 'no identificado'];
+
     // Prefer the tags array if it exists
     if (tags && tags.length > 0) {
-        return tags.slice(0, 3); // Max 3 location tags
+        return tags
+            .filter(t => !excludedTags.includes(t.toLowerCase()))
+            .slice(0, 3); // Max 3 location tags
     }
 
     // Fallback to building from location object
@@ -69,7 +74,6 @@ function getLocationTags(location: ListingLocation | undefined, tags?: string[] 
     } else if (typeof location === 'string') {
         locationTags.push(location);
     }
-    locationTags.push('El Salvador');
 
     return locationTags.slice(0, 3);
 }

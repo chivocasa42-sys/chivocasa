@@ -83,6 +83,12 @@ def insert_listing(listing):
     if not tags:
         tags = generate_location_tags(listing)
     
+    # Filter out redundant tags (all listings are in El Salvador, so it's not useful)
+    # Also filter out "No identificado" which provides no value for search
+    excluded_tags = ["el salvador", "no identificado"]
+    if tags:
+        tags = [t for t in tags if t.lower() not in excluded_tags]
+    
     data = {
         "external_id": external_id,
         "title": listing.get("title"),

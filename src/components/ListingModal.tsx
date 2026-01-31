@@ -60,15 +60,17 @@ function getArea(specs: Record<string, string | number | undefined> | null | und
 
 // Use location tags from the listing
 function getLocationTags(listingTags: string[] | null | undefined, location: any): string[] {
+    // Tags to exclude from display (all listings are in El Salvador, so redundant)
+    const excludedTags = ['el salvador', 'no identificado'];
+
     if (listingTags && listingTags.length > 0) {
-        return listingTags;
+        return listingTags.filter(t => !excludedTags.includes(t.toLowerCase()));
     }
 
     // Fallback to building from location
     const tags: string[] = [];
     if (location?.municipio_detectado) tags.push(location.municipio_detectado);
     if (location?.departamento) tags.push(location.departamento);
-    tags.push('El Salvador');
     return tags;
 }
 
@@ -282,7 +284,7 @@ export default function ListingModal({ externalId, onClose }: ListingModalProps)
                                     <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 16 16">
                                         <path d="M8 16s6-5.686 6-10A6 6 0 0 0 2 6c0 4.314 6 10 6 10zm0-7a3 3 0 1 1 0-6 3 3 0 0 1 0 6z" />
                                     </svg>
-                                    {municipio}, El Salvador
+                                    {municipio}
                                 </div>
                             )}
 
