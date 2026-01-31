@@ -448,21 +448,21 @@ def run_update_mode(sources=None, limit=None):
         if source == "Encuentra24":
             if sale_urls:
                 print(f"  Re-scraping {len(sale_urls)} sale listings...")
-                scraped = scrape_listings_concurrent([u[0] for u in sale_urls], "sale", max_workers=10)
+                scraped, _ = scrape_listings_concurrent([u[0] for u in sale_urls], "sale", max_workers=10)
                 scraped_listings.extend(scraped)
             if rent_urls:
                 print(f"  Re-scraping {len(rent_urls)} rent listings...")
-                scraped = scrape_listings_concurrent([u[0] for u in rent_urls], "rent", max_workers=10)
+                scraped, _ = scrape_listings_concurrent([u[0] for u in rent_urls], "rent", max_workers=10)
                 scraped_listings.extend(scraped)
                 
         elif source == "MiCasaSV":
             if sale_urls:
                 print(f"  Re-scraping {len(sale_urls)} sale listings...")
-                scraped = scrape_micasasv_listings_concurrent([u[0] for u in sale_urls], "sale", max_workers=5)
+                scraped, _ = scrape_micasasv_listings_concurrent([u[0] for u in sale_urls], "sale", max_workers=5)
                 scraped_listings.extend(scraped)
             if rent_urls:
                 print(f"  Re-scraping {len(rent_urls)} rent listings...")
-                scraped = scrape_micasasv_listings_concurrent([u[0] for u in rent_urls], "rent", max_workers=5)
+                scraped, _ = scrape_micasasv_listings_concurrent([u[0] for u in rent_urls], "rent", max_workers=5)
                 scraped_listings.extend(scraped)
                 
         elif source == "Realtor":
@@ -504,7 +504,7 @@ def run_update_mode(sources=None, limit=None):
             all_urls = [u[0] for u in sale_urls + rent_urls]
             if all_urls:
                 print(f"  Re-scraping {len(all_urls)} listings...")
-                scraped = scrape_vivolatam_listings_concurrent(all_urls, "sale", max_workers=5)
+                scraped, _ = scrape_vivolatam_listings_concurrent(all_urls, "sale", max_workers=5)
                 scraped_listings.extend(scraped)
         
         # Determine which listings failed to scrape
