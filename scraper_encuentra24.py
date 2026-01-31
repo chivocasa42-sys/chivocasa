@@ -19,6 +19,7 @@ import re
 import time
 import os
 import hashlib
+import random
 from urllib.parse import unquote
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -639,12 +640,20 @@ def check_listing_still_active(url, source):
         # Use GET to check the full page (some sites don't support HEAD properly)
         resp = requests.get(url, headers=headers, timeout=20, allow_redirects=True)
         
-        # Check for 404 or other error status codes
+        # Check for 404 or 410 (Gone) - these definitively mean listing removed
         if resp.status_code == 404:
             return False, "404 Not Found"
         
+        if resp.status_code == 410:
+            return False, "410 Gone"
+        
+        # 403 = bot blocked/access denied - don't deactivate, listing may still exist
+        if resp.status_code == 403:
+            return True, "403 Forbidden (assumed active - bot blocked)"
+        
+        # Other 4xx/5xx errors - assume active to avoid false deactivations
         if resp.status_code >= 400:
-            return False, f"HTTP Error {resp.status_code}"
+            return True, f"HTTP {resp.status_code} (assumed active)"
         
         # Check if redirected to homepage or search page (common for removed listings)
         final_url = resp.url.lower()
@@ -2609,23 +2618,104 @@ def enrich_realtor_listing(listing):
         return listing
 
 
-def enrich_realtor_listings(listings, max_workers=5):
-    """Enrich multiple Realtor.com listings concurrently."""
+def enrich_realtor_listings(listings, max_workers=2):
+    """Enrich multiple Realtor.com listings with rate limiting to avoid bot detection.
+    
+    Uses slower sequential requests with random delays since Realtor.com 
+    has aggressive bot detection.
+    """
     if not listings:
         return listings
     
-    print(f"  Enriching {len(listings)} listings with full details...")
+    print(f"  Enriching {len(listings)} listings with full details (rate-limited)...")
     enriched = []
     completed = 0
     
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(enrich_realtor_listing, listing): listing for listing in listings}
-        for future in as_completed(futures):
-            completed += 1
-            result = future.result()
-            enriched.append(result)
-            if completed % 10 == 0 or completed == len(listings):
-                print(f"    Enriched {completed}/{len(listings)}")
+    # Enhanced headers for Realtor.com to look more like a real browser
+    realtor_headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9,es;q=0.8',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'DNT': '1',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Cache-Control': 'max-age=0',
+    }
+    
+    # Use a session to maintain cookies
+    session = requests.Session()
+    session.headers.update(realtor_headers)
+    
+    for listing in listings:
+        # Random delay between 2-4 seconds to appear more human
+        if completed > 0:
+            delay = random.uniform(2.0, 4.0)
+            time.sleep(delay)
+        
+        try:
+            url = listing.get("url", "")
+            if not url:
+                enriched.append(listing)
+                continue
+            
+            response = session.get(url, timeout=30)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, "html.parser")
+                next_data = soup.select_one("script#__NEXT_DATA__")
+                
+                if next_data and next_data.string:
+                    data = json.loads(next_data.string)
+                    apollo_state = data.get("props", {}).get("apolloState", {})
+                    
+                    # Find the listing detail
+                    listing_id = listing.get("external_id", "")
+                    detail_key = f"ListingDetail:{listing_id}"
+                    detail = apollo_state.get(detail_key, {})
+                    
+                    if not detail:
+                        for key, value in apollo_state.items():
+                            if key.startswith("ListingDetail:") and isinstance(value, dict):
+                                detail = value
+                                break
+                    
+                    # Extract description
+                    description = detail.get("description", "")
+                    if description:
+                        listing["description"] = remove_emojis(description[:1000])
+                    
+                    # Extract published date
+                    published_at = detail.get("publishedAt", "")
+                    if published_at:
+                        try:
+                            dt = datetime.strptime(published_at.split(" ")[0], "%Y-%m-%d")
+                            listing["published_date"] = dt.strftime("%d/%m/%Y")
+                        except:
+                            pass
+                    
+                    # Extract property type if not already set
+                    if not listing.get("details", {}).get("property_type"):
+                        prop_types = detail.get("propertyTypes", {})
+                        if isinstance(prop_types, dict) and prop_types.get("json"):
+                            prop_list = prop_types.get("json", [])
+                            if prop_list:
+                                listing.setdefault("details", {})["property_type"] = prop_list[0]
+            elif response.status_code == 403:
+                print(f"    ⚠ 403 blocked for: {url[:50]}... (continuing)")
+            
+            enriched.append(listing)
+            
+        except Exception as e:
+            print(f"    Error enriching {listing.get('url', '')[:50]}: {e}")
+            enriched.append(listing)
+        
+        completed += 1
+        if completed % 10 == 0 or completed == len(listings):
+            print(f"    Enriched {completed}/{len(listings)}")
     
     return enriched
 
