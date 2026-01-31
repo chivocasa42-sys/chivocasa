@@ -13,7 +13,9 @@ export default function HeroSection() {
     const [suggestions, setSuggestions] = useState<Tag[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [showDropdown, setShowDropdown] = useState(false);
+    const [selectedIndex, setSelectedIndex] = useState(-1);
     const dropdownRef = useRef<HTMLDivElement>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
 
     // Fetch suggestions when user types
     useEffect(() => {
@@ -21,6 +23,7 @@ export default function HeroSection() {
             if (searchQuery.trim().length < 2) {
                 setSuggestions([]);
                 setShowDropdown(false);
+                setSelectedIndex(-1);
                 return;
             }
 
@@ -31,6 +34,7 @@ export default function HeroSection() {
                     const data = await res.json();
                     setSuggestions(data.tags || []);
                     setShowDropdown(data.tags.length > 0);
+                    setSelectedIndex(-1);
                 }
             } catch (error) {
                 console.error('Error fetching tags:', error);
@@ -48,6 +52,7 @@ export default function HeroSection() {
         const handleClickOutside = (event: MouseEvent) => {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
                 setShowDropdown(false);
+                setSelectedIndex(-1);
             }
         };
 
@@ -61,19 +66,45 @@ export default function HeroSection() {
         router.push(`/tag/${encodeURIComponent(slug)}`);
         setShowDropdown(false);
         setSearchQuery('');
+        setSelectedIndex(-1);
+    };
+
+    // Handle keyboard navigation
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (!showDropdown || suggestions.length === 0) return;
+
+        switch (e.key) {
+            case 'ArrowDown':
+                e.preventDefault();
+                setSelectedIndex(prev =>
+                    prev < suggestions.length - 1 ? prev + 1 : prev
+                );
+                break;
+            case 'ArrowUp':
+                e.preventDefault();
+                setSelectedIndex(prev => prev > 0 ? prev - 1 : -1);
+                break;
+            case 'Escape':
+                setShowDropdown(false);
+                setSelectedIndex(-1);
+                break;
+        }
     };
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
 
-        // If there are suggestions, use the first one
+        // Only allow selecting from existing suggestions
         if (suggestions.length > 0) {
-            handleSelectTag(suggestions[0].tag);
+            // If user has navigated with arrows, use that selection
+            if (selectedIndex >= 0 && selectedIndex < suggestions.length) {
+                handleSelectTag(suggestions[selectedIndex].tag);
+            } else {
+                // Otherwise use the first suggestion
+                handleSelectTag(suggestions[0].tag);
+            }
         }
-        // Otherwise, if user typed something, search for it anyway
-        else if (searchQuery.trim().length > 0) {
-            handleSelectTag(searchQuery.trim());
-        }
+        // If no suggestions available, do nothing (don't allow arbitrary input)
     };
 
     return (
@@ -100,7 +131,10 @@ export default function HeroSection() {
                             placeholder="Buscar por ubicación (ej: Santa Tecla, San Salvador...)"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
+                            onKeyDown={handleKeyDown}
+                            ref={inputRef}
                             className="hero-search-input"
+                            autoComplete="off"
                         />
 
                         {showDropdown && suggestions.length > 0 && (
@@ -110,7 +144,7 @@ export default function HeroSection() {
                                         key={index}
                                         type="button"
                                         onClick={() => handleSelectTag(item.tag)}
-                                        className="hero-search-dropdown-item"
+                                        className={`hero-search-dropdown-item${index === selectedIndex ? ' selected' : ''}`}
                                     >
                                         <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
@@ -119,6 +153,12 @@ export default function HeroSection() {
                                         {item.tag}
                                     </button>
                                 ))}
+                            </div>
+                        )}
+
+                        {!isLoading && searchQuery.trim().length >= 2 && suggestions.length === 0 && (
+                            <div className="hero-search-dropdown hero-search-no-results">
+                                <span>No se encontraron inmuebles</span>
                             </div>
                         )}
 

@@ -20,7 +20,7 @@ import time
 import os
 import hashlib
 from urllib.parse import unquote
-from datetime import datetime
+from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Import localization plugin for generating searchable tags
@@ -945,14 +945,26 @@ def generate_location_tags(listing):
     """
     tags = []
     
+    # Tags to exclude (placeholder values that shouldn't be searchable)
+    EXCLUDED_TAGS = {"no identificado", "el salvador"}
+    
     try:
+        # Get location values, filtering out "No identificado" placeholder
+        municipio = listing.get("municipio_detectado", "")
+        if municipio.lower() == "no identificado":
+            municipio = ""
+            
+        departamento = listing.get("departamento", "")
+        if departamento.lower() == "no identificado":
+            departamento = ""
+        
         # Build a listing dict in the format expected by localization_plugin
         loc_listing = {
             "title": listing.get("title", ""),
             "description": listing.get("description", ""),
             "location": {
-                "municipio_detectado": listing.get("municipio_detectado", ""),
-                "departamento": listing.get("departamento", ""),
+                "municipio_detectado": municipio,
+                "departamento": departamento,
                 "location_original": listing.get("location", "")
             }
         }
@@ -965,7 +977,11 @@ def generate_location_tags(listing):
             # Split the first tag by ", " to get individual tags
             # e.g., "Santa Rosa, Santa Tecla, La Libertad, El Salvador" 
             # becomes ["Santa Rosa", "Santa Tecla", "La Libertad", "El Salvador"]
-            tags = [t.strip() for t in location_tags[0].split(",") if t.strip()]
+            for t in location_tags[0].split(","):
+                tag = t.strip()
+                # Skip excluded tags (placeholders and generic country name)
+                if tag and tag.lower() not in EXCLUDED_TAGS:
+                    tags.append(tag)
     except Exception as e:
         print(f"  Warning: Could not generate location tags: {e}")
     
@@ -1131,6 +1147,99 @@ def parse_date(date_str):
     # Return as-is if already valid, otherwise return None
     return date_str if date_str else None
 
+
+def is_listing_within_date_range(published_date_str, max_days=7):
+    """
+    Check if a listing's published date is within the allowed range.
+    
+    Args:
+        published_date_str: Date string in various formats (dd/mm/yyyy, yyyy-mm-dd, etc.)
+        max_days: Maximum age in days. If 0 or None, always returns True (no filtering).
+        
+    Returns:
+        Tuple of (is_within_range: bool, parsed_date: datetime or None)
+        Returns (True, None) if date cannot be parsed (fail-safe: don't exclude valid listings)
+    """
+    # If no filtering requested, always return True
+    if not max_days or max_days <= 0:
+        return (True, None)
+    
+    if not published_date_str:
+        return (True, None)  # No date = don't exclude
+    
+    date_str = str(published_date_str).strip().lower()
+    parsed_date = None
+    
+    try:
+        # Try various date formats
+        formats_to_try = [
+            ("%d/%m/%Y", date_str),           # 25/01/2026
+            ("%Y-%m-%d", date_str),           # 2026-01-25
+            ("%d-%m-%Y", date_str),           # 25-01-2026
+            ("%Y/%m/%d", date_str),           # 2026/01/25
+            ("%d %b %Y", date_str),           # 25 Jan 2026
+            ("%d de %B de %Y", date_str),     # 25 de enero de 2026
+        ]
+        
+        for fmt, date_val in formats_to_try:
+            try:
+                parsed_date = datetime.strptime(date_val, fmt)
+                break
+            except ValueError:
+                continue
+        
+        # Handle ISO format with time (2026-01-25T10:30:00)
+        if not parsed_date and 'T' in date_str:
+            try:
+                parsed_date = datetime.fromisoformat(date_str.split('T')[0])
+            except:
+                pass
+        
+        # Handle relative dates (Spanish)
+        if not parsed_date:
+            relative_patterns = [
+                (r'hace\s+(\d+)\s+d[ií]as?', 'days'),
+                (r'hace\s+(\d+)\s+semanas?', 'weeks'),
+                (r'hace\s+(\d+)\s+meses?', 'months'),
+                (r'hace\s+(\d+)\s+horas?', 'hours'),
+                (r'(\d+)\s+d[ií]as?\s+atr[aá]s', 'days'),
+                (r'hoy', 'today'),
+                (r'ayer', 'yesterday'),
+            ]
+            
+            for pattern, unit in relative_patterns:
+                match = re.search(pattern, date_str)
+                if match:
+                    if unit == 'today':
+                        parsed_date = datetime.now()
+                    elif unit == 'yesterday':
+                        parsed_date = datetime.now() - timedelta(days=1)
+                    elif unit == 'hours':
+                        hours = int(match.group(1))
+                        parsed_date = datetime.now() - timedelta(hours=hours)
+                    elif unit == 'days':
+                        days = int(match.group(1))
+                        parsed_date = datetime.now() - timedelta(days=days)
+                    elif unit == 'weeks':
+                        weeks = int(match.group(1))
+                        parsed_date = datetime.now() - timedelta(weeks=weeks)
+                    elif unit == 'months':
+                        months = int(match.group(1))
+                        parsed_date = datetime.now() - timedelta(days=months * 30)
+                    break
+        
+        # If we parsed a date, check if within range
+        if parsed_date:
+            days_old = (datetime.now() - parsed_date).days
+            is_within = days_old <= max_days
+            return (is_within, parsed_date)
+        
+        # Could not parse date - don't exclude (fail-safe)
+        return (True, None)
+        
+    except Exception as e:
+        # Any parsing error - don't exclude
+        return (True, None)
 
 def remove_emojis(text):
     """Remove emojis and special Unicode characters from text."""
@@ -1790,11 +1899,23 @@ def scrape_listing(url, listing_type):
         return None
 
 
-def scrape_listings_concurrent(urls, listing_type, max_workers=10):
-    """Scrape multiple listings concurrently."""
+def scrape_listings_concurrent(urls, listing_type, max_workers=10, max_days=None):
+    """Scrape multiple listings concurrently with optional date filtering.
+    
+    Args:
+        urls: List of listing URLs to scrape
+        listing_type: 'sale' or 'rent'
+        max_workers: Number of concurrent workers
+        max_days: Maximum age of listings in days. None or 0 = no filtering.
+        
+    Returns:
+        Tuple of (results, old_listing_count) - results is list of scraped listings,
+        old_listing_count is number of listings skipped due to age
+    """
     results = []
     total = len(urls)
     completed = 0
+    old_listing_count = 0
     
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {executor.submit(scrape_listing, url, listing_type): url for url in urls}
@@ -1802,11 +1923,21 @@ def scrape_listings_concurrent(urls, listing_type, max_workers=10):
             completed += 1
             data = future.result()
             if data and data.get("title"):
+                # Check date if filtering is enabled
+                if max_days and max_days > 0:
+                    published_date = data.get("published_date") or data.get("details", {}).get("Publicado")
+                    is_within_range, _ = is_listing_within_date_range(published_date, max_days)
+                    if not is_within_range:
+                        old_listing_count += 1
+                        continue  # Skip old listings
                 results.append(data)
             if completed % 50 == 0 or completed == total:
-                print(f"    Scraped {completed}/{total} ({len(results)} with data)")
+                if max_days and max_days > 0:
+                    print(f"    Scraped {completed}/{total} ({len(results)} recent, {old_listing_count} old skipped)")
+                else:
+                    print(f"    Scraped {completed}/{total} ({len(results)} with data)")
     
-    return results
+    return results, old_listing_count
 
 
 # ============== MICASASV FUNCTIONS ==============
@@ -2165,10 +2296,21 @@ def scrape_micasasv_listing(url, listing_type):
         return None
 
 
-def scrape_micasasv_listings_concurrent(urls, listing_type, max_workers=5):
-    """Scrape multiple MiCasaSV listings concurrently."""
+def scrape_micasasv_listings_concurrent(urls, listing_type, max_workers=5, max_days=None):
+    """Scrape multiple MiCasaSV listings concurrently with optional date filtering.
+    
+    Args:
+        urls: List of listing URLs
+        listing_type: 'sale' or 'rent'
+        max_workers: Number of concurrent workers
+        max_days: Maximum age of listings in days. None or 0 = no filtering.
+        
+    Returns:
+        Tuple of (results, old_listing_count)
+    """
     results = []
     skipped_services = 0
+    old_listing_count = 0
     total = len(urls)
     completed = 0
     
@@ -2182,15 +2324,27 @@ def scrape_micasasv_listings_concurrent(urls, listing_type, max_workers=5):
                 # Filter out service listings (not real estate)
                 if is_service_listing(data):
                     skipped_services += 1
-                else:
-                    results.append(data)
+                    continue
+                
+                # Check date if filtering is enabled
+                if max_days and max_days > 0:
+                    published_date = data.get("published_date") or data.get("details", {}).get("Publicado")
+                    is_within_range, _ = is_listing_within_date_range(published_date, max_days)
+                    if not is_within_range:
+                        old_listing_count += 1
+                        continue
+                        
+                results.append(data)
             if completed % 20 == 0 or completed == total:
-                print(f"    Scraped {completed}/{total} ({len(results)} properties, {skipped_services} services skipped)")
+                if max_days and max_days > 0:
+                    print(f"    Scraped {completed}/{total} ({len(results)} recent, {old_listing_count} old, {skipped_services} services skipped)")
+                else:
+                    print(f"    Scraped {completed}/{total} ({len(results)} properties, {skipped_services} services skipped)")
     
     if skipped_services > 0:
         print(f"    Filtered out {skipped_services} service listings (not real estate)")
     
-    return results
+    return results, old_listing_count
 
 
 
@@ -2530,15 +2684,23 @@ def get_realtor_all_listings(base_url, max_listings=None, listing_type="sale"):
     return all_listings
 
 
-def main_realtor(limit=None):
-    """Main scraper function for Realtor.com International (El Salvador)."""
+def main_realtor(limit=None, max_days=None):
+    """Main scraper function for Realtor.com International (El Salvador).
+    
+    Args:
+        limit: Maximum number of listings to scrape
+        max_days: Maximum age of listings in days. None or 0 = no filtering.
+    """
     all_listings = []
     remaining_limit = limit
     sale_data = []
     rent_data = []
+    total_old_skipped = 0
     
     if limit:
         print(f"\n*** LIMIT MODE: Scraping up to {limit} total listings from Realtor.com ***")
+    if max_days and max_days > 0:
+        print(f"*** DATE FILTER: Only listings from last {max_days} days ***")
     
     # --- SALE LISTINGS ---
     print("\n=== Scraping Realtor.com SALE Listings ===")
@@ -2548,6 +2710,19 @@ def main_realtor(limit=None):
     # Enrich with individual page data (description, published_date)
     if sale_data:
         sale_data = enrich_realtor_listings(sale_data)
+    
+    # Filter by date after enrichment (when we have published_date)
+    if max_days and max_days > 0:
+        filtered_sale = []
+        for listing in sale_data:
+            published_date = listing.get("published_date")
+            is_within_range, _ = is_listing_within_date_range(published_date, max_days)
+            if is_within_range:
+                filtered_sale.append(listing)
+            else:
+                total_old_skipped += 1
+        sale_data = filtered_sale
+        print(f"  After date filter: {len(sale_data)} sale listings")
     
     all_listings.extend(sale_data)
     
@@ -2565,30 +2740,55 @@ def main_realtor(limit=None):
         if rent_data:
             rent_data = enrich_realtor_listings(rent_data)
         
+        # Filter by date after enrichment
+        if max_days and max_days > 0:
+            filtered_rent = []
+            for listing in rent_data:
+                published_date = listing.get("published_date")
+                is_within_range, _ = is_listing_within_date_range(published_date, max_days)
+                if is_within_range:
+                    filtered_rent.append(listing)
+                else:
+                    total_old_skipped += 1
+            rent_data = filtered_rent
+            print(f"  After date filter: {len(rent_data)} rent listings")
+        
         all_listings.extend(rent_data)
     else:
         print("\n=== Skipping RENT Listings (limit already reached) ===")
     
+    if total_old_skipped > 0:
+        print(f"\n  Total old listings skipped (>{max_days} days): {total_old_skipped}")
+    
     return all_listings, sale_data, rent_data
 
 
-def main_micasasv(limit=None):
-    """Main scraper function for MiCasaSV."""
+def main_micasasv(limit=None, max_days=None):
+    """Main scraper function for MiCasaSV.
+    
+    Args:
+        limit: Maximum number of listings to scrape
+        max_days: Maximum age of listings in days. None or 0 = no filtering.
+    """
     all_listings = []
     remaining_limit = limit
     sale_data = []
     rent_data = []
+    total_old_skipped = 0
     
     if limit:
         print(f"\n*** LIMIT MODE: Scraping up to {limit} total listings from MiCasaSV ***")
+    if max_days and max_days > 0:
+        print(f"*** DATE FILTER: Only listings from last {max_days} days ***")
     
     # --- SALE LISTINGS ---
     print("\n=== Scraping MiCasaSV SALE Listings ===")
     sale_urls = get_micasasv_listing_urls(MICASASV_SALE_URL, max_listings=remaining_limit)
     print(f"Found {len(sale_urls)} sale URLs. Scraping details...")
-    sale_data = scrape_micasasv_listings_concurrent(sale_urls, "sale")
+    sale_data, old_count = scrape_micasasv_listings_concurrent(sale_urls, "sale", max_days=max_days)
     all_listings.extend(sale_data)
-    print(f"  Got {len(sale_data)} sale listings")
+    total_old_skipped += old_count
+    print(f"  Got {len(sale_data)} sale listings" + (f" ({old_count} old skipped)" if old_count else ""))
     
     # Check if we need more listings
     if remaining_limit:
@@ -2599,32 +2799,45 @@ def main_micasasv(limit=None):
         print("\n=== Scraping MiCasaSV RENT Listings ===")
         rent_urls = get_micasasv_listing_urls(MICASASV_RENT_URL, max_listings=remaining_limit)
         print(f"Found {len(rent_urls)} rent URLs. Scraping details...")
-        rent_data = scrape_micasasv_listings_concurrent(rent_urls, "rent")
+        rent_data, old_count = scrape_micasasv_listings_concurrent(rent_urls, "rent", max_days=max_days)
         all_listings.extend(rent_data)
-        print(f"  Got {len(rent_data)} rent listings")
+        total_old_skipped += old_count
+        print(f"  Got {len(rent_data)} rent listings" + (f" ({old_count} old skipped)" if old_count else ""))
     else:
         print("\n=== Skipping RENT Listings (limit already reached) ===")
+
+    if total_old_skipped > 0:
+        print(f"\n  Total old listings skipped (>{max_days} days): {total_old_skipped}")
 
     return all_listings, sale_data, rent_data
 
 
-def main_encuentra24(limit=None):
-    """Main scraper function for Encuentra24."""
+def main_encuentra24(limit=None, max_days=None):
+    """Main scraper function for Encuentra24.
+    
+    Args:
+        limit: Maximum number of listings to scrape
+        max_days: Maximum age of listings in days. None or 0 = no filtering.
+    """
     all_listings = []
     remaining_limit = limit
     sale_data = []
     rent_data = []
+    total_old_skipped = 0
     
     if limit:
         print(f"\n*** LIMIT MODE: Scraping up to {limit} total listings from Encuentra24 ***")
+    if max_days and max_days > 0:
+        print(f"*** DATE FILTER: Only listings from last {max_days} days ***")
     
     # --- SALE LISTINGS ---
     print("\n=== Scraping Encuentra24 SALE Listings ===")
     sale_urls = get_listing_urls_fast(SALE_URL, max_listings=remaining_limit)
     print(f"Found {len(sale_urls)} sale URLs. Scraping details concurrently...")
-    sale_data = scrape_listings_concurrent(sale_urls, "sale")
+    sale_data, old_count = scrape_listings_concurrent(sale_urls, "sale", max_days=max_days)
     all_listings.extend(sale_data)
-    print(f"  Got {len(sale_data)} sale listings")
+    total_old_skipped += old_count
+    print(f"  Got {len(sale_data)} sale listings" + (f" ({old_count} old skipped)" if old_count else ""))
     
     # Check if we need more listings
     if remaining_limit:
@@ -2635,11 +2848,15 @@ def main_encuentra24(limit=None):
         print("\n=== Scraping Encuentra24 RENT Listings ===")
         rent_urls = get_listing_urls_fast(RENT_URL, max_listings=remaining_limit)
         print(f"Found {len(rent_urls)} rent URLs. Scraping details concurrently...")
-        rent_data = scrape_listings_concurrent(rent_urls, "rent")
+        rent_data, old_count = scrape_listings_concurrent(rent_urls, "rent", max_days=max_days)
         all_listings.extend(rent_data)
-        print(f"  Got {len(rent_data)} rent listings")
+        total_old_skipped += old_count
+        print(f"  Got {len(rent_data)} rent listings" + (f" ({old_count} old skipped)" if old_count else ""))
     else:
         print("\n=== Skipping RENT Listings (limit already reached) ===")
+
+    if total_old_skipped > 0:
+        print(f"\n  Total old listings skipped (>{max_days} days): {total_old_skipped}")
 
     return all_listings, sale_data, rent_data
 
@@ -2919,9 +3136,20 @@ def scrape_vivolatam_listing(url, listing_type="sale"):
         return None
 
 
-def scrape_vivolatam_listings_concurrent(urls, listing_type="sale", max_workers=5):
-    """Scrape multiple Vivo Latam listings concurrently."""
+def scrape_vivolatam_listings_concurrent(urls, listing_type="sale", max_workers=5, max_days=None):
+    """Scrape multiple Vivo Latam listings concurrently with optional date filtering.
+    
+    Args:
+        urls: List of listing URLs
+        listing_type: 'sale' or 'rent'
+        max_workers: Number of concurrent workers
+        max_days: Maximum age of listings in days. None or 0 = no filtering.
+        
+    Returns:
+        Tuple of (results, old_listing_count)
+    """
     results = []
+    old_listing_count = 0
     
     print(f"  Scraping {len(urls)} Vivo Latam listings with {max_workers} workers...")
     
@@ -2932,21 +3160,36 @@ def scrape_vivolatam_listings_concurrent(urls, listing_type="sale", max_workers=
             try:
                 result = future.result()
                 if result:
+                    # Check date if filtering is enabled
+                    if max_days and max_days > 0:
+                        published_date = result.get("published_date") or result.get("details", {}).get("Publicado")
+                        is_within_range, _ = is_listing_within_date_range(published_date, max_days)
+                        if not is_within_range:
+                            old_listing_count += 1
+                            continue
                     results.append(result)
             except Exception as e:
                 print(f"  Error processing {url}: {e}")
     
-    return results
+    return results, old_listing_count
 
 
-def main_vivolatam(limit=None, url_file=None):
-    """Main scraper function for Vivo Latam."""
+def main_vivolatam(limit=None, url_file=None, max_days=None):
+    """Main scraper function for Vivo Latam.
+    
+    Args:
+        limit: Maximum number of listings to scrape
+        url_file: Optional path to file containing URLs to scrape
+        max_days: Maximum age of listings in days. None or 0 = no filtering.
+    """
     all_listings = []
     sale_data = []
     rent_data = []
     
     if limit:
         print(f"\n*** LIMIT MODE: Scraping up to {limit} listings from Vivo Latam ***")
+    if max_days and max_days > 0:
+        print(f"*** DATE FILTER: Only listings from last {max_days} days ***")
     
     # Get listing URLs from file
     urls = get_vivolatam_listing_urls(url_file=url_file, max_listings=limit)
@@ -2956,8 +3199,11 @@ def main_vivolatam(limit=None, url_file=None):
         return [], [], []
     
     print(f"\n=== Scraping Vivo Latam Listings ===")
-    listings = scrape_vivolatam_listings_concurrent(urls, "sale")
+    listings, old_count = scrape_vivolatam_listings_concurrent(urls, "sale", max_days=max_days)
     all_listings.extend(listings)
+    
+    if old_count > 0:
+        print(f"  Skipped {old_count} old listings (>{max_days} days)")
     
     # Separate by listing type
     sale_data = [l for l in all_listings if l.get("listing_type") == "sale"]
@@ -2968,7 +3214,7 @@ def main_vivolatam(limit=None, url_file=None):
     return all_listings, sale_data, rent_data
 
 
-def main(encuentra24=True, micasasv=False, realtor=False, vivolatam=False, limit=None, vivolatam_urls=None, skip_validation=False):
+def main(encuentra24=True, micasasv=False, realtor=False, vivolatam=False, limit=None, vivolatam_urls=None, skip_validation=False, max_days=None):
     """
     Main scraper function that orchestrates scraping from multiple sources.
     
@@ -2980,10 +3226,14 @@ def main(encuentra24=True, micasasv=False, realtor=False, vivolatam=False, limit
         limit: Optional max number of listings to scrape (per source if both enabled)
         vivolatam_urls: Path to file containing Vivo Latam URLs to scrape
         skip_validation: If True, skip the validation phase (checking for inactive listings)
+        max_days: Maximum age of listings in days. None or 0 = no filtering.
     """
     # Record start time for validation phase (to identify stale listings)
     run_start_time = datetime.now().isoformat()
     print(f"Scrape run started at: {run_start_time}")
+    
+    if max_days and max_days > 0:
+        print(f"Date filter enabled: Only scraping listings from last {max_days} days")
     
     all_listings = []
     total_sale = 0
@@ -2999,7 +3249,7 @@ def main(encuentra24=True, micasasv=False, realtor=False, vivolatam=False, limit
         print("SCRAPING SOURCE: Encuentra24")
         print("="*60)
 
-        listings, sale_data, rent_data = main_encuentra24(limit)
+        listings, sale_data, rent_data = main_encuentra24(limit, max_days=max_days)
         all_listings.extend(listings)
         total_sale += len(sale_data)
         total_rent += len(rent_data)
@@ -3010,7 +3260,7 @@ def main(encuentra24=True, micasasv=False, realtor=False, vivolatam=False, limit
         print("\n" + "="*60)
         print("SCRAPING SOURCE: MiCasaSV")
         print("="*60)
-        listings, sale_data, rent_data = main_micasasv(limit)
+        listings, sale_data, rent_data = main_micasasv(limit, max_days=max_days)
         all_listings.extend(listings)
         total_sale += len(sale_data)
         total_rent += len(rent_data)
@@ -3021,7 +3271,7 @@ def main(encuentra24=True, micasasv=False, realtor=False, vivolatam=False, limit
         print("\n" + "="*60)
         print("SCRAPING SOURCE: Realtor.com International")
         print("="*60)
-        listings, sale_data, rent_data = main_realtor(limit)
+        listings, sale_data, rent_data = main_realtor(limit, max_days=max_days)
         all_listings.extend(listings)
         total_sale += len(sale_data)
         total_rent += len(rent_data)
@@ -3032,7 +3282,7 @@ def main(encuentra24=True, micasasv=False, realtor=False, vivolatam=False, limit
         print("\n" + "="*60)
         print("SCRAPING SOURCE: Vivo Latam")
         print("="*60)
-        listings, sale_data, rent_data = main_vivolatam(limit, url_file=vivolatam_urls)
+        listings, sale_data, rent_data = main_vivolatam(limit, url_file=vivolatam_urls, max_days=max_days)
         all_listings.extend(listings)
         total_sale += len(sale_data)
         total_rent += len(rent_data)
@@ -3132,6 +3382,12 @@ if __name__ == "__main__":
         help="Skip the validation phase (checking for inactive/removed listings)"
     )
     parser.add_argument(
+        "--max-days", "-d",
+        type=int,
+        default=None,
+        help="Optional: Maximum age of listings in days (e.g., 7, 14, 30). Only scrape listings published within this many days. If not set, scrapes all listings regardless of age."
+    )
+    parser.add_argument(
         "--update",
         action="store_true",
         help="Update mode: re-scrape existing active listings from DB and update them (instead of scraping new listings)"
@@ -3180,5 +3436,6 @@ if __name__ == "__main__":
             vivolatam=vivolatam,
             limit=args.limit,
             vivolatam_urls=args.vivolatam_urls,
-            skip_validation=args.skip_validation
+            skip_validation=args.skip_validation,
+            max_days=args.max_days
         )
