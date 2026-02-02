@@ -10,31 +10,22 @@ interface Tag {
 export default function HeroSection() {
     const router = useRouter();
     const [searchQuery, setSearchQuery] = useState('');
+    const [allTags, setAllTags] = useState<Tag[]>([]);
     const [suggestions, setSuggestions] = useState<Tag[]>([]);
-    const [isLoading, setIsLoading] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
     const [showDropdown, setShowDropdown] = useState(false);
     const [selectedIndex, setSelectedIndex] = useState(-1);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
-    // Fetch suggestions when user types
+    // Preload all tags on mount
     useEffect(() => {
-        const fetchSuggestions = async () => {
-            if (searchQuery.trim().length < 2) {
-                setSuggestions([]);
-                setShowDropdown(false);
-                setSelectedIndex(-1);
-                return;
-            }
-
-            setIsLoading(true);
+        const fetchAllTags = async () => {
             try {
-                const res = await fetch(`/api/tags?query=${encodeURIComponent(searchQuery)}`);
+                const res = await fetch('/api/tags');
                 if (res.ok) {
                     const data = await res.json();
-                    setSuggestions(data.tags || []);
-                    setShowDropdown(data.tags.length > 0);
-                    setSelectedIndex(-1);
+                    setAllTags(data.tags || []);
                 }
             } catch (error) {
                 console.error('Error fetching tags:', error);
@@ -43,9 +34,35 @@ export default function HeroSection() {
             }
         };
 
-        const debounce = setTimeout(fetchSuggestions, 300);
-        return () => clearTimeout(debounce);
-    }, [searchQuery]);
+        fetchAllTags();
+    }, []);
+
+    // Filter tags client-side when user types
+    useEffect(() => {
+        if (searchQuery.trim().length < 2) {
+            setSuggestions([]);
+            setShowDropdown(false);
+            setSelectedIndex(-1);
+            return;
+        }
+
+        const searchLower = searchQuery.toLowerCase();
+        const filtered = allTags
+            .filter(t => t.tag.toLowerCase().includes(searchLower))
+            .sort((a, b) => {
+                // Prioritize tags that start with the search query
+                const aStarts = a.tag.toLowerCase().startsWith(searchLower);
+                const bStarts = b.tag.toLowerCase().startsWith(searchLower);
+                if (aStarts && !bStarts) return -1;
+                if (!aStarts && bStarts) return 1;
+                return a.tag.localeCompare(b.tag);
+            })
+            .slice(0, 10);
+
+        setSuggestions(filtered);
+        setShowDropdown(filtered.length > 0);
+        setSelectedIndex(-1);
+    }, [searchQuery, allTags]);
 
     // Close dropdown when clicking outside
     useEffect(() => {

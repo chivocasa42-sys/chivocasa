@@ -6,13 +6,9 @@ interface TagResult {
     tag: string;
 }
 
-export async function GET(request: Request) {
+export async function GET() {
     try {
-        const { searchParams } = new URL(request.url);
-        const query = searchParams.get('query') || '';
-        const searchLower = query.toLowerCase();
-
-        // First try the RPC function (uses scrapped_data table)
+        // Fetch all available tags via RPC (no filtering - done client-side)
         const rpcUrl = `${process.env.SUPABASE_URL}/rest/v1/rpc/get_available_tags`;
 
         const rpcRes = await fetch(rpcUrl, {
@@ -23,7 +19,7 @@ export async function GET(request: Request) {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                search_query: searchLower
+                search_query: '' // Empty to get all tags
             }),
             next: { revalidate: 300 }
         });
@@ -57,30 +53,22 @@ export async function GET(request: Request) {
 
         const data: { tags: string[] | null }[] = await res.json();
 
-        // Extract unique tags that match the search query
+        // Extract all unique tags (no search filtering - done client-side)
         const tagSet = new Set<string>();
 
         data.forEach(row => {
             if (row.tags && Array.isArray(row.tags)) {
                 row.tags.forEach(tag => {
-                    if (tag && typeof tag === 'string' && tag.toLowerCase().includes(searchLower)) {
+                    if (tag && typeof tag === 'string') {
                         tagSet.add(tag);
                     }
                 });
             }
         });
 
-        // Convert to array, sort alphabetically, and limit to top 50
+        // Convert to array and sort alphabetically
         const uniqueTags: TagResult[] = Array.from(tagSet)
-            .sort((a, b) => {
-                // Prioritize tags that start with the search query
-                const aStarts = a.toLowerCase().startsWith(searchLower);
-                const bStarts = b.toLowerCase().startsWith(searchLower);
-                if (aStarts && !bStarts) return -1;
-                if (!aStarts && bStarts) return 1;
-                return a.localeCompare(b);
-            })
-            .slice(0, 50)
+            .sort((a, b) => a.localeCompare(b))
             .map(tag => ({ tag }));
 
         return NextResponse.json({
