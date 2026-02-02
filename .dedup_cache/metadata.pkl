@@ -1,0 +1,11 @@
+{
+  "total_processed": 3,
+  "duplicates_found": 2,
+  "last_checkpoint": "2026-02-02T12:29:27.529735",
+  "cache_sizes": {
+    "dedup_keys": 3,
+    "url_keys": 3,
+    "external_ids": 3,
+    "processed_records": 3
+  }
+}
