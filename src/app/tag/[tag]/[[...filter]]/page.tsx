@@ -7,6 +7,7 @@ import Navbar from '@/components/Navbar';
 import ListingCard from '@/components/ListingCard';
 import ListingModal from '@/components/ListingModal';
 import BestOpportunitySection from '@/components/BestOpportunitySection';
+import TagFilterChips from '@/components/TagFilterChips';
 
 // Lean listing shape from API
 interface CardListing {
@@ -19,6 +20,7 @@ interface CardListing {
     bathrooms: number | null;
     area: number | null;
     municipio: string | null;
+    tags: string[] | null;  // For client-side filtering
     total_count: number;
 }
 
@@ -85,6 +87,11 @@ export default function TagPage() {
     const [bestSale, setBestSale] = useState<TopScoredListing | null>(null);
     const [bestRent, setBestRent] = useState<TopScoredListing | null>(null);
 
+    // Client-side tag filtering
+    const [selectedFilterTags, setSelectedFilterTags] = useState<string[]>([]);
+    // Store initial tags from first load to prevent counts from changing
+    const [initialListingTags, setInitialListingTags] = useState<(string[] | null)[]>([]);
+
     // Fetch listings with pagination
     const fetchListings = useCallback(async (offset: number, type: FilterType, sort: SortOption, append: boolean = false) => {
         const typeParam = type === 'all' ? '' : `&type=${type}`;
@@ -115,8 +122,13 @@ export default function TagPage() {
         async function fetchData() {
             setIsLoading(true);
             setError(null);
+            setSelectedFilterTags([]); // Reset filters on new load
             try {
-                await fetchListings(0, filter, sortBy);
+                const data = await fetchListings(0, filter, sortBy);
+                // Store initial tags for stable tag chip counts
+                if (data?.listings) {
+                    setInitialListingTags(data.listings.map((l: CardListing) => l.tags));
+                }
             } catch (err) {
                 setError(err instanceof Error ? err.message : 'No pudimos cargar los datos. Intentá de nuevo.');
                 console.error(err);
@@ -144,9 +156,12 @@ export default function TagPage() {
     }, [isLoadingMore, pagination.hasMore, pagination.offset, filter, sortBy, fetchListings]);
 
     // Intersection Observer for infinite scroll
+    // Disabled when filter tags are selected to prevent loading more while filtering
     useEffect(() => {
         const element = loadMoreRef.current;
         if (!element) return;
+        // Don't observe when filters are active - user is filtering existing data
+        if (selectedFilterTags.length > 0) return;
 
         const observer = new IntersectionObserver(
             (entries) => {
@@ -160,13 +175,21 @@ export default function TagPage() {
 
         observer.observe(element);
         return () => observer.disconnect();
-    }, [handleLoadMore, pagination.hasMore, isLoadingMore, isLoading]);
+    }, [handleLoadMore, pagination.hasMore, isLoadingMore, isLoading, selectedFilterTags.length]);
 
 
+
+    // Filter listings based on selected filter tags (client-side)
+    const filteredListings = useMemo(() => {
+        if (selectedFilterTags.length === 0) return listings;
+        return listings.filter(l =>
+            selectedFilterTags.some(tag => l.tags?.includes(tag))
+        );
+    }, [listings, selectedFilterTags]);
 
     // Convert CardListing to format expected by ListingCard
     const listingsForCard = useMemo(() => {
-        return listings.map(l => {
+        return filteredListings.map(l => {
             const specs: Record<string, string | number> = {};
             if (l.bedrooms !== null) specs.bedrooms = l.bedrooms;
             if (l.bathrooms !== null) specs.bathrooms = l.bathrooms;
@@ -182,7 +205,7 @@ export default function TagPage() {
                 location: l.municipio ? { municipio_detectado: l.municipio } : null
             };
         });
-    }, [listings]);
+    }, [filteredListings]);
 
     // Handle view listing from best opportunity
     const handleViewBestListing = (topScored: TopScoredListing) => {
@@ -270,11 +293,30 @@ export default function TagPage() {
                     </div>
                 ) : (
                     <>
+                        {/* Tag Filter Chips */}
+                        {initialListingTags.length > 0 && (
+                            <TagFilterChips
+                                allListingTags={initialListingTags}
+                                primaryTag={tagName}
+                                selectedTags={selectedFilterTags}
+                                onToggleTag={(tag) => {
+                                    setSelectedFilterTags(prev =>
+                                        prev.includes(tag)
+                                            ? prev.filter(t => t !== tag)
+                                            : [...prev, tag]
+                                    );
+                                }}
+                            />
+                        )}
+
                         {/* Listings Grid */}
                         {listingsForCard.length > 0 ? (
                             <>
                                 <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4">
-                                    Todas las propiedades
+                                    {selectedFilterTags.length > 0
+                                        ? `Propiedades filtradas (${filteredListings.length} de ${listings.length})`
+                                        : 'Todas las propiedades'
+                                    }
                                 </h2>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
                                     {listingsForCard.map((listing) => (

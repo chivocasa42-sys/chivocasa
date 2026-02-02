@@ -15,6 +15,7 @@ export interface CardListing {
     bathrooms: number | null;
     area: number | null;
     municipio: string | null;
+    tags: string[] | null;  // For client-side tag filtering
     total_count: number;
 }
 

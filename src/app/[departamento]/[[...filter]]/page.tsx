@@ -7,6 +7,7 @@ import Navbar from '@/components/Navbar';
 import ListingCard from '@/components/ListingCard';
 import ListingModal from '@/components/ListingModal';
 import BestOpportunitySection from '@/components/BestOpportunitySection';
+import TagFilterChips from '@/components/TagFilterChips';
 import { slugToDepartamento } from '@/lib/slugify';
 
 // Lean listing shape from new API
@@ -20,6 +21,7 @@ interface CardListing {
     bathrooms: number | null;
     area: number | null;
     municipio: string | null;
+    tags: string[] | null;  // For client-side filtering
     total_count: number;
 }
 
@@ -89,6 +91,11 @@ export default function DepartmentPage() {
     const [bestSale, setBestSale] = useState<TopScoredListing | null>(null);
     const [bestRent, setBestRent] = useState<TopScoredListing | null>(null);
 
+    // Client-side tag filtering
+    const [selectedFilterTags, setSelectedFilterTags] = useState<string[]>([]);
+    // Store initial tags from first load to prevent counts from changing
+    const [initialListingTags, setInitialListingTags] = useState<(string[] | null)[]>([]);
+
     // Fetch listings with pagination
     const fetchListings = useCallback(async (offset: number, type: FilterType, sort: SortOption, append: boolean = false) => {
         const typeParam = type === 'all' ? '' : `&type=${type}`;
@@ -119,12 +126,18 @@ export default function DepartmentPage() {
             setIsLoading(true);
             setError(null);
             setListings([]); // Clear listings when filter changes
+            setSelectedFilterTags([]); // Reset filters on new load
             try {
                 // Fetch listings and best opportunities in parallel
-                const [, topScoredRes] = await Promise.all([
+                const [listingsData, topScoredRes] = await Promise.all([
                     fetchListings(0, filter, sortBy),
                     fetch(`/api/department/${slug}/top-scored?type=all&limit=1`)
                 ]);
+
+                // Store initial tags for stable tag chip counts
+                if (listingsData?.listings) {
+                    setInitialListingTags(listingsData.listings.map((l: CardListing) => l.tags));
+                }
 
                 if (topScoredRes.ok) {
                     const topScoredData = await topScoredRes.json();
@@ -158,9 +171,12 @@ export default function DepartmentPage() {
     }, [isLoadingMore, pagination.hasMore, pagination.offset, filter, sortBy, fetchListings]);
 
     // Intersection Observer for infinite scroll
+    // Disabled when filter tags are selected
     useEffect(() => {
         const element = loadMoreRef.current;
         if (!element) return;
+        // Don't observe when filters are active
+        if (selectedFilterTags.length > 0) return;
 
         const observer = new IntersectionObserver(
             (entries) => {
@@ -174,11 +190,19 @@ export default function DepartmentPage() {
 
         observer.observe(element);
         return () => observer.disconnect();
-    }, [handleLoadMore, pagination.hasMore, isLoadingMore, isLoading]);
+    }, [handleLoadMore, pagination.hasMore, isLoadingMore, isLoading, selectedFilterTags.length]);
+
+    // Filter listings based on selected filter tags (client-side)
+    const filteredListings = useMemo(() => {
+        if (selectedFilterTags.length === 0) return listings;
+        return listings.filter(l =>
+            selectedFilterTags.some(tag => l.tags?.includes(tag))
+        );
+    }, [listings, selectedFilterTags]);
 
     // Convert CardListing to format expected by ListingCard
     const listingsForCard = useMemo(() => {
-        return listings.map(l => {
+        return filteredListings.map(l => {
             const specs: Record<string, string | number> = {};
             if (l.bedrooms !== null) specs.bedrooms = l.bedrooms;
             if (l.bathrooms !== null) specs.bathrooms = l.bathrooms;
@@ -194,7 +218,7 @@ export default function DepartmentPage() {
                 location: l.municipio ? { municipio_detectado: l.municipio } : null
             };
         });
-    }, [listings]);
+    }, [filteredListings]);
 
     // Handle view listing from best opportunity
     const handleViewBestListing = (topScored: TopScoredListing) => {
@@ -293,11 +317,30 @@ export default function DepartmentPage() {
                             onViewListing={handleViewBestListing}
                         />
 
+                        {/* Tag Filter Chips */}
+                        {initialListingTags.length > 0 && (
+                            <TagFilterChips
+                                allListingTags={initialListingTags}
+                                primaryTag={departamento}
+                                selectedTags={selectedFilterTags}
+                                onToggleTag={(tag) => {
+                                    setSelectedFilterTags(prev =>
+                                        prev.includes(tag)
+                                            ? prev.filter(t => t !== tag)
+                                            : [...prev, tag]
+                                    );
+                                }}
+                            />
+                        )}
+
                         {/* Listings Grid */}
                         {listingsForCard.length > 0 ? (
                             <>
                                 <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4">
-                                    {filter === 'sale' ? 'Propiedades en venta' : filter === 'rent' ? 'Propiedades en renta' : 'Todas las propiedades'}
+                                    {selectedFilterTags.length > 0
+                                        ? `Propiedades filtradas (${filteredListings.length} de ${listings.length})`
+                                        : filter === 'sale' ? 'Propiedades en venta' : filter === 'rent' ? 'Propiedades en renta' : 'Todas las propiedades'
+                                    }
                                 </h2>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
                                     {listingsForCard.map((listing) => (

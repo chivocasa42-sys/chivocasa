@@ -870,6 +870,109 @@ body {
 }
 
 /* =============================================
+   TAG FILTER CHIPS
+   ============================================= */
+
+.tag-filter-section {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  background: var(--bg-glass);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 12px;
+  margin-bottom: 20px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.tag-filter-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.tag-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 1;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.tag-chip:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  box-shadow: 0 2px 8px rgba(30, 58, 95, 0.1);
+}
+
+.tag-chip.selected {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(30, 58, 95, 0.25);
+}
+
+.tag-chip-count {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.tag-chip.selected .tag-chip-count {
+  opacity: 0.85;
+}
+
+.tag-chip-check {
+  font-size: 11px;
+  margin-left: 2px;
+}
+
+.tag-chip-more {
+  background: transparent;
+  border-style: dashed;
+  color: var(--text-muted);
+}
+
+.tag-chip-more:hover {
+  background: var(--bg-subtle);
+  border-color: var(--text-muted);
+  color: var(--text-secondary);
+}
+
+.tag-filter-clear {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--primary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 8px;
+  margin-left: auto;
+  transition: opacity 0.15s;
+}
+
+.tag-filter-clear:hover {
+  opacity: 0.7;
+}
+
+/* =============================================
    RANKING LIST
    ============================================= */
 
