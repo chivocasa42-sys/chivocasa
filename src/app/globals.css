@@ -1877,6 +1877,10 @@ body {
   line-height: 1;
 }
 
+.dept-card__badge-pill .dept-card__pill-label:only-child {
+  padding: 6px 12px;
+}
+
 .dept-card__badge-pill .dept-card__pill-value {
   color: #ffffff;
   font-size: 14px;

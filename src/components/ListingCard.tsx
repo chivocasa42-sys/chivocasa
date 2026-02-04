@@ -7,6 +7,7 @@ import Link from 'next/link';
 interface ListingCardProps {
     listing: Listing;
     onClick?: () => void;
+    isFeatured?: boolean;
 }
 
 function formatPrice(price: number): string {
@@ -78,7 +79,7 @@ function getLocationTags(location: ListingLocation | undefined, tags?: string[] 
     return locationTags.slice(0, 3);
 }
 
-export default function ListingCard({ listing, onClick }: ListingCardProps) {
+export default function ListingCard({ listing, onClick, isFeatured }: ListingCardProps) {
     const specs = listing.specs || {};
     const area = getArea(specs);
     const locationTags = getLocationTags(listing.location, listing.tags);
@@ -96,6 +97,14 @@ export default function ListingCard({ listing, onClick }: ListingCardProps) {
                     className="w-full h-full group-hover:scale-105 transition-transform duration-500"
                     placeholderSrc="/placeholder.webp"
                 />
+
+                {isFeatured && (
+                    <div className="absolute top-3 right-3">
+                        <span className="bg-[var(--primary)] text-white text-[10px] font-black px-2.5 py-1 rounded shadow-sm uppercase tracking-wider">
+                            DESTACADA
+                        </span>
+                    </div>
+                )}
 
                 {/* Top-left Label */}
                 <div className="absolute top-3 left-3">

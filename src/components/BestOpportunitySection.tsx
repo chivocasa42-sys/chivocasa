@@ -1,7 +1,9 @@
 'use client';
 
+import { useMemo, useState } from 'react';
+
 interface TopScoredListing {
-    external_id: number;
+    external_id: string | number;
     title: string;
     price: number;
     mt2: number;
@@ -17,6 +19,7 @@ interface BestOpportunitySectionProps {
     saleListing: TopScoredListing | null;
     rentListing: TopScoredListing | null;
     onViewListing: (listing: TopScoredListing) => void;
+    departamentoName?: string;
 }
 
 function formatPrice(price: number): string {
@@ -31,14 +34,30 @@ function formatPriceCompact(price: number): string {
 }
 
 export default function BestOpportunitySection({
-    saleListing, rentListing, onViewListing
+    saleListing, rentListing, onViewListing, departamentoName
 }: BestOpportunitySectionProps) {
     if (!saleListing && !rentListing) return null;
 
-    const renderOpportunityCard = (listing: TopScoredListing, type: 'sale' | 'rent') => {
+    const [isHowOpen, setIsHowOpen] = useState(false);
+
+    const items = useMemo(() => {
+        const next: Array<{ listing: TopScoredListing; type: 'sale' | 'rent' }> = [];
+        if (saleListing) next.push({ listing: saleListing, type: 'sale' });
+        if (rentListing) next.push({ listing: rentListing, type: 'rent' });
+        return next;
+    }, [saleListing, rentListing]);
+
+    const getReason = (listing: TopScoredListing) => {
+        if (listing.price_per_m2 > 0) return 'Mejor $/m²';
+        if (listing.bathrooms > 0) return 'Más baños por el precio';
+        return 'Mejor relación precio–valor';
+    };
+
+    const renderOpportunityCard = (listing: TopScoredListing, type: 'sale' | 'rent', rank: number) => {
         const isRent = type === 'rent';
-        const badgeClass = isRent ? 'bg-blue-700' : 'bg-emerald-600';
         const badgeText = isRent ? 'RENTA' : 'VENTA';
+        const pillClass = isRent ? 'dept-card__pill--renta' : '';
+        const reason = getReason(listing);
 
         return (
             <div
@@ -61,16 +80,19 @@ export default function BestOpportunitySection({
                         </div>
                     )}
                     {/* Badge Overlay */}
-                    <div className="absolute top-3 right-3">
-                        <span className={`${badgeClass} text-white text-[10px] font-black px-2.5 py-1 rounded-lg uppercase tracking-wider shadow-lg`}>
-                            {badgeText}
-                        </span>
+                    <div className="dept-card__badge-pill">
+                        <div className={`dept-card__pill ${pillClass}`}>
+                            <span className="dept-card__pill-label">{badgeText}</span>
+                        </div>
                     </div>
                     {/* Label Overlay */}
                     <div className="absolute top-3 left-3">
-                        <span className="bg-white/90 backdrop-blur-sm text-slate-700 text-[10px] font-bold px-2.5 py-1 rounded-lg uppercase tracking-wider shadow-md">
-                            Mejor Relación Precio-Valor
-                        </span>
+                        <div className="bg-white/90 backdrop-blur-sm text-slate-700 text-[10px] font-black px-2.5 py-1 rounded-lg uppercase tracking-wider shadow-md">
+                            #{rank} Oportunidad
+                        </div>
+                        <div className="mt-1 bg-white/85 backdrop-blur-sm text-slate-700 text-[10px] font-bold px-2.5 py-1 rounded-lg tracking-wide shadow-sm">
+                            {reason}
+                        </div>
                     </div>
                 </div>
 
@@ -129,16 +151,60 @@ export default function BestOpportunitySection({
     };
 
     return (
-        <div className="mb-8">
-            <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
-                <span className="text-xl">💎</span>
-                Mejores Oportunidades
-            </h2>
+        <>
+            <div className="card-float border-t-4 border-t-[var(--primary)] bg-gradient-to-b from-[var(--primary-light)] to-white p-6 md:p-8 mb-8">
+                <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
+                    <div>
+                        <div className="flex items-center gap-2">
+                            <span className="text-base">⭐</span>
+                            <h2 className="text-xs font-black uppercase tracking-widest text-[var(--text-primary)]">
+                                Oportunidades Destacadas
+                            </h2>
+                        </div>
+                        <p className="text-sm text-[var(--text-muted)] mt-1">
+                            Seleccionadas por mejor relación precio–valor{departamentoName ? ` en ${departamentoName}.` : '.'}
+                        </p>
+                    </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                {saleListing && renderOpportunityCard(saleListing, 'sale')}
-                {rentListing && renderOpportunityCard(rentListing, 'rent')}
+                    <button
+                        type="button"
+                        onClick={() => setIsHowOpen(true)}
+                        className="text-sm font-semibold text-[var(--primary)] hover:opacity-80 transition-opacity"
+                    >
+                        ¿Cómo se calcula?
+                    </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    {items.map((item, idx) => renderOpportunityCard(item.listing, item.type, idx + 1))}
+                </div>
             </div>
-        </div>
+
+            {isHowOpen && (
+                <div className="modal-backdrop" onClick={() => setIsHowOpen(false)}>
+                    <div className="modal-content-premium" onClick={(e) => e.stopPropagation()}>
+                        <button
+                            type="button"
+                            className="modal-close-btn"
+                            onClick={() => setIsHowOpen(false)}
+                            aria-label="Cerrar"
+                        >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+
+                        <div className="p-6 md:p-8">
+                            <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-2">¿Cómo se calcula?</h3>
+                            <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
+                                Seleccionamos oportunidades comparando precio, tamaño (m²) y características (habitaciones, baños),
+                                buscando la mejor relación precio–valor dentro del departamento. El score se normaliza por tipo
+                                (venta o renta) y se re-calcula periódicamente.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </>
     );
 }

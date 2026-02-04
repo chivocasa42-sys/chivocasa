@@ -12,7 +12,7 @@ import { slugToDepartamento } from '@/lib/slugify';
 
 // Lean listing shape from new API
 interface CardListing {
-    external_id: number;
+    external_id: string | number;
     title: string;
     price: number;
     listing_type: 'sale' | 'rent';
@@ -26,7 +26,7 @@ interface CardListing {
 }
 
 interface TopScoredListing {
-    external_id: number;
+    external_id: string | number;
     title: string;
     price: number;
     mt2: number;
@@ -35,6 +35,7 @@ interface TopScoredListing {
     price_per_m2: number;
     score: number;
     url: string;
+    first_image?: string | null;
 }
 
 interface PaginationState {
@@ -230,6 +231,29 @@ export default function DepartmentPage() {
     const showBestSale = filter === 'all' || filter === 'sale';
     const showBestRent = filter === 'all' || filter === 'rent';
 
+    const featuredIds = useMemo(() => {
+        const ids = new Set<string>();
+        if (bestSale?.external_id !== undefined && bestSale?.external_id !== null) ids.add(String(bestSale.external_id));
+        if (bestRent?.external_id !== undefined && bestRent?.external_id !== null) ids.add(String(bestRent.external_id));
+        return ids;
+    }, [bestSale?.external_id, bestRent?.external_id]);
+
+    const clearTagFilters = useCallback(() => setSelectedFilterTags([]), []);
+
+    const resultsCount = selectedFilterTags.length > 0 ? filteredListings.length : pagination.total;
+
+    const appliedSummary = useMemo(() => {
+        const parts: string[] = [];
+        if (filter === 'sale') parts.push('Venta');
+        if (filter === 'rent') parts.push('Renta');
+
+        if (selectedFilterTags.length > 0) {
+            parts.push(...selectedFilterTags.map(t => t));
+        }
+
+        return parts;
+    }, [filter, selectedFilterTags]);
+
     return (
         <>
             <Navbar
@@ -238,60 +262,72 @@ export default function DepartmentPage() {
             />
 
             <main className="container mx-auto px-4 max-w-7xl">
-                {/* Back link */}
-                <Link
-                    href="/"
-                    className="inline-flex items-center gap-2 text-[var(--primary)] hover:text-[var(--primary-hover)] mb-6 font-medium transition-colors"
-                >
-                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 16 16">
-                        <path fillRule="evenodd" d="M15 8a.5.5 0 0 0-.5-.5H2.707l3.147-3.146a.5.5 0 1 0-.708-.708l-4 4a.5.5 0 0 0 0 .708l4 4a.5.5 0 0 0 .708-.708L2.707 8.5H14.5A.5.5 0 0 0 15 8z" />
-                    </svg>
-                    Volver al Índice
-                </Link>
+                <div className="mb-8">
+                    <Link
+                        href="/"
+                        className="inline-flex items-center gap-2 text-[var(--primary)] hover:text-[var(--primary-hover)] mb-5 font-medium transition-colors"
+                    >
+                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 16 16">
+                            <path fillRule="evenodd" d="M15 8a.5.5 0 0 0-.5-.5H2.707l3.147-3.146a.5.5 0 1 0-.708-.708l-4 4a.5.5 0 0 0 0 .708l4 4a.5.5 0 0 0 .708-.708L2.707 8.5H14.5A.5.5 0 0 0 15 8z" />
+                        </svg>
+                        Volver al índice
+                    </Link>
 
-                {/* Header */}
-                <div className="flex flex-wrap justify-between items-start gap-4 mb-8">
-                    <div>
-                        <h1 className="text-3xl font-bold text-[var(--text-primary)]">
-                            {departamento}
-                        </h1>
-                        <p className="text-[var(--text-secondary)] mt-1">
-                            {pagination.total} propiedades{getFilterDisplayText(filter) ? ` ${getFilterDisplayText(filter)}` : ''}
-                            {listings.length < pagination.total && ` • Mostrando ${listings.length}`}
-                        </p>
-                    </div>
-
-                    {/* Filter Links and Sort - SEO friendly navigation */}
-                    <div className="flex flex-wrap items-center gap-4">
-                        <div className="pill-group">
-                            <Link
-                                href={`/${slug}`}
-                                className={`pill-btn ${filter === 'all' ? 'active' : ''}`}
-                            >
-                                Todos
-                            </Link>
-                            <Link
-                                href={`/${slug}/venta`}
-                                className={`pill-btn ${filter === 'sale' ? 'active' : ''}`}
-                            >
-                                Venta
-                            </Link>
-                            <Link
-                                href={`/${slug}/renta`}
-                                className={`pill-btn ${filter === 'rent' ? 'active' : ''}`}
-                            >
-                                Renta
-                            </Link>
+                    <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+                        <div>
+                            <h1 className="text-4xl md:text-5xl font-black text-[var(--text-primary)] tracking-tight">
+                                {departamento}
+                            </h1>
+                            <p className="status-line">
+                                {isLoading ? (
+                                    <span>Cargando…</span>
+                                ) : (
+                                    <>
+                                        <span>{pagination.total}</span> propiedades{getFilterDisplayText(filter) ? ` ${getFilterDisplayText(filter)}` : ''} · <span>Mostrando {listings.length}</span>
+                                    </>
+                                )}
+                            </p>
                         </div>
-                        <select
-                            value={sortBy}
-                            onChange={(e) => setSortBy(e.target.value as SortOption)}
-                            className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        >
-                            <option value="price_asc">Precio: menor a mayor</option>
-                            <option value="price_desc">Precio: mayor a menor</option>
-                            <option value="recent">Más recientes</option>
-                        </select>
+
+                        <div className="flex flex-wrap items-center gap-4">
+                            <div className="pill-group">
+                                <Link
+                                    href={`/${slug}`}
+                                    className={`pill-btn ${filter === 'all' ? 'active' : ''}`}
+                                >
+                                    Todos
+                                </Link>
+                                <Link
+                                    href={`/${slug}/venta`}
+                                    className={`pill-btn ${filter === 'sale' ? 'active' : ''}`}
+                                >
+                                    Venta
+                                </Link>
+                                <Link
+                                    href={`/${slug}/renta`}
+                                    className={`pill-btn ${filter === 'rent' ? 'active' : ''}`}
+                                >
+                                    Renta
+                                </Link>
+                            </div>
+
+                            <div className="dropdown-control">
+                                <select
+                                    value={sortBy}
+                                    onChange={(e) => setSortBy(e.target.value as SortOption)}
+                                    className="dropdown-select"
+                                >
+                                    <option value="price_asc">Precio: menor a mayor</option>
+                                    <option value="price_desc">Precio: mayor a menor</option>
+                                    <option value="recent">Más recientes</option>
+                                </select>
+                                <div className="dropdown-icon" aria-hidden="true">
+                                    <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
+                                        <path d="M6 8l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                    </svg>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -310,44 +346,85 @@ export default function DepartmentPage() {
                     </div>
                 ) : (
                     <>
-                        {/* Best Opportunities - filtered based on URL */}
                         <BestOpportunitySection
                             saleListing={showBestSale ? bestSale : null}
                             rentListing={showBestRent ? bestRent : null}
                             onViewListing={handleViewBestListing}
+                            departamentoName={departamento}
                         />
 
-                        {/* Tag Filter Chips */}
-                        {initialListingTags.length > 0 && (
-                            <TagFilterChips
-                                allListingTags={initialListingTags}
-                                primaryTag={departamento}
-                                selectedTags={selectedFilterTags}
-                                onToggleTag={(tag) => {
-                                    setSelectedFilterTags(prev =>
-                                        prev.includes(tag)
-                                            ? prev.filter(t => t !== tag)
-                                            : [...prev, tag]
-                                    );
-                                }}
-                            />
-                        )}
+                        <div className="card-float border-l-4 border-l-[var(--primary)] bg-gradient-to-r from-[var(--primary-light)] to-white p-4 md:p-5 mb-8">
+                            <div className="flex flex-wrap items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-100">
+                                <div className="flex items-center gap-2">
+                                    <svg className="w-4 h-4 text-[var(--primary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                                    </svg>
+                                    <h2 className="text-xs font-black uppercase tracking-widest text-[var(--text-primary)]">Filtros</h2>
+                                </div>
+                                <div className="flex items-center gap-4">
+                                    <span className="text-xs text-[var(--text-muted)]">
+                                        Resultados: <span className="font-bold text-[var(--text-secondary)]">{resultsCount}</span>
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={clearTagFilters}
+                                        disabled={selectedFilterTags.length === 0}
+                                        className="text-xs font-semibold text-[var(--primary)] hover:text-[var(--primary-hover)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                                    >
+                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                        Limpiar filtros
+                                    </button>
+                                </div>
+                            </div>
 
-                        {/* Listings Grid */}
+                            {initialListingTags.length > 0 && (
+                                <TagFilterChips
+                                    variant="department"
+                                    allListingTags={initialListingTags}
+                                    primaryTag={departamento}
+                                    selectedTags={selectedFilterTags}
+                                    maxVisible={10}
+                                    onToggleTag={(tag) => {
+                                        setSelectedFilterTags(prev =>
+                                            prev.includes(tag)
+                                                ? prev.filter(t => t !== tag)
+                                                : [...prev, tag]
+                                        );
+                                    }}
+                                />
+                            )}
+                        </div>
+
+                        <div className="mb-8">
+                            <div className="mb-5 pb-3 border-b-2 border-slate-100">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <svg className="w-4 h-4 text-[var(--text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                                    </svg>
+                                    <div className="text-xs font-black uppercase tracking-widest text-[var(--text-primary)]">Todas las propiedades</div>
+                                </div>
+                                {appliedSummary.length > 0 ? (
+                                    <div className="text-sm text-[var(--text-muted)]">
+                                        Aplicando: <span className="font-medium text-[var(--text-secondary)]">{appliedSummary.join(' · ')}</span>
+                                    </div>
+                                ) : (
+                                    <div className="text-sm text-[var(--text-muted)]">
+                                        Explorá el catálogo completo de propiedades en {departamento}
+                                    </div>
+                                )}
+                            </div>
+
                         {listingsForCard.length > 0 ? (
                             <>
-                                <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4">
-                                    {selectedFilterTags.length > 0
-                                        ? `Propiedades filtradas (${filteredListings.length} de ${listings.length})`
-                                        : filter === 'sale' ? 'Propiedades en venta' : filter === 'rent' ? 'Propiedades en renta' : 'Todas las propiedades'
-                                    }
-                                </h2>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
                                     {listingsForCard.map((listing) => (
                                         <ListingCard
                                             key={listing.external_id}
                                             listing={listing}
                                             onClick={() => setSelectedListingId(listing.external_id)}
+                                            isFeatured={featuredIds.has(String(listing.external_id))}
                                         />
                                     ))}
                                 </div>
@@ -374,6 +451,7 @@ export default function DepartmentPage() {
                                 </p>
                             </div>
                         )}
+                        </div>
                     </>
                 )}
             </main>

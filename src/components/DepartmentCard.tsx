@@ -61,7 +61,7 @@ export default function DepartmentCard({
 
             {/* Header Section */}
             <div className="dept-card__header">
-                <span className="dept-card__label">PRECIO MEDIANO</span>
+                <span className="dept-card__label">Precio Medio</span>
                 <span className="dept-card__price">{formatPrice(medianPrice)}</span>
                 <h3 className="dept-card__name">{departamento}</h3>
             </div>
