@@ -2231,3 +2231,405 @@ body {
     transform: scale(0.98);
   }
 }
+
+/* =============================================
+   OPORTUNIDADES DESTACADAS (Pixel-Perfect Mockup)
+   ============================================= */
+
+.oportunidades-section {
+  padding: 32px 0;
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+.oportunidades-title {
+  font-size: 24px;
+  font-weight: 900;
+  color: var(--text-primary);
+  margin: 0 0 24px 0;
+  letter-spacing: -0.02em;
+  text-align: center;
+}
+
+@media (min-width: 768px) {
+  .oportunidades-title {
+    font-size: 30px;
+  }
+}
+
+.oportunidades-card {
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 4px 24px -4px rgba(0, 0, 0, 0.08), 0 2px 8px -2px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+}
+
+.oportunidades-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 20px 24px;
+}
+
+.oportunidades-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.oportunidades-star {
+  color: #1e3a5f;
+  font-size: 14px;
+}
+
+.oportunidades-header-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #1e3a5f;
+  text-transform: uppercase;
+}
+
+.oportunidades-header-subtitle {
+  flex: 1;
+  font-size: 14px;
+  color: #64748b;
+  margin: 0;
+  min-width: 200px;
+}
+
+.oportunidades-header-subtitle strong {
+  font-weight: 600;
+  color: #475569;
+}
+
+.oportunidades-ver-todas {
+  font-size: 13px;
+  font-weight: 500;
+  color: #64748b;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  white-space: nowrap;
+  transition: color 0.15s;
+}
+
+.oportunidades-ver-todas:hover {
+  color: #1e3a5f;
+}
+
+.oportunidades-divider {
+  height: 1px;
+  background: #e2e8f0;
+  margin: 0 24px;
+}
+
+.oportunidades-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+  padding: 24px;
+}
+
+@media (max-width: 700px) {
+  .oportunidades-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Individual Card */
+.oportunidad-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: box-shadow 0.2s, transform 0.2s;
+}
+
+.oportunidad-card:hover {
+  box-shadow: 0 8px 32px -8px rgba(0, 0, 0, 0.12);
+  transform: translateY(-2px);
+}
+
+/* Card Header with pastel */
+.oportunidad-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 16px 20px 12px;
+}
+
+.oportunidad-card-header--sale {
+  background: linear-gradient(180deg, #e8f4fc 0%, #f0f7fc 100%);
+}
+
+.oportunidad-card-header--rent {
+  background: linear-gradient(180deg, #fce8ec 0%, #fcf0f2 100%);
+}
+
+.oportunidad-rank {
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.oportunidad-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 5px 12px;
+  border-radius: 6px;
+  text-transform: uppercase;
+}
+
+.oportunidad-badge--sale {
+  background: #1e3a5f;
+  color: #ffffff;
+}
+
+.oportunidad-badge--rent {
+  background: #b91c1c;
+  color: #ffffff;
+}
+
+/* Price Section */
+.oportunidad-price-section {
+  padding: 0 20px 16px;
+}
+
+.oportunidad-card-header--sale+.oportunidad-price-section {
+  background: linear-gradient(180deg, #f0f7fc 0%, #ffffff 100%);
+}
+
+.oportunidad-card-header--rent+.oportunidad-price-section {
+  background: linear-gradient(180deg, #fcf0f2 0%, #ffffff 100%);
+}
+
+.oportunidad-price {
+  font-size: 42px;
+  font-weight: 700;
+  color: #1e293b;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.oportunidad-price-suffix {
+  font-size: 18px;
+  font-weight: 500;
+  color: #64748b;
+  margin-left: 2px;
+}
+
+/* Reason Label */
+.oportunidad-reason {
+  padding: 0 20px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #1e293b;
+  text-transform: uppercase;
+}
+
+.oportunidad-reason--rent {
+  color: #b91c1c;
+}
+
+/* DATOS CLAVE divider label */
+.datos-clave-label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 20px;
+  margin-bottom: 16px;
+}
+
+.datos-clave-line {
+  flex: 1;
+  height: 1px;
+  background: #e2e8f0;
+}
+
+.datos-clave-text {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: #94a3b8;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* Mini Cards Grid */
+.datos-clave-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  padding: 0 16px 20px;
+}
+
+.dato-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 14px 10px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.dato-icon {
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dato-icons-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #64748b;
+}
+
+.dato-value {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1e293b;
+  line-height: 1.2;
+}
+
+.dato-score {
+  font-size: 18px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.dato-score-max {
+  font-size: 13px;
+  font-weight: 500;
+  color: #94a3b8;
+  margin-left: 2px;
+}
+
+.dato-label {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: #94a3b8;
+  text-transform: uppercase;
+}
+
+/* Responsive: stack mini-cards on very small screens */
+@media (max-width: 380px) {
+  .datos-clave-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .datos-clave-grid .dato-card:last-child {
+    grid-column: span 2;
+  }
+}
+
+/* =============================================
+   OPORTUNIDADES - IMAGE SECTION
+   ============================================= */
+
+.oportunidad-image-wrapper {
+  position: relative;
+  width: 100%;
+  height: 180px;
+  background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+  overflow: hidden;
+}
+
+.oportunidad-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.4s ease, opacity 0.3s ease;
+}
+
+.oportunidad-card:hover .oportunidad-image {
+  transform: scale(1.05);
+}
+
+.oportunidad-image-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+}
+
+.oportunidad-image-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 12px 14px;
+  z-index: 2;
+}
+
+.oportunidad-rank-badge {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  font-size: 12px;
+  font-weight: 700;
+  color: #475569;
+  padding: 6px 12px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.oportunidad-type-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 6px 14px;
+  border-radius: 8px;
+  text-transform: uppercase;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.oportunidad-type-badge--sale {
+  background: #1e3a5f;
+  color: #ffffff;
+}
+
+.oportunidad-type-badge--rent {
+  background: #b91c1c;
+  color: #ffffff;
+}
+
+.oportunidad-content {
+  padding: 20px;
+}
+
+/* Adjust price section when inside content */
+.oportunidad-content .oportunidad-price-section {
+  padding: 0 0 12px 0;
+  background: none;
+}
+
+.oportunidad-content .oportunidad-reason {
+  padding: 0 0 16px 0;
+}
+
+.oportunidad-content .datos-clave-label {
+  padding: 0;
+  margin-bottom: 14px;
+}
+
+.oportunidad-content .datos-clave-grid {
+  padding: 0;
+}
