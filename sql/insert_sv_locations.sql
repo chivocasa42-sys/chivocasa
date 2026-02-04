@@ -1,7 +1,28 @@
--- Auto-generated INSERT statements for sv_locations
--- Run this in Supabase SQL Editor after creating the table
+-- ============================================
+-- FRESH IMPORT: DELETE ALL + INSERT
+-- Auto-generated SQL for sv_locations
+-- Generated at: 2026-02-03T14:01:09.327126
+-- Total records: 1394
+-- ============================================
+-- WARNING: This will DELETE ALL existing locations!
+-- Run this in Supabase SQL Editor
 
 BEGIN;
+
+-- ============================================
+-- Step 1: Delete ALL existing locations
+-- ============================================
+DELETE FROM sv_locations WHERE id >= 0;
+
+-- Reset ID sequence to start from 1
+ALTER SEQUENCE sv_locations_id_seq RESTART WITH 1;
+
+-- ============================================
+-- Step 2: Insert new locations from JSON source
+-- ============================================
+
+-- Auto-generated INSERT statements for sv_locations
+-- Run this in Supabase SQL Editor after creating the table
 
 INSERT INTO sv_locations (name, department, municipality, latitude, longitude) VALUES ('Altos de Merliot', 'La Libertad', 'Santa Tecla', 13.6811, -89.2689);
 INSERT INTO sv_locations (name, department, municipality, latitude, longitude) VALUES ('Altos de Santa Elena', 'La Libertad', 'Santa Tecla', 13.6578, -89.2922);
