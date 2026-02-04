@@ -221,10 +221,9 @@ export default function DepartmentPage() {
         });
     }, [filteredListings]);
 
-    // Handle view listing from best opportunity
+    // Handle view listing from best opportunity - open in modal
     const handleViewBestListing = (topScored: TopScoredListing) => {
-        // Open URL directly since we don't have full listing data
-        window.open(topScored.url, '_blank');
+        setSelectedListingId(topScored.external_id);
     };
 
     // Determine which best opportunities to show based on filter

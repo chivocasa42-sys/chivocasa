@@ -32,7 +32,7 @@ export default function BestOpportunitySection({
 }: BestOpportunitySectionProps) {
     if (!saleListing && !rentListing) return null;
 
-    const [isHowOpen, setIsHowOpen] = useState(false);
+    const [isModalOpen, setIsModalOpen] = useState(false);
 
     const items = useMemo(() => {
         const next: Array<{ listing: TopScoredListing; type: 'sale' | 'rent' }> = [];
@@ -65,12 +65,18 @@ export default function BestOpportunitySection({
                         <p className="oportunidades-header-subtitle">
                             Seleccionadas por <strong>mejor relación</strong> precio-valor{departamentoName ? ` en ${departamentoName}.` : '.'}
                         </p>
+                        {/* 3D Pill Button */}
                         <button
                             type="button"
-                            onClick={() => setIsHowOpen(true)}
-                            className="oportunidades-ver-todas"
+                            onClick={() => setIsModalOpen(true)}
+                            className="px-4 py-2 text-xs font-semibold text-[var(--text-secondary)] bg-white rounded-full border border-slate-200 shadow-[0_2px_4px_rgba(0,0,0,0.08),0_4px_8px_rgba(0,0,0,0.04),inset_0_1px_0_rgba(255,255,255,0.8)] hover:shadow-[0_4px_8px_rgba(0,0,0,0.12),0_6px_12px_rgba(0,0,0,0.06)] hover:border-slate-300 active:shadow-[0_1px_2px_rgba(0,0,0,0.1)] active:translate-y-px transition-all duration-150 flex items-center gap-1.5"
                         >
-                            Ver todas →
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <circle cx="12" cy="12" r="10" />
+                                <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3" strokeLinecap="round" strokeLinejoin="round" />
+                                <circle cx="12" cy="17" r="0.5" fill="currentColor" />
+                            </svg>
+                            ¿Cómo se calcula?
                         </button>
                     </div>
 
@@ -191,27 +197,34 @@ export default function BestOpportunitySection({
             </div>
 
             {/* Modal */}
-            {isHowOpen && (
-                <div className="modal-backdrop" onClick={() => setIsHowOpen(false)}>
-                    <div className="modal-content-premium" onClick={(e) => e.stopPropagation()}>
+            {isModalOpen && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm"
+                    onClick={() => setIsModalOpen(false)}
+                >
+                    <div
+                        className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl p-6"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        {/* Close Button */}
                         <button
                             type="button"
-                            className="modal-close-btn"
-                            onClick={() => setIsHowOpen(false)}
+                            onClick={() => setIsModalOpen(false)}
+                            className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 transition-colors text-slate-400 hover:text-slate-600"
                             aria-label="Cerrar"
                         >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M18 6L6 18M6 6l12 12" strokeLinecap="round" strokeLinejoin="round" />
                             </svg>
                         </button>
-                        <div className="p-6 md:p-8">
-                            <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-2">¿Cómo se calcula?</h3>
-                            <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
-                                Seleccionamos oportunidades comparando precio, tamaño (m²) y características (habitaciones, baños),
-                                buscando la mejor relación precio–valor dentro del departamento. El score se normaliza por tipo
-                                (venta o renta) y se re-calcula periódicamente.
-                            </p>
-                        </div>
+
+                        {/* Content */}
+                        <h3 className="text-lg font-bold text-[var(--text-primary)] mb-3">
+                            ¿Cómo se calcula?
+                        </h3>
+                        <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
+                            Seleccionamos oportunidades comparando precio, tamaño (m²) y características (habitaciones, baños), buscando la mejor relación precio–valor dentro del departamento. El score se normaliza por tipo (venta o renta) y se re-calcula periódicamente.
+                        </p>
                     </div>
                 </div>
             )}
