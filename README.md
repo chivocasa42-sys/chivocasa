@@ -2,6 +2,22 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
+## Quick Start (Windows)
+
+To start the development server immediately, run the included batch script:
+
+```bash
+.\run_dev.bat
+```
+
+Or, if you have `npm` configured in your PATH:
+
+```bash
+npm run dev
+```
+
+## Getting Started (Standard)
+
 First, run the development server:
 
 ```bash

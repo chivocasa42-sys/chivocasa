@@ -16,17 +16,20 @@ export default function SectionHeader({
     actionHref
 }: SectionHeaderProps) {
     return (
-        <div className="section-header-simple">
-            <div className="section-header-left">
-                <h2 className="section-title-simple">
-                    {title[0]} <span className="section-title-accent">{title[1]}</span>
-                </h2>
-                {subtitle && (
-                    <p className="section-subtitle-simple">{subtitle}</p>
-                )}
-            </div>
+        <div className="text-center mb-8">
+            <h2 className="text-2xl md:text-3xl font-black text-[var(--text-primary)] tracking-tight mb-2">
+                {title[0]} <span className="text-[var(--primary)]">{title[1]}</span>
+            </h2>
+            {subtitle && (
+                <p className="text-base text-[var(--text-muted)] max-w-xl mx-auto">
+                    {subtitle}
+                </p>
+            )}
             {actionLabel && actionHref && (
-                <Link href={actionHref} className="section-action-simple">
+                <Link
+                    href={actionHref}
+                    className="inline-flex items-center gap-1 mt-3 text-sm font-semibold text-[var(--primary)] hover:opacity-80 transition-opacity"
+                >
                     {actionLabel}
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                         <path d="M6 4L10 8L6 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
