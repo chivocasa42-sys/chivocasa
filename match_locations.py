@@ -953,6 +953,28 @@ def main():
     # Process listings
     mode = 'full' if args.full else 'new'
     process_listings(supabase, groups, mode, dry_run=args.dry_run, limit=args.limit)
+    
+    # Refresh materialized view (needed for updated location joins)
+    if not args.dry_run:
+        print("\n=== Refreshing Materialized View ===")
+        try:
+            refresh_url = f"{SUPABASE_URL}/rest/v1/rpc/refresh_mv_sd_depto_stats"
+            refresh_resp = requests.post(
+                refresh_url,
+                headers={
+                    "apikey": SUPABASE_KEY,
+                    "Authorization": f"Bearer {SUPABASE_KEY}",
+                    "Content-Type": "application/json"
+                },
+                json={},
+                timeout=60
+            )
+            if refresh_resp.status_code in [200, 204]:
+                print("  ✓ Materialized view refreshed successfully!")
+            else:
+                print(f"  ⚠️ Warning: Could not refresh view. Status: {refresh_resp.status_code}")
+        except Exception as e:
+            print(f"  ⚠️ Warning: Could not refresh view: {e}")
 
 
 if __name__ == "__main__":
