@@ -1817,6 +1817,13 @@ def scrape_listing(url, listing_type):
                     elif "localización" in label_text.lower() or "ubicación" in label_text.lower():
                         location = value
         
+        # Fallback: Extract published_date from raw HTML using regex if not found via CSS selectors
+        if not published_date:
+            # Look for date in HTML tags like >01/08/2025<
+            date_match = re.search(r'>(\d{2}/\d{2}/\d{4})<', str(resp.text))
+            if date_match:
+                published_date = date_match.group(1)
+        
         # Fallback for location if not found in details
         if not location:
             location = details.get("Ubicación", details.get("Localización", ""))
@@ -2682,6 +2689,16 @@ def enrich_realtor_listings(listings, max_workers=2):
                             listing["published_date"] = dt.strftime("%d/%m/%Y")
                         except:
                             pass
+                    
+                    # Fallback: Extract publishedAt from raw HTML if not found in apolloState
+                    if not listing.get("published_date"):
+                        pub_match = re.search(r'"publishedAt"\s*:\s*"(\d{4}-\d{2}-\d{2})', response.text)
+                        if pub_match:
+                            try:
+                                dt = datetime.strptime(pub_match.group(1), "%Y-%m-%d")
+                                listing["published_date"] = dt.strftime("%d/%m/%Y")
+                            except:
+                                pass
                     
                     # Extract property type if not already set
                     if not listing.get("details", {}).get("property_type"):
