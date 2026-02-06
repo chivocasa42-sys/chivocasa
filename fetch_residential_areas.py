@@ -17,10 +17,21 @@ import time
 import requests
 from typing import Optional
 
+try:
+    from shapely.geometry import Point, Polygon, shape
+    from shapely.prepared import prep
+    SHAPELY_AVAILABLE = True
+except ImportError:
+    SHAPELY_AVAILABLE = False
+    print("⚠️ Shapely not installed. Spatial parent lookup disabled.")
+    print("   Install with: pip install shapely")
+
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 NOMINATIM_LOOKUP_URL = "https://nominatim.openstreetmap.org/lookup"
+NOMINATIM_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse"
 
 CACHE_FILE = "nominatim_cache.json"
+REVERSE_CACHE_FILE = "nominatim_reverse_cache.json"
 BATCH_SIZE = 50
 
 
@@ -218,6 +229,335 @@ def extract_center(element: dict) -> Optional[tuple[float, float]]:
     return None
 
 
+def get_parent_polygons() -> list[dict]:
+    """Fetch named areas with full polygon geometries from Overpass.
+    
+    These are larger areas (like "Colonia Santa Luisa", "Residencial Las Mercedes") 
+    that contain smaller areas (like "Pol N", "Pol B").
+    
+    Includes multiple place types to catch different tagging conventions.
+    """
+    # Query for named areas with geometry - expanded to catch more place types
+    query = """
+    [out:json][timeout:300];
+    
+    area["ISO3166-1"="SV"][admin_level=2]->.el_salvador;
+    
+    (
+      // Residential landuse
+      way["landuse"="residential"]["name"](area.el_salvador);
+      relation["landuse"="residential"]["name"](area.el_salvador);
+      
+      // Various place types that might contain residential blocks
+      way["place"~"neighbourhood|suburb|locality|quarter|village|hamlet"]["name"](area.el_salvador);
+      relation["place"~"neighbourhood|suburb|locality|quarter|village|hamlet"]["name"](area.el_salvador);
+      
+      // Named boundary areas
+      way["boundary"="administrative"]["name"](area.el_salvador);
+      relation["boundary"="administrative"]["name"][admin_level~"[789]|10"](area.el_salvador);
+    );
+    
+    out body geom;
+    """
+    
+    print("\n🗺️ Fetching parent polygons with geometries...")
+    result = query_overpass(query)
+    
+    elements = result.get("elements", [])
+    print(f"   Found {len(elements)} named areas with geometries")
+    
+    return elements
+
+
+def build_parent_index(elements: list[dict]) -> list[dict]:
+    """Build a spatial index of parent polygons.
+    
+    Returns a list of dicts with 'name', 'osm_id', and 'geometry' (Shapely polygon).
+    """
+    if not SHAPELY_AVAILABLE:
+        print("   ⚠️ Shapely not available, skipping spatial index")
+        return []
+    
+    parent_polygons = []
+    
+    for element in elements:
+        name = element.get("tags", {}).get("name", "")
+        if not name:
+            continue
+        
+        osm_type = element.get("type", "way")
+        osm_id = element.get("id")
+        
+        # Extract geometry based on element type
+        geometry = None
+        
+        if osm_type == "way":
+            # Way has 'geometry' as a list of {lat, lon} points
+            geom_points = element.get("geometry", [])
+            if len(geom_points) >= 3:
+                # Convert to Shapely polygon (lon, lat order)
+                coords = [(p["lon"], p["lat"]) for p in geom_points]
+                try:
+                    geometry = Polygon(coords)
+                    if not geometry.is_valid:
+                        geometry = geometry.buffer(0)  # Fix invalid geometry
+                except Exception:
+                    continue
+        
+        elif osm_type == "relation":
+            # Relations have 'members' with geometry
+            # Try to extract outer ring
+            members = element.get("members", [])
+            outer_coords = []
+            for member in members:
+                if member.get("role") == "outer" and member.get("geometry"):
+                    for p in member["geometry"]:
+                        outer_coords.append((p["lon"], p["lat"]))
+            
+            if len(outer_coords) >= 3:
+                try:
+                    geometry = Polygon(outer_coords)
+                    if not geometry.is_valid:
+                        geometry = geometry.buffer(0)
+                except Exception:
+                    continue
+        
+        if geometry and geometry.is_valid and not geometry.is_empty:
+            parent_polygons.append({
+                "name": name,
+                "osm_id": f"{osm_type_prefix(osm_type)}{osm_id}",
+                "geometry": geometry,
+                "prepared": prep(geometry),  # Prepared geometry for faster lookups
+                "area": geometry.area
+            })
+    
+    # Sort by area (smallest first) so we find the most specific parent
+    parent_polygons.sort(key=lambda x: x["area"])
+    
+    print(f"   Built spatial index with {len(parent_polygons)} polygons")
+    return parent_polygons
+
+
+def find_parent_residential(lat: float, lon: float, parent_polygons: list[dict], own_name: str = "") -> Optional[str]:
+    """Find which parent polygon contains this point.
+    
+    Returns the name of the containing polygon, or None if not found.
+    Skips polygons with the same name as the point's own name.
+    """
+    if not SHAPELY_AVAILABLE or not parent_polygons:
+        return None
+    
+    point = Point(lon, lat)  # Shapely uses (x, y) = (lon, lat)
+    
+    for parent in parent_polygons:
+        # Skip if the parent has the same name (don't return own name as parent)
+        if parent["name"] == own_name:
+            continue
+        
+        # Use prepared geometry for faster containment check
+        if parent["prepared"].contains(point):
+            return parent["name"]
+    
+    return None
+
+
+def extract_parent_context(label: str, name: str) -> str:
+    """Extract parent context from Nominatim label.
+    
+    Label format is typically: "Name, Parent, City, State, Country"
+    We want to extract "Parent" (the immediate parent of this area).
+    """
+    if not label or not name:
+        return ""
+    
+    # Split by comma and strip whitespace
+    parts = [p.strip() for p in label.split(",")]
+    
+    # Find the name in parts and get the next part (parent)
+    for i, part in enumerate(parts):
+        if part == name and i + 1 < len(parts):
+            return parts[i + 1]
+    
+    # If name wasn't found exactly, try to get second part
+    if len(parts) >= 2:
+        return parts[1]
+    
+    return ""
+
+
+def load_reverse_cache() -> dict:
+    """Load cached reverse geocoding results."""
+    if os.path.exists(REVERSE_CACHE_FILE):
+        try:
+            with open(REVERSE_CACHE_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+
+def save_reverse_cache(cache: dict):
+    """Save reverse geocoding results to cache."""
+    with open(REVERSE_CACHE_FILE, "w", encoding="utf-8") as f:
+        json.dump(cache, f, ensure_ascii=False, indent=2)
+
+
+def reverse_geocode(session: requests.Session, lat: float, lon: float, cache: dict) -> Optional[str]:
+    """Reverse geocode coordinates to get parent context.
+    
+    Returns the neighbourhood/residential area name from the address hierarchy.
+    """
+    cache_key = f"{lat:.6f},{lon:.6f}"
+    
+    if cache_key in cache:
+        return cache[cache_key]
+    
+    params = {
+        "lat": lat,
+        "lon": lon,
+        "format": "geocodejson",
+        "zoom": 18,  # High zoom for detailed address
+    }
+    
+    try:
+        response = session.get(NOMINATIM_REVERSE_URL, params=params, timeout=30)
+        
+        if response.status_code == 429:
+            wait_time = int(response.headers.get("Retry-After", 60))
+            print(f"      ⏳ Rate limited. Waiting {wait_time}s...")
+            time.sleep(wait_time)
+            return reverse_geocode(session, lat, lon, cache)  # Retry
+        
+        if response.status_code != 200:
+            cache[cache_key] = None
+            return None
+        
+        response.encoding = 'utf-8'
+        data = response.json()
+        
+        # Extract from geocodejson format
+        features = data.get("features", [])
+        if features:
+            props = features[0].get("properties", {})
+            geocoding = props.get("geocoding", {})
+            
+            # Try to get neighbourhood, then locality, then district
+            result = (
+                geocoding.get("neighbourhood") or
+                geocoding.get("locality") or
+                geocoding.get("district") or
+                geocoding.get("city") or
+                ""
+            )
+            
+            # Also check admin hierarchy
+            if not result:
+                admin = geocoding.get("admin", {})
+                # Look for level6, level7, level8 (more local levels)
+                for level in ["level8", "level7", "level6"]:
+                    if admin.get(level):
+                        result = admin[level]
+                        break
+            
+            cache[cache_key] = result
+            return result
+        
+        cache[cache_key] = None
+        return None
+        
+    except Exception as e:
+        print(f"      ⚠️ Reverse geocode error: {e}")
+        cache[cache_key] = None
+        return None
+
+
+def deduplicate_names(areas: list[dict], parent_polygons: list[dict] = None, session: requests.Session = None) -> list[dict]:
+    """Add display_name field with parent context for duplicate names.
+    
+    For unique names: display_name = name
+    For duplicate names: display_name = "name (Parent Context)"
+    
+    Uses spatial lookup (primary) or reverse geocoding (fallback) for parent context.
+    """
+    from collections import Counter
+    
+    # Count occurrences of each name
+    name_counts = Counter(a.get("name", "") for a in areas)
+    
+    # Find duplicate names (count > 1)
+    duplicate_names = {name for name, count in name_counts.items() if count > 1 and name}
+    
+    print(f"\n📊 Name deduplication:")
+    print(f"   - Total unique names: {len(name_counts)}")
+    print(f"   - Duplicate name groups: {len(duplicate_names)}")
+    
+    if parent_polygons:
+        print(f"   - Using spatial index with {len(parent_polygons)} parent polygons")
+    
+    spatial_hits = 0
+    reverse_calls = 0
+    reverse_cache = load_reverse_cache() if session else {}
+    
+    # Add display_name to each area
+    for area in areas:
+        name = area.get("name", "")
+        label = area.get("label", "")
+        
+        if name in duplicate_names:
+            parent = None
+            
+            # Method 1: Try spatial lookup first (most reliable)
+            if parent_polygons:
+                lat = area.get("lat", 0)
+                lon = area.get("lon", 0)
+                if lat and lon:
+                    parent = find_parent_residential(lat, lon, parent_polygons, own_name=name)
+                    if parent:
+                        spatial_hits += 1
+            
+            # Method 2: Try extracting from label
+            if not parent:
+                parent = extract_parent_context(label, name)
+            
+            # Method 3: Fallback to reverse geocoding
+            if not parent and session:
+                lat = area.get("lat", 0)
+                lon = area.get("lon", 0)
+                if lat and lon:
+                    cache_key = f"{lat:.6f},{lon:.6f}"
+                    if cache_key not in reverse_cache:
+                        reverse_calls += 1
+                        if reverse_calls % 10 == 0:
+                            print(f"   🔄 Reverse geocoding... ({reverse_calls} calls)")
+                        time.sleep(1.1)  # Rate limit
+                    parent = reverse_geocode(session, lat, lon, reverse_cache)
+            
+            if parent and parent != name:  # Don't use parent if it's the same as name
+                area["display_name"] = f"{name} ({parent})"
+                area["parent_residential"] = parent  # Also store separately
+            else:
+                # No parent found, use name as-is
+                area["display_name"] = name
+                area["parent_residential"] = None
+        else:
+            # Unique name, no disambiguation needed
+            area["display_name"] = name
+            area["parent_residential"] = None
+    
+    # Save reverse cache
+    if session:
+        save_reverse_cache(reverse_cache)
+    
+    print(f"   ✓ Spatial lookups found: {spatial_hits}")
+    if reverse_calls > 0:
+        print(f"   ✓ Reverse geocode calls: {reverse_calls}")
+    
+    # Note: Some display_names may still be duplicates if no parent context was found
+    # These will remain as-is (duplicates allowed)
+    
+    return areas
+
+
 def test_nominatim_connection(session: requests.Session) -> bool:
     """Test if we can connect to Nominatim."""
     print("\nTesting Nominatim connection...")
@@ -375,6 +715,15 @@ def main():
     if args.nominatim_only:
         output_areas = [a for a in output_areas if a.get("nominatim") == True]
         print(f"\n📋 Filtered to {len(output_areas)} areas with Nominatim data")
+    
+    # Step 5.5: Build spatial index for parent lookup
+    parent_polygons = []
+    if SHAPELY_AVAILABLE:
+        parent_elements = get_parent_polygons()
+        parent_polygons = build_parent_index(parent_elements)
+    
+    # Step 5.6: Deduplicate names (add display_name with parent context for duplicates)
+    output_areas = deduplicate_names(output_areas, parent_polygons=parent_polygons, session=session)
     
     # Step 6: Build output
     output_data = {

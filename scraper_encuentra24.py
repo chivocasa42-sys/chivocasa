@@ -30,6 +30,9 @@ from localization_plugin import build_destination_queries
 # Import area normalizer for standardizing area units to m²
 from area_normalizer import normalize_listing_specs
 
+# Import location matcher for matching scraped listings to sv_loc_group hierarchy
+from match_locations import match_scraped_listings
+
 # ============== SUPABASE CONFIG ==============
 SUPABASE_URL = "https://zvamupbxzuxdgvzgbssn.supabase.co"
 SUPABASE_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp2YW11cGJ4enV4ZGd2emdic3NuIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTA5MDMwNSwiZXhwIjoyMDg0NjY2MzA1fQ.VfONseJg19pMEymrc6FbdEQJUWxTzJdNlVTboAaRgEs"
@@ -1585,14 +1588,24 @@ def detect_municipio(location, description="", title=""):
     Analyzes all three fields to find the best match.
     Returns a dict with municipio_detectado and departamento.
     """
-    # Combine all texts for searching (title often has the most specific location info)
-    combined_text = f"{title or ''} {location or ''} {description or ''}".lower()
+    import re
+    
+    def has_word_match(pattern, text):
+        """Check if pattern exists as a complete word in text using word boundaries."""
+        if not pattern or not text:
+            return False
+        # Use word boundaries to prevent partial matches (e.g., "colon" in "colonia")
+        regex = r'\b' + re.escape(pattern) + r'\b'
+        return bool(re.search(regex, text, re.IGNORECASE))
+    
+    # Combine all texts for alias searching
+    combined_text = f"{title or ''} {location or ''} {description or ''}"
     combined_normalized = normalize_text(combined_text)
     
     # First, check aliases (most specific matches) - sorted by length (longer first)
     sorted_aliases = sorted(MUNICIPIO_ALIASES.items(), key=lambda x: len(x[0]), reverse=True)
     for alias, municipio in sorted_aliases:
-        if alias in combined_text or normalize_text(alias) in combined_normalized:
+        if has_word_match(alias, combined_text) or has_word_match(normalize_text(alias), combined_normalized):
             depto_info = MUNICIPIO_TO_DEPARTAMENTO.get(municipio.lower(), {})
             return {
                 "municipio_detectado": municipio,
@@ -1608,7 +1621,7 @@ def detect_municipio(location, description="", title=""):
         muni_lower = municipio.lower()
         muni_normalized = normalize_text(municipio)
         
-        if muni_lower in (title or "").lower() or muni_normalized in title_normalized:
+        if has_word_match(muni_lower, (title or "").lower()) or has_word_match(muni_normalized, title_normalized):
             depto_info = MUNICIPIO_TO_DEPARTAMENTO.get(muni_lower, {})
             return {
                 "municipio_detectado": municipio,
@@ -1621,7 +1634,7 @@ def detect_municipio(location, description="", title=""):
         muni_lower = municipio.lower()
         muni_normalized = normalize_text(municipio)
         
-        if muni_lower in (location or "").lower() or muni_normalized in location_normalized:
+        if has_word_match(muni_lower, (location or "").lower()) or has_word_match(muni_normalized, location_normalized):
             depto_info = MUNICIPIO_TO_DEPARTAMENTO.get(muni_lower, {})
             return {
                 "municipio_detectado": municipio,
@@ -1634,7 +1647,7 @@ def detect_municipio(location, description="", title=""):
         muni_lower = municipio.lower()
         muni_normalized = normalize_text(municipio)
         
-        if muni_lower in (description or "").lower() or muni_normalized in desc_normalized:
+        if has_word_match(muni_lower, (description or "").lower()) or has_word_match(muni_normalized, desc_normalized):
             depto_info = MUNICIPIO_TO_DEPARTAMENTO.get(muni_lower, {})
             return {
                 "municipio_detectado": municipio,
@@ -3387,6 +3400,12 @@ def main(encuentra24=True, micasasv=False, realtor=False, vivolatam=False, limit
     print("\n=== Inserting to Supabase ===")
     success, errors = insert_listings_batch(all_listings)
     print(f"  Inserted: {success} | Errors: {errors}")
+    
+    # --- MATCH LOCATIONS ---
+    # Use the raw scraped data (title, location, details, description) to match to sv_loc_group
+    print("\n=== Matching Locations ===")
+    loc_matched, loc_errors = match_scraped_listings(all_listings, SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    print(f"  Location matches: {loc_matched} | Errors: {loc_errors}")
 
     # --- ALSO SAVE JSON (backup) ---
     output_file = os.path.join(DATA_DIR, "listings_all_sources.json")
