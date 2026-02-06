@@ -1,9 +1,9 @@
 name: Update Active Listings
 
 on:
-  schedule:
-    # Every 12 hours (at midnight and noon UTC)
-    - cron: '0 0,12 * * *'
+  # schedule:
+  #   # Every 12 hours (at midnight and noon UTC)
+  #   - cron: '0 0,12 * * *'
   workflow_dispatch:
     # Manual trigger
     inputs:
