@@ -951,57 +951,24 @@ def correct_listing_type(listing_type, title, description, price, url=None):
 
 def generate_location_tags(listing):
     """
-    Generate searchable location tags for a listing using the localization plugin.
-    Uses the build_destination_queries function to create location query strings
-    that serve as searchable tags. Also includes property subtype tag.
+    Generate property type tags for a listing.
+    
+    NOTE: Location tags are no longer generated here as we now use the 
+    listing_location_match table with the sv_loc_group hierarchy for 
+    location-based filtering.
+    
+    Only returns property type tags: Casa, Apartamento, Terreno, Local
     
     Args:
-        listing: Dict with listing data including location info
+        listing: Dict with listing data including title, description, URL
         
     Returns:
-        List of tag strings for the listing (location tags + property subtype)
+        List containing the property type tag if detected, empty list otherwise
     """
     tags = []
     
-    # Tags to exclude (placeholder values that shouldn't be searchable)
-    EXCLUDED_TAGS = {"no identificado", "el salvador"}
-    
-    try:
-        # Get location values, filtering out "No identificado" placeholder
-        municipio = listing.get("municipio_detectado", "")
-        if municipio.lower() == "no identificado":
-            municipio = ""
-            
-        departamento = listing.get("departamento", "")
-        if departamento.lower() == "no identificado":
-            departamento = ""
-        
-        # Build a listing dict in the format expected by localization_plugin
-        loc_listing = {
-            "title": listing.get("title", ""),
-            "description": listing.get("description", ""),
-            "location": {
-                "municipio_detectado": municipio,
-                "departamento": departamento,
-                "location_original": listing.get("location", "")
-            }
-        }
-        
-        # Generate tags using the localization plugin's query builder
-        # Only keep the first (most specific) tag, then split into separate tags
-        location_tags = build_destination_queries(loc_listing)
-        
-        if location_tags:
-            # Split the first tag by ", " to get individual tags
-            # e.g., "Santa Rosa, Santa Tecla, La Libertad, El Salvador" 
-            # becomes ["Santa Rosa", "Santa Tecla", "La Libertad", "El Salvador"]
-            for t in location_tags[0].split(","):
-                tag = t.strip()
-                # Skip excluded tags (placeholders and generic country name)
-                if tag and tag.lower() not in EXCLUDED_TAGS:
-                    tags.append(tag)
-    except Exception as e:
-        print(f"  Warning: Could not generate location tags: {e}")
+    # Allowed property type tags
+    ALLOWED_PROPERTY_TYPES = {"Casa", "Apartamento", "Terreno", "Local"}
     
     # Detect property subtype and add to tags
     try:
@@ -1011,7 +978,7 @@ def generate_location_tags(listing):
             listing.get("details"),
             listing.get("url", "")
         )
-        if subtype and subtype not in tags:
+        if subtype and subtype in ALLOWED_PROPERTY_TYPES:
             tags.append(subtype)
     except Exception as e:
         print(f"  Warning: Could not detect property subtype: {e}")

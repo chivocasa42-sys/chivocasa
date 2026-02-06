@@ -627,15 +627,74 @@ def match_scraped_listings(listings: list, supabase_url: str = None, supabase_ke
     matched_count = len(matches)
     print(f"  Matched: {matched_count}/{len(listings)} listings")
     
-    # Log unmatched listings
+    # Log and insert unmatched listings
     if unmatched:
-        print(f"\n  ⚠️ UNMATCHED LISTINGS ({len(unmatched)}):")
+        print(f"\n  ⚠️ UNMATCHED LISTINGS ({len(unmatched)}):") 
         for u in unmatched:
             print(f"    - ID: {u['external_id']}")
             print(f"      Title: {u['title']}...")
             print(f"      Location: {u['location']}")
             if u['url']:
                 print(f"      URL: {u['url']}")
+        
+        # Insert unmatched listings into database for tracking
+        print(f"\n  Inserting {len(unmatched)} unmatched listings to tracking table...")
+        unmatched_headers = {
+            "apikey": key,
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal"
+        }
+        
+        unmatched_success = 0
+        for u in unmatched:
+            # Get full listing data for this unmatched entry
+            listing_data = next(
+                (l for l in listings if l.get('external_id') == u['external_id']), 
+                {}
+            )
+            
+            # Prepare data for insert
+            rpc_payload = {
+                "p_external_id": u['external_id'],
+                "p_title": (listing_data.get('title', '') or '')[:500],
+                "p_location_data": listing_data.get('location') if isinstance(listing_data.get('location'), dict) else {"raw": str(listing_data.get('location', '') or '')},
+                "p_url": u['url'],
+                "p_searched_text": f"title:{u.get('title','')} | location:{u.get('location','')}",
+                "p_source": listing_data.get('source', 'Unknown')
+            }
+            
+            try:
+                resp = requests.post(
+                    f"{url}/rest/v1/rpc/insert_unmatched_location",
+                    headers=unmatched_headers,
+                    json=rpc_payload,
+                    timeout=30
+                )
+                if resp.status_code in (200, 204):
+                    unmatched_success += 1
+                else:
+                    # Try direct insert as fallback
+                    direct_payload = {
+                        "external_id": u['external_id'],
+                        "title": rpc_payload["p_title"],
+                        "location_data": rpc_payload["p_location_data"],
+                        "url": rpc_payload["p_url"],
+                        "searched_text": rpc_payload["p_searched_text"],
+                        "source": rpc_payload["p_source"]
+                    }
+                    resp2 = requests.post(
+                        f"{url}/rest/v1/unmatched_locations",
+                        headers={**unmatched_headers, "Prefer": "resolution=ignore-duplicates,return=minimal"},
+                        json=direct_payload,
+                        timeout=30
+                    )
+                    if resp2.status_code in (200, 201):
+                        unmatched_success += 1
+            except Exception as e:
+                print(f"    Error inserting unmatched: {e}")
+        
+        print(f"  Inserted {unmatched_success}/{len(unmatched)} unmatched listings to tracking table")
     
     if not matches:
         return 0, 0
@@ -782,7 +841,38 @@ def match_listing_with_texts(texts: Dict[str, str], groups: Dict) -> dict:
                 break
         return chain
     
-    # Step 1: Find L5 (Department)
+    # STRATEGY: Try L3 (municipality) FIRST globally, as it's more specific.
+    # This prevents false matches like "Cuscatlán" department matching when
+    # the listing mentions "Antiguo Cuscatlán" (a municipality in La Libertad).
+    
+    # Step 1: Try L3 globally first (most specific common match)
+    l3_match = find_match(groups.get(3, {}))
+    
+    if l3_match:
+        l3_id, l3_score, l3_text, l3_source = l3_match
+        if l3_score >= MIN_SCORE:
+            # Great! Found a municipality match - derive the full chain from it
+            chain = get_parent_chain_local(l3_id, 3)
+            result.update(chain)
+            result['matchLevel'] = 3
+            result['matchScore'] = round(l3_score, 2)
+            result['matchSource'] = l3_source
+            result['matchedText'] = l3_text[:255] if l3_text else None
+            
+            # Now try to find L2 (colonia) under this municipality
+            l2_match = find_match(groups.get(2, {}), parent_filter=l3_id)
+            if l2_match:
+                l2_id, l2_score, l2_text, l2_source = l2_match
+                if l2_score >= MIN_SCORE:
+                    result['locGroup2Id'] = l2_id
+                    result['matchLevel'] = 2
+                    result['matchScore'] = round(l2_score, 2)
+                    result['matchSource'] = l2_source
+                    result['matchedText'] = l2_text[:255] if l2_text else None
+            
+            return result
+    
+    # Step 2: No L3 match - try L5 (Department) and search within it
     l5_match = find_match(groups.get(5, {}))
     
     if l5_match:
@@ -793,7 +883,7 @@ def match_listing_with_texts(texts: Dict[str, str], groups: Dict) -> dict:
         result['matchSource'] = l5_source
         result['matchedText'] = l5_text[:255] if l5_text else None
         
-        # Step 2: Search lower levels under this department
+        # Search lower levels under this department
         best_lower = None
         best_lower_level = 5
         
@@ -819,30 +909,6 @@ def match_listing_with_texts(texts: Dict[str, str], groups: Dict) -> dict:
             result['matchedText'] = text[:255] if text else None
         
         return result
-    
-    # No L5 - try bottom-up
-    l3_match = find_match(groups.get(3, {}))
-    if l3_match:
-        l3_id, l3_score, l3_text, l3_source = l3_match
-        if l3_score >= MIN_SCORE:
-            chain = get_parent_chain_local(l3_id, 3)
-            result.update(chain)
-            result['matchLevel'] = 3
-            result['matchScore'] = round(l3_score, 2)
-            result['matchSource'] = l3_source
-            result['matchedText'] = l3_text[:255] if l3_text else None
-            
-            # Try L2
-            l2_match = find_match(groups.get(2, {}), parent_filter=l3_id)
-            if l2_match:
-                l2_id, l2_score, l2_text, l2_source = l2_match
-                if l2_score >= MIN_SCORE:
-                    result['locGroup2Id'] = l2_id
-                    result['matchLevel'] = 2
-                    result['matchScore'] = round(l2_score, 2)
-                    result['matchSource'] = l2_source
-                    result['matchedText'] = l2_text[:255] if l2_text else None
-            return result
     
     # No L5 and no L3 - try L2 directly as last resort
     # This catches cases where only the colonia name is in the listing (e.g., "Ciudad Marsella")
