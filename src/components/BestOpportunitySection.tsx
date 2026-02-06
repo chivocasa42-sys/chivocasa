@@ -182,7 +182,7 @@ export default function BestOpportunitySection({
                                                     </svg>
                                                 </div>
                                                 <div className="dato-value">
-                                                    <span className="dato-score">{listing.score.toFixed(1)}</span>
+                                                    <span className="dato-score">{(listing.score ?? 0).toFixed(1)}</span>
                                                     <span className="dato-score-max">/ 10</span>
                                                 </div>
                                                 <div className="dato-label">PUNTAJE</div>

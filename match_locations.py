@@ -296,13 +296,14 @@ def match_listing(listing: dict, groups: Dict) -> Optional[dict]:
     """Match a listing to location hierarchy using hybrid approach.
     
     Strategy:
-    1. Find L5 (department) first
-    2. Search ALL L4, L3, L2 entries that belong to that department
-    3. Pick the most specific match (lowest level)
-    4. Derive full parent chain from database
-    5. If no L5, try bottom-up from L3/L2
+    1. Find L3 (municipality) first - most specific reliable match
+    2. If found, derive full parent chain and search for L2 within it
+    3. If no L3, find L5 (department) with disambiguation check
+    4. Search within L5 for lower levels
+    5. If no L5, try L2 directly as last resort
     
-    This allows matching "San Antonio Abad" directly even if L4 region isn't mentioned.
+    L3-first prevents false department matches, e.g. "Antiguo Cuscatlán"
+    (municipality in La Libertad) incorrectly matching "Cuscatlán" department.
     """
     texts = extract_searchable_text(listing)
     MIN_SCORE = 0.9  # Minimum score to accept a match
@@ -335,61 +336,11 @@ def match_listing(listing: dict, groups: Dict) -> Optional[dict]:
         'matchedText': None
     }
     
-    # Step 1: Find L5 (Department)
-    l5_match = find_best_match_in_level(texts, groups.get(5, {}))
-    
-    if l5_match:
-        l5_id, l5_score, l5_text, l5_source = l5_match
-        result['locGroup5Id'] = l5_id
-        result['matchLevel'] = 5
-        result['matchScore'] = round(l5_score, 2)
-        result['matchSource'] = l5_source
-        result['matchedText'] = l5_text[:255] if l5_text else None
-        
-        # Step 2: Search ALL lower levels under this department, find most specific match
-        best_lower = None
-        best_lower_level = 5
-        best_lower_score = 0
-        
-        # Try L2 first (most specific), then L3, then L4
-        for level in [2, 3, 4]:
-            valid_ids = get_ids_under_department(level, l5_id)
-            if not valid_ids:
-                continue
-            
-            # Filter to only valid IDs
-            filtered_data = {k: v for k, v in groups.get(level, {}).items() if k in valid_ids}
-            if not filtered_data:
-                continue
-            
-            match = find_best_match_in_level(texts, filtered_data)
-            if match:
-                loc_id, score, matched_text, source = match
-                if score >= MIN_SCORE and level < best_lower_level:
-                    # More specific level wins
-                    best_lower = (loc_id, score, matched_text, source)
-                    best_lower_level = level
-                    best_lower_score = score
-                elif score > best_lower_score and level == best_lower_level:
-                    # Same level, higher score wins
-                    best_lower = (loc_id, score, matched_text, source)
-                    best_lower_score = score
-        
-        # If we found a more specific match, update result with full parent chain
-        if best_lower:
-            loc_id, score, matched_text, source = best_lower
-            parent_chain = get_parent_chain(loc_id, best_lower_level, groups)
-            result.update(parent_chain)
-            result['matchLevel'] = best_lower_level
-            result['matchScore'] = round(score, 2)
-            result['matchSource'] = source
-            result['matchedText'] = matched_text[:255] if matched_text else None
-        
-        return result
-    
-    # No L5 match - try bottom-up approach
-    # Try L3 first (municipality) - more reliable than L2
+    # Step 1: Try L3 (Municipality) first - most reliable, prevents false department matches
+    # E.g., "Antiguo Cuscatlán" matches L3 municipality (in La Libertad),
+    # preventing a false L5 match to "Cuscatlán" department.
     l3_match = find_best_match_in_level(texts, groups.get(3, {}))
+    
     if l3_match:
         l3_id, l3_score, l3_text, l3_source = l3_match
         if l3_score >= MIN_SCORE:
@@ -413,7 +364,98 @@ def match_listing(listing: dict, groups: Dict) -> Optional[dict]:
             
             return result
     
-    # Try L2 directly as last resort
+    # Step 2: No L3 match - try L5 (Department) with disambiguation
+    l5_match = find_best_match_in_level(texts, groups.get(5, {}))
+    
+    if l5_match:
+        l5_id, l5_score, l5_text, l5_source = l5_match
+        
+        # Disambiguation: verify the department name isn't part of a longer L3 municipality
+        # name that appears in the text. E.g., "Cuscatlán" dept should NOT match when
+        # text says "Antiguo Cuscatlán" (a municipality in La Libertad).
+        import re
+        dept_name = groups.get(5, {}).get(l5_id, {}).get('normalized', '')
+        disambiguated = False
+        
+        if dept_name:
+            for l3_id_check, l3_info in groups.get(3, {}).items():
+                l3_name = l3_info['normalized']
+                # Check if L3 name contains the department name as a part (but isn't identical)
+                if dept_name in l3_name and dept_name != l3_name:
+                    # Check if the full L3 name appears in any text field
+                    for src, txt in texts.items():
+                        if not txt:
+                            continue
+                        if re.search(r'\b' + re.escape(l3_name) + r'\b', txt):
+                            # The longer L3 name matches - use L3 instead of L5
+                            parent_chain = get_parent_chain(l3_id_check, 3, groups)
+                            result.update(parent_chain)
+                            result['matchLevel'] = 3
+                            result['matchScore'] = round(l5_score, 2)
+                            result['matchSource'] = src
+                            result['matchedText'] = l3_info['name'][:255]
+                            
+                            # Try L2 under this L3
+                            l2_match = find_best_match_in_level(texts, groups.get(2, {}), parent_filter=l3_id_check)
+                            if l2_match:
+                                l2_id, l2_score, l2_text, l2_source = l2_match
+                                if l2_score >= MIN_SCORE:
+                                    result['locGroup2Id'] = l2_id
+                                    result['matchLevel'] = 2
+                                    result['matchScore'] = round(l2_score, 2)
+                                    result['matchSource'] = l2_source
+                                    result['matchedText'] = l2_text[:255] if l2_text else None
+                            
+                            disambiguated = True
+                            break
+                if disambiguated:
+                    break
+        
+        if disambiguated:
+            return result
+        
+        # Not ambiguous - proceed with L5 match
+        result['locGroup5Id'] = l5_id
+        result['matchLevel'] = 5
+        result['matchScore'] = round(l5_score, 2)
+        result['matchSource'] = l5_source
+        result['matchedText'] = l5_text[:255] if l5_text else None
+        
+        # Search ALL lower levels under this department, find most specific match
+        best_lower = None
+        best_lower_level = 5
+        best_lower_score = 0
+        
+        for level in [2, 3, 4]:
+            valid_ids = get_ids_under_department(level, l5_id)
+            if not valid_ids:
+                continue
+            filtered_data = {k: v for k, v in groups.get(level, {}).items() if k in valid_ids}
+            if not filtered_data:
+                continue
+            match = find_best_match_in_level(texts, filtered_data)
+            if match:
+                loc_id, score, matched_text, source = match
+                if score >= MIN_SCORE and level < best_lower_level:
+                    best_lower = (loc_id, score, matched_text, source)
+                    best_lower_level = level
+                    best_lower_score = score
+                elif score > best_lower_score and level == best_lower_level:
+                    best_lower = (loc_id, score, matched_text, source)
+                    best_lower_score = score
+        
+        if best_lower:
+            loc_id, score, matched_text, source = best_lower
+            parent_chain = get_parent_chain(loc_id, best_lower_level, groups)
+            result.update(parent_chain)
+            result['matchLevel'] = best_lower_level
+            result['matchScore'] = round(score, 2)
+            result['matchSource'] = source
+            result['matchedText'] = matched_text[:255] if matched_text else None
+        
+        return result
+    
+    # Step 3: No L5 and no L3 - try L2 directly as last resort
     l2_match = find_best_match_in_level(texts, groups.get(2, {}))
     if l2_match:
         l2_id, l2_score, l2_text, l2_source = l2_match
@@ -918,6 +960,51 @@ def match_listing_with_texts(texts: Dict[str, str], groups: Dict) -> dict:
     
     if l5_match:
         l5_id, l5_score, l5_text, l5_source = l5_match
+        
+        # Disambiguation: verify the department name isn't part of a longer L3 municipality
+        # name that appears in the text. E.g., "Cuscatlán" dept should NOT match when
+        # text says "Antiguo Cuscatlán" (a municipality in La Libertad).
+        dept_name = groups.get(5, {}).get(l5_id, {}).get('normalized', '')
+        disambiguated = False
+        
+        if dept_name:
+            for l3_id_check, l3_info in groups.get(3, {}).items():
+                l3_name = l3_info['normalized']
+                # Check if L3 name contains the department name as a part (but isn't identical)
+                if dept_name in l3_name and dept_name != l3_name:
+                    # Check if the full L3 name appears in any text field
+                    for src, txt in texts.items():
+                        if not txt:
+                            continue
+                        if re.search(r'\b' + re.escape(l3_name) + r'\b', txt):
+                            # The longer L3 name matches - use L3 instead of L5
+                            chain = get_parent_chain_local(l3_id_check, 3)
+                            result.update(chain)
+                            result['matchLevel'] = 3
+                            result['matchScore'] = round(l5_score, 2)
+                            result['matchSource'] = src
+                            result['matchedText'] = l3_info['name'][:255]
+                            
+                            # Try L2 under this L3
+                            l2_match = find_match(groups.get(2, {}), parent_filter=l3_id_check)
+                            if l2_match:
+                                l2_id, l2_score, l2_text, l2_source = l2_match
+                                if l2_score >= MIN_SCORE:
+                                    result['locGroup2Id'] = l2_id
+                                    result['matchLevel'] = 2
+                                    result['matchScore'] = round(l2_score, 2)
+                                    result['matchSource'] = l2_source
+                                    result['matchedText'] = l2_text[:255] if l2_text else None
+                            
+                            disambiguated = True
+                            break
+                if disambiguated:
+                    break
+        
+        if disambiguated:
+            return result
+        
+        # Not ambiguous - proceed with L5 match
         result['locGroup5Id'] = l5_id
         result['matchLevel'] = 5
         result['matchScore'] = round(l5_score, 2)
