@@ -506,7 +506,7 @@ def process_listings(supabase: Client, groups: Dict, mode: str, dry_run: bool = 
     
     # Process listings
     matches = []
-    no_match = 0
+    unmatched = []  # Track unmatched for insertion
     
     for i, listing in enumerate(listings):
         if (i + 1) % 100 == 0:
@@ -516,9 +516,10 @@ def process_listings(supabase: Client, groups: Dict, mode: str, dry_run: bool = 
         if match:
             matches.append(match)
         else:
-            no_match += 1
+            # Track unmatched listing
+            unmatched.append(listing)
             # Debug: show first few non-matches
-            if DEBUG and no_match <= 3:
+            if DEBUG and len(unmatched) <= 3:
                 texts = extract_searchable_text(listing)
                 print(f"\n   🔍 DEBUG No match for #{listing['external_id']}:")
                 print(f"      title: {texts['title'][:80]}..." if len(texts['title']) > 80 else f"      title: {texts['title']}")
@@ -526,7 +527,7 @@ def process_listings(supabase: Client, groups: Dict, mode: str, dry_run: bool = 
     
     print(f"\n📊 Results:")
     print(f"   ✓ Matched: {len(matches)}")
-    print(f"   ✗ No match: {no_match}")
+    print(f"   ✗ No match: {len(unmatched)}")
     
     # Show level breakdown
     level_counts = {}
@@ -554,6 +555,45 @@ def process_listings(supabase: Client, groups: Dict, mode: str, dry_run: bool = 
                 print(f"   Batch {i//BATCH_SIZE + 1}: ERROR - {e}")
         
         print("   ✅ Done!")
+    
+    # Insert unmatched listings into tracking table
+    if unmatched:
+        print(f"\n📤 Inserting {len(unmatched)} unmatched listings to tracking table...")
+        unmatched_success = 0
+        for u in unmatched:
+            ext_id = u.get('external_id')
+            if not ext_id:
+                continue
+            
+            # Prepare location data
+            loc = u.get('location')
+            if isinstance(loc, dict):
+                location_data = loc
+            elif loc:
+                location_data = {"raw": str(loc)}
+            else:
+                location_data = {}
+            
+            # Build searched text for debugging
+            texts = extract_searchable_text(u)
+            searched_text = f"title:{texts.get('title','')} | location:{texts.get('location','')}"
+            
+            try:
+                supabase.table('unmatched_locations').upsert({
+                    "external_id": ext_id,
+                    "title": (u.get('title', '') or '')[:500],
+                    "location_data": location_data,
+                    "url": u.get('url', ''),
+                    "searched_text": searched_text[:1000],
+                    "source": "match_locations.py",
+                    "status": "pending"
+                }, on_conflict="external_id").execute()
+                unmatched_success += 1
+            except Exception as e:
+                if DEBUG:
+                    print(f"   Error inserting unmatched {ext_id}: {e}")
+        
+        print(f"   ✅ Inserted {unmatched_success}/{len(unmatched)} unmatched listings")
 
 
 def match_scraped_listings(listings: list, supabase_url: str = None, supabase_key: str = None) -> Tuple[int, int]:
