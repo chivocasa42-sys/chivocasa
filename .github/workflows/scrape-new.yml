@@ -1,9 +1,9 @@
 name: Scrape New Listings
 
 on:
-  # schedule:
-  #   # Every hour
-  #   - cron: '0 * * * *'
+  schedule:
+    # Every hour
+    - cron: '0 * * * *'
   workflow_dispatch:
     # Manual trigger with optional parameters
     inputs:
