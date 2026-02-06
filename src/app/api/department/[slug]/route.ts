@@ -67,7 +67,7 @@ export async function GET(
                     p_sort_by: sortBy,
                     p_municipio: municipio || null
                 }),
-                next: { revalidate: 60 }
+                cache: 'no-store' // Disable caching to ensure filter is always applied
             }),
             // Fetch municipalities on initial load (offset 0), filtered by listing type
             (offset === 0 && !municipio)
@@ -95,19 +95,34 @@ export async function GET(
         const fixedText = rawText.replace(/"external_id":(\d{15,})/g, '"external_id":"$1"');
         const data: CardListing[] = JSON.parse(fixedText);
 
+        // Filter out likely misclassified "Casa" sales (actual rentals posted in wrong section)
+        // Casa properties listed as "sale" but below $15,000 are almost certainly rentals
+        const filteredData = data.filter(listing => {
+            // Use explicit null check since price can be 0 (which is falsy)
+            if (listing.listing_type === 'sale' && listing.price != null && listing.price < 15000) {
+                const titleLower = (listing.title || '').toLowerCase();
+                // Exclude Casa listings under $15k from sale views (likely misclassified rentals)
+                if (titleLower.includes('casa') && !titleLower.includes('local') && !titleLower.includes('apartamento')) {
+                    return false;
+                }
+            }
+            return true;
+        });
+
         // Parse municipalities if fetched
         let municipalities: Municipality[] = [];
         if (municipalitiesRes && municipalitiesRes.ok) {
             municipalities = await municipalitiesRes.json();
         }
 
+        // Use original total from DB but adjust hasMore based on filtered results
         const total = data.length > 0 ? data[0].total_count : 0;
         const hasMore = offset + data.length < total;
 
         return NextResponse.json({
             departamento,
             slug,
-            listings: data,
+            listings: filteredData,
             municipalities, // NEW: available municipalities for filtering
             pagination: {
                 total,

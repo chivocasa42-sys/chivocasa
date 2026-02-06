@@ -71,14 +71,27 @@ export async function GET(
         const fixedText = rawText.replace(/"external_id":(\d{15,})/g, '"external_id":"$1"');
         const data: CardListing[] = JSON.parse(fixedText);
 
-        // total_count is the same for all rows
+        // Filter out likely misclassified "Casa" sales (actual rentals posted in wrong section)
+        // When viewing Casa tag, exclude sales under $15,000 (almost certainly rentals)
+        const filteredData = data.filter(listing => {
+            // Use explicit null check since price can be 0 (which is falsy)
+            if (decodedTag.toLowerCase() === 'casa' &&
+                listing.listing_type === 'sale' &&
+                listing.price != null &&
+                listing.price < 15000) {
+                return false;
+            }
+            return true;
+        });
+
+        // total_count is the same for all rows (use original DB count)
         const total = data.length > 0 ? data[0].total_count : 0;
         const hasMore = offset + data.length < total;
 
         return NextResponse.json({
             tag: decodedTag,
             slug: tag,
-            listings: data,
+            listings: filteredData,
             pagination: {
                 total,
                 limit,

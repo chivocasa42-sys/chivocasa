@@ -31,7 +31,7 @@ export default function KPIStrip({ stats }: KPIStripProps) {
 
                 <KPICard
                     label="RENTA MEDIA MENSUAL"
-                    value={`${formatPrice(stats.medianRent)}/m`}
+                    value={formatPrice(stats.medianRent)}
                     trend={stats.rentTrend}
                     trendDirection={stats.rentTrend && stats.rentTrend > 0 ? 'up' : stats.rentTrend && stats.rentTrend < 0 ? 'down' : 'neutral'}
                 />
