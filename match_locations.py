@@ -14,6 +14,7 @@ Usage:
 import argparse
 import json
 import unicodedata
+import requests
 from typing import Dict, List, Optional, Tuple
 from supabase import create_client, Client
 
