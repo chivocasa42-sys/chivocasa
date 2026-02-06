@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server';
 import { slugToDepartamento, isValidDepartamentoSlug } from '@/lib/slugify';
 
-
-
 const DEFAULT_LIMIT = 24;
 
 export interface CardListing {
@@ -15,8 +13,13 @@ export interface CardListing {
     bathrooms: number | null;
     area: number | null;
     municipio: string | null;
-    tags: string[] | null;  // For client-side tag filtering
     total_count: number;
+}
+
+export interface Municipality {
+    municipio_id: number;
+    municipio_name: string;
+    listing_count: number;
 }
 
 export async function GET(
@@ -31,7 +34,8 @@ export async function GET(
         const limit = parseInt(searchParams.get('limit') || String(DEFAULT_LIMIT));
         const offset = parseInt(searchParams.get('offset') || '0');
         const listingType = searchParams.get('type'); // 'sale', 'rent', or null for all
-        const sortBy = searchParams.get('sort') || 'recent'; // 'recent', 'price_asc', 'price_desc'
+        const sortBy = searchParams.get('sort') || 'recent';
+        const municipio = searchParams.get('municipio'); // NEW: filter by municipality
 
         // Validar slug
         if (!isValidDepartamentoSlug(slug)) {
@@ -42,41 +46,61 @@ export async function GET(
         }
 
         const departamento = slugToDepartamento(slug);
+        const headers = {
+            'apikey': process.env.SUPABASE_SERVICE_KEY!,
+            'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_KEY!}`,
+            'Content-Type': 'application/json'
+        };
 
-        // Call the new lean, paginated RPC function
-        const url = `${process.env.SUPABASE_URL}/rest/v1/rpc/get_listings_for_cards`;
-
-        console.time(`[PERF] /api/department/${slug} - Supabase RPC call`);
-        const res = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'apikey': process.env.SUPABASE_SERVICE_KEY!,
-                'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_KEY!}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                p_departamento: departamento,
-                p_listing_type: listingType || null,
-                p_limit: limit,
-                p_offset: offset,
-                p_sort_by: sortBy
+        // Fetch listings and municipalities in parallel
+        console.time(`[PERF] /api/department/${slug} - Supabase RPC calls`);
+        const [listingsRes, municipalitiesRes] = await Promise.all([
+            // Listings with optional municipality filter
+            fetch(`${process.env.SUPABASE_URL}/rest/v1/rpc/get_listings_for_cards`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                    p_departamento: departamento,
+                    p_listing_type: listingType || null,
+                    p_limit: limit,
+                    p_offset: offset,
+                    p_sort_by: sortBy,
+                    p_municipio: municipio || null
+                }),
+                next: { revalidate: 60 }
             }),
-            next: { revalidate: 60 } // Cache for 1 minute
-        });
-        console.timeEnd(`[PERF] /api/department/${slug} - Supabase RPC call`);
+            // Fetch municipalities on initial load (offset 0), filtered by listing type
+            (offset === 0 && !municipio)
+                ? fetch(`${process.env.SUPABASE_URL}/rest/v1/rpc/get_municipalities_for_department`, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({
+                        p_departamento: departamento,
+                        p_listing_type: listingType || null  // Pass listing type for filtered counts
+                    }),
+                    next: { revalidate: 60 } // Shorter cache since counts depend on listing type
+                })
+                : Promise.resolve(null)
+        ]);
+        console.timeEnd(`[PERF] /api/department/${slug} - Supabase RPC calls`);
 
-        if (!res.ok) {
-            const errorText = await res.text();
+        if (!listingsRes.ok) {
+            const errorText = await listingsRes.text();
             console.error('Supabase RPC error:', errorText);
-            throw new Error(`Supabase error: ${res.status}`);
+            throw new Error(`Supabase error: ${listingsRes.status}`);
         }
 
-        // Get raw text and convert large numbers to strings to prevent precision loss
-        const rawText = await res.text();
+        // Parse listings
+        const rawText = await listingsRes.text();
         const fixedText = rawText.replace(/"external_id":(\d{15,})/g, '"external_id":"$1"');
         const data: CardListing[] = JSON.parse(fixedText);
 
-        // total_count is the same for all rows
+        // Parse municipalities if fetched
+        let municipalities: Municipality[] = [];
+        if (municipalitiesRes && municipalitiesRes.ok) {
+            municipalities = await municipalitiesRes.json();
+        }
+
         const total = data.length > 0 ? data[0].total_count : 0;
         const hasMore = offset + data.length < total;
 
@@ -84,6 +108,7 @@ export async function GET(
             departamento,
             slug,
             listings: data,
+            municipalities, // NEW: available municipalities for filtering
             pagination: {
                 total,
                 limit,

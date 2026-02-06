@@ -7,10 +7,10 @@ import Navbar from '@/components/Navbar';
 import ListingCard from '@/components/ListingCard';
 import ListingModal from '@/components/ListingModal';
 import BestOpportunitySection from '@/components/BestOpportunitySection';
-import TagFilterChips from '@/components/TagFilterChips';
+import MunicipalityFilterChips from '@/components/MunicipalityFilterChips';
 import { slugToDepartamento } from '@/lib/slugify';
 
-// Lean listing shape from new API
+// Lean listing shape from new API (v2 - location hierarchy)
 interface CardListing {
     external_id: string | number;
     title: string;
@@ -21,8 +21,13 @@ interface CardListing {
     bathrooms: number | null;
     area: number | null;
     municipio: string | null;
-    tags: string[] | null;  // For client-side filtering
     total_count: number;
+}
+
+interface Municipality {
+    municipio_id: number;
+    municipio_name: string;
+    listing_count: number;
 }
 
 interface TopScoredListing {
@@ -92,15 +97,27 @@ export default function DepartmentPage() {
     const [bestSale, setBestSale] = useState<TopScoredListing | null>(null);
     const [bestRent, setBestRent] = useState<TopScoredListing | null>(null);
 
-    // Client-side tag filtering
-    const [selectedFilterTags, setSelectedFilterTags] = useState<string[]>([]);
-    // Store initial tags from first load to prevent counts from changing
-    const [initialListingTags, setInitialListingTags] = useState<(string[] | null)[]>([]);
+    // Municipality filtering (server-side)
+    const [selectedMunicipio, setSelectedMunicipio] = useState<string | null>(null);
+    // Available municipalities in this department
+    const [municipalities, setMunicipalities] = useState<Municipality[]>([]);
 
-    // Fetch listings with pagination
-    const fetchListings = useCallback(async (offset: number, type: FilterType, sort: SortOption, append: boolean = false) => {
+    // Reset municipality selection when filter type changes (to get fresh counts)
+    useEffect(() => {
+        setSelectedMunicipio(null);
+    }, [filter]);
+
+    // Fetch listings with pagination and optional municipality filter
+    const fetchListings = useCallback(async (
+        offset: number,
+        type: FilterType,
+        sort: SortOption,
+        municipio: string | null = null,
+        append: boolean = false
+    ) => {
         const typeParam = type === 'all' ? '' : `&type=${type}`;
-        const res = await fetch(`/api/department/${slug}?limit=${PAGE_SIZE}&offset=${offset}${typeParam}&sort=${sort}`);
+        const municipioParam = municipio ? `&municipio=${encodeURIComponent(municipio)}` : '';
+        const res = await fetch(`/api/department/${slug}?limit=${PAGE_SIZE}&offset=${offset}${typeParam}&sort=${sort}${municipioParam}`);
 
         if (!res.ok) {
             if (res.status === 404) {
@@ -118,27 +135,27 @@ export default function DepartmentPage() {
         }
 
         setPagination(data.pagination);
+
+        // Store municipalities from initial load
+        if (data.municipalities && data.municipalities.length > 0) {
+            setMunicipalities(data.municipalities);
+        }
+
         return data;
     }, [slug]);
 
-    // Initial load - refetch when filter changes (via URL)
+    // Initial load - refetch when filter or municipio changes
     useEffect(() => {
         async function fetchData() {
             setIsLoading(true);
             setError(null);
             setListings([]); // Clear listings when filter changes
-            setSelectedFilterTags([]); // Reset filters on new load
             try {
                 // Fetch listings and best opportunities in parallel
                 const [listingsData, topScoredRes] = await Promise.all([
-                    fetchListings(0, filter, sortBy),
+                    fetchListings(0, filter, sortBy, selectedMunicipio),
                     fetch(`/api/department/${slug}/top-scored?type=all&limit=1`)
                 ]);
-
-                // Store initial tags for stable tag chip counts
-                if (listingsData?.listings) {
-                    setInitialListingTags(listingsData.listings.map((l: CardListing) => l.tags));
-                }
 
                 if (topScoredRes.ok) {
                     const topScoredData = await topScoredRes.json();
@@ -154,7 +171,7 @@ export default function DepartmentPage() {
         }
 
         if (slug) fetchData();
-    }, [slug, fetchListings, filter, sortBy]);
+    }, [slug, fetchListings, filter, sortBy, selectedMunicipio]);
 
     // Load more handler
     const handleLoadMore = useCallback(async () => {
@@ -163,7 +180,7 @@ export default function DepartmentPage() {
         setIsLoadingMore(true);
         try {
             const newOffset = pagination.offset + PAGE_SIZE;
-            await fetchListings(newOffset, filter, sortBy, true);
+            await fetchListings(newOffset, filter, sortBy, selectedMunicipio, true);
         } catch (err) {
             console.error('Error loading more:', err);
         } finally {
@@ -176,8 +193,6 @@ export default function DepartmentPage() {
     useEffect(() => {
         const element = loadMoreRef.current;
         if (!element) return;
-        // Don't observe when filters are active
-        if (selectedFilterTags.length > 0) return;
 
         const observer = new IntersectionObserver(
             (entries) => {
@@ -191,19 +206,11 @@ export default function DepartmentPage() {
 
         observer.observe(element);
         return () => observer.disconnect();
-    }, [handleLoadMore, pagination.hasMore, isLoadingMore, isLoading, selectedFilterTags.length]);
-
-    // Filter listings based on selected filter tags (client-side)
-    const filteredListings = useMemo(() => {
-        if (selectedFilterTags.length === 0) return listings;
-        return listings.filter(l =>
-            selectedFilterTags.some(tag => l.tags?.includes(tag))
-        );
-    }, [listings, selectedFilterTags]);
+    }, [handleLoadMore, pagination.hasMore, isLoadingMore, isLoading]);
 
     // Convert CardListing to format expected by ListingCard
     const listingsForCard = useMemo(() => {
-        return filteredListings.map(l => {
+        return listings.map(l => {
             const specs: Record<string, string | number> = {};
             if (l.bedrooms !== null) specs.bedrooms = l.bedrooms;
             if (l.bathrooms !== null) specs.bathrooms = l.bathrooms;
@@ -219,7 +226,7 @@ export default function DepartmentPage() {
                 location: l.municipio ? { municipio_detectado: l.municipio } : null
             };
         });
-    }, [filteredListings]);
+    }, [listings]);
 
     // Handle view listing from best opportunity - open in modal
     const handleViewBestListing = (topScored: TopScoredListing) => {
@@ -237,21 +244,21 @@ export default function DepartmentPage() {
         return ids;
     }, [bestSale?.external_id, bestRent?.external_id]);
 
-    const clearTagFilters = useCallback(() => setSelectedFilterTags([]), []);
+    const clearMunicipioFilter = useCallback(() => setSelectedMunicipio(null), []);
 
-    const resultsCount = selectedFilterTags.length > 0 ? filteredListings.length : pagination.total;
+    const resultsCount = pagination.total;
 
     const appliedSummary = useMemo(() => {
         const parts: string[] = [];
         if (filter === 'sale') parts.push('Venta');
         if (filter === 'rent') parts.push('Renta');
 
-        if (selectedFilterTags.length > 0) {
-            parts.push(...selectedFilterTags.map(t => t));
+        if (selectedMunicipio) {
+            parts.push(selectedMunicipio);
         }
 
         return parts;
-    }, [filter, selectedFilterTags]);
+    }, [filter, selectedMunicipio]);
 
     return (
         <>
@@ -366,8 +373,8 @@ export default function DepartmentPage() {
                                     </span>
                                     <button
                                         type="button"
-                                        onClick={clearTagFilters}
-                                        disabled={selectedFilterTags.length === 0}
+                                        onClick={clearMunicipioFilter}
+                                        disabled={!selectedMunicipio}
                                         className="text-xs font-semibold text-[var(--primary)] hover:text-[var(--primary-hover)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
                                     >
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -378,20 +385,12 @@ export default function DepartmentPage() {
                                 </div>
                             </div>
 
-                            {initialListingTags.length > 0 && (
-                                <TagFilterChips
-                                    variant="department"
-                                    allListingTags={initialListingTags}
-                                    primaryTag={departamento}
-                                    selectedTags={selectedFilterTags}
+                            {municipalities.length > 0 && (
+                                <MunicipalityFilterChips
+                                    municipalities={municipalities}
+                                    selectedMunicipio={selectedMunicipio}
+                                    onSelect={setSelectedMunicipio}
                                     maxVisible={10}
-                                    onToggleTag={(tag) => {
-                                        setSelectedFilterTags(prev =>
-                                            prev.includes(tag)
-                                                ? prev.filter(t => t !== tag)
-                                                : [...prev, tag]
-                                        );
-                                    }}
                                 />
                             )}
                         </div>
