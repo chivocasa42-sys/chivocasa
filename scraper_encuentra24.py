@@ -2990,6 +2990,60 @@ def get_vivolatam_listing_urls(url_file=None, max_listings=None):
     return all_urls
 
 
+def extract_vivolatam_date_from_html(raw_html):
+    """
+    Extract date fields from VivoLatam listing's embedded Next.js RSC data.
+    
+    The VivoLatam page embeds listing data (including datePublished, dateLastUpdated,
+    and stats.days) in script tags as part of Next.js React Server Components streaming.
+    This extracts those fields directly from static HTML — no browser/Playwright needed.
+    
+    Args:
+        raw_html: The full HTML response text from requests.get()
+    
+    Returns:
+        dict with 'published_date' (DD/MM/YYYY format) and 'days_on_site' (int or None)
+        Returns empty dict if extraction fails.
+    """
+    result = {}
+    
+    try:
+        # Note: VivoLatam uses escaped quotes in their embedded JSON: \\\"key\\\":value
+        # We need to match both escaped (\\") and unescaped (") quote formats
+        
+        # Extract "days on site" from stats JSON: \"stats\":{\"days\":255,...} or "stats":{"days":255,...}
+        days_match = re.search(r'\\\\?"stats\\\\?"[:\s]*\{[^}]*\\\\?"days\\\\?"[:\s]*(\d+)', raw_html)
+        if days_match:
+            result['days_on_site'] = int(days_match.group(1))
+        
+        # Extract datePublished (Unix ms timestamp): \"datePublished\":1748300554000 or "datePublished":1748300554000
+        pub_match = re.search(r'\\\\?"datePublished\\\\?"[:\s]*(\d{10,13})', raw_html)
+        if pub_match:
+            ts = int(pub_match.group(1))
+            # Convert milliseconds to seconds if needed
+            if ts > 9999999999:
+                ts = ts / 1000
+            pub_date = datetime.fromtimestamp(ts)
+            result['published_date'] = pub_date.strftime("%d/%m/%Y")
+        
+        # Fallback: calculate from days_on_site if no datePublished
+        if 'published_date' not in result and 'days_on_site' in result:
+            pub_date = datetime.now() - timedelta(days=result['days_on_site'])
+            result['published_date'] = pub_date.strftime("%d/%m/%Y")
+        
+        # Also extract dateLastUpdated for potential future use
+        upd_match = re.search(r'\\\\?"dateLastUpdated\\\\?"[:\s]*(\d{10,13})', raw_html)
+        if upd_match:
+            ts = int(upd_match.group(1))
+            if ts > 9999999999:
+                ts = ts / 1000
+            result['date_last_updated'] = datetime.fromtimestamp(ts).strftime("%d/%m/%Y")
+    except Exception as e:
+        print(f"  Date extraction from HTML failed: {e}")
+    
+    return result
+
+
 def scrape_vivolatam_listing(url, listing_type="sale"):
     """Scrape a single Vivo Latam listing page."""
     try:
@@ -3170,6 +3224,14 @@ def scrape_vivolatam_listing(url, listing_type="sale"):
                 if len(images) >= 10:  # Cap at 10 images
                     break
         
+        # Extract published/updated date from embedded Next.js RSC data in static HTML
+        # The datePublished, dateLastUpdated, and stats.days are embedded in script tags
+        # No Playwright/Selenium needed — pure regex on the already-fetched HTML
+        published_date = ""
+        date_data = extract_vivolatam_date_from_html(raw_html)
+        if date_data.get('published_date'):
+            published_date = date_data['published_date']
+        
         # Detect listing type from title/URL
         title_lower = title.lower()
         url_lower = url.lower()
@@ -3189,7 +3251,7 @@ def scrape_vivolatam_listing(url, listing_type="sale"):
             "title": remove_emojis(title[:200]) if title else "",
             "price": price,
             "location": location,
-            "published_date": "",  # Not easily available on page
+            "published_date": published_date,  # Extracted from "Anuncio actualizado" text
             "listing_type": listing_type,
             "url": url,
             "external_id": str(external_id),
@@ -3381,15 +3443,17 @@ def main(encuentra24=True, micasasv=False, realtor=False, vivolatam=False, limit
         json.dump(all_listings, f, ensure_ascii=False, indent=2)
 
     # --- VALIDATION PHASE: Check for inactive listings ---
+    # Skip validation if --limit is used (partial scrape) or --skip-validation flag
     validated_count = 0
     deactivated_count = 0
-    if not skip_validation:
+    if not skip_validation and limit is None:
         validated_count, deactivated_count = validate_and_deactivate_listings(
             run_start_time, 
             sources=active_sources if active_sources else None
         )
     else:
-        print("\n=== Skipping validation phase (--skip-validation flag) ===")
+        skip_reason = "--limit flag" if limit else "--skip-validation flag"
+        print(f"\n=== Skipping validation phase ({skip_reason}) ===")
 
     # --- REFRESH MATERIALIZED VIEW ---
     print("\n=== Refreshing Materialized View ===")
