@@ -74,11 +74,10 @@ def insert_listing(listing):
     # Prepare data for insertion (match DB schema)
     # JSONB fields are sent as dicts/lists - requests.post with json= handles serialization
     
-    # Build location JSONB with breakdown
+    # Build location JSONB with coordinates only (L2-L5 resolved by match_locations)
     location_data = {
-        "location_original": listing.get("location", ""),
-        "municipio_detectado": listing.get("municipio_detectado", "No identificado"),
-        "departamento": listing.get("departamento", "")
+        "latitude": listing.get("latitude"),
+        "longitude": listing.get("longitude")
     }
     
     # Generate tags using localization plugin (use pre-computed if available)
@@ -165,11 +164,10 @@ def insert_listings_batch(listings, batch_size=50):
                 except:
                     parsed_date = None
             
-            # Build location JSONB with breakdown
+            # Build location JSONB with coordinates only (L2-L5 resolved by match_locations)
             location_data = {
-                "location_original": listing.get("location", ""),
-                "municipio_detectado": listing.get("municipio_detectado", "No identificado"),
-                "departamento": listing.get("departamento", "")
+                "latitude": listing.get("latitude"),
+                "longitude": listing.get("longitude")
             }
             
             # Get tags (pre-computed or generate now)
@@ -350,11 +348,10 @@ def update_listings_batch(listings, batch_size=50):
             except:
                 parsed_date = None
         
-        # Build location JSONB with breakdown
+        # Build location JSONB with coordinates only (L2-L5 resolved by match_locations)
         location_data = {
-            "location_original": listing.get("location", ""),
-            "municipio_detectado": listing.get("municipio_detectado", "No identificado"),
-            "departamento": listing.get("departamento", "")
+            "latitude": listing.get("latitude"),
+            "longitude": listing.get("longitude")
         }
         
         # Get tags (pre-computed or generate now)
@@ -476,16 +473,13 @@ def run_update_mode(sources=None, limit=None):
             sale_listings = get_realtor_all_listings(REALTOR_SALE_URL, max_listings=limit, listing_type="sale")
             if sale_listings:
                 print(f"  Fetched {len(sale_listings)} sale listings")
-                # Enrich with descriptions
-                enriched_sale = enrich_realtor_listings(sale_listings, max_workers=5)
-                scraped_listings.extend(enriched_sale)
+                scraped_listings.extend(sale_listings)
             
             # Fetch rent listings  
             rent_listings = get_realtor_all_listings(REALTOR_RENT_URL, max_listings=limit, listing_type="rent")
             if rent_listings:
                 print(f"  Fetched {len(rent_listings)} rent listings")
-                enriched_rent = enrich_realtor_listings(rent_listings, max_workers=5)
-                scraped_listings.extend(enriched_rent)
+                scraped_listings.extend(rent_listings)
             
             # For Realtor, check which active listings from DB are no longer on the site
             # SAFEGUARD: Only deactivate if we successfully scraped at least 50% of expected listings
@@ -1281,6 +1275,30 @@ REALTOR_RENT_URL = "https://www.realtor.com/international/sv?channel=rent"
 REALTOR_PHOTO_CDN = "https://s1.rea.global/img/600x400-prop/"  # Corrected CDN URL with size prefix
 SQFT_TO_M2 = 0.092903  # Conversion factor from sq ft to sq meters
 
+# Shared Realtor session with browser-like headers to reduce 403s
+REALTOR_SESSION = None
+
+def get_realtor_session():
+    """Get or create a shared requests.Session with full browser headers for Realtor.com."""
+    global REALTOR_SESSION
+    if REALTOR_SESSION is None:
+        REALTOR_SESSION = requests.Session()
+        REALTOR_SESSION.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9,es;q=0.8',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'DNT': '1',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Sec-Fetch-User': '?1',
+            'Cache-Control': 'max-age=0',
+        })
+    return REALTOR_SESSION
+
 # ============== VIVOLATAM CONFIG ==============
 VIVOLATAM_BASE_URL = "https://www.vivolatam.com"
 VIVOLATAM_LISTINGS_URL = "https://www.vivolatam.com/es/el-salvador/bienes-raices/m"
@@ -1871,6 +1889,18 @@ def scrape_listing(url, listing_type):
 
 
 
+        # Extract coordinates from Google Maps embed URL
+        # Pattern: google.com/maps/embed/v1/place?key=...&q=LAT,LNG&zoom=...
+        latitude = None
+        longitude = None
+        coord_match = re.search(r'google\.com/maps/embed/v1/place\?[^"]*?q=(-?\d{1,3}\.\d+),(-?\d{1,3}\.\d+)', str(resp.text))
+        if coord_match:
+            try:
+                latitude = float(coord_match.group(1))
+                longitude = float(coord_match.group(2))
+            except (ValueError, TypeError):
+                pass
+
         # Correct listing_type based on content analysis (title, description, price)
         # Users sometimes list sale properties in the rent section and vice versa
         price_value = parse_price(price)
@@ -1895,6 +1925,8 @@ def scrape_listing(url, listing_type):
             "active": True,
             "municipio_detectado": municipio_info["municipio_detectado"],
             "departamento": municipio_info["departamento"],
+            "latitude": latitude,
+            "longitude": longitude,
             "last_updated": datetime.now().isoformat()
         }
     except Exception as e:
@@ -2267,6 +2299,30 @@ def scrape_micasasv_listing(url, listing_type):
                 except:
                     pass
         
+        # Extract coordinates from marker_lat/marker_lng in HTML or ld+json GeoCoordinates
+        latitude = None
+        longitude = None
+        raw_html = resp.text
+        # Pattern 1: marker_lat/marker_lng in HTML-encoded JSON
+        marker_lat = re.search(r'marker_lat[&quot;:"\s]+(-?\d{1,3}\.\d+)', raw_html)
+        marker_lng = re.search(r'marker_lng[&quot;:"\s]+(-?\d{1,3}\.\d+)', raw_html)
+        if marker_lat and marker_lng:
+            try:
+                latitude = float(marker_lat.group(1))
+                longitude = float(marker_lng.group(1))
+            except (ValueError, TypeError):
+                pass
+        # Pattern 2: ld+json GeoCoordinates fallback
+        if latitude is None:
+            geo_lat = re.search(r'"latitude"\s*:\s*"(-?\d{1,3}\.\d+)"', raw_html)
+            geo_lng = re.search(r'"longitude"\s*:\s*"(-?\d{1,3}\.\d+)"', raw_html)
+            if geo_lat and geo_lng:
+                try:
+                    latitude = float(geo_lat.group(1))
+                    longitude = float(geo_lng.group(1))
+                except (ValueError, TypeError):
+                    pass
+        
         # Correct listing_type based on content analysis (title, description, price)
         # Users sometimes list sale properties in the rent section and vice versa
         price_value = parse_price(price)
@@ -2291,6 +2347,8 @@ def scrape_micasasv_listing(url, listing_type):
             "active": True,
             "municipio_detectado": municipio_info["municipio_detectado"],
             "departamento": municipio_info["departamento"],
+            "latitude": latitude,
+            "longitude": longitude,
             "last_updated": datetime.now().isoformat()
         }
     except Exception as e:
@@ -2348,17 +2406,14 @@ def scrape_micasasv_listings_concurrent(urls, listing_type, max_workers=5, max_d
     
     return results, old_listing_count
 
-
-
-# ============== REALTOR.COM FUNCTIONS ==============
-
 def get_realtor_listings_from_page(page_url):
     """
     Extract listing data directly from Realtor.com page's __NEXT_DATA__ JSON.
     Returns a list of normalized listing dictionaries.
     """
     try:
-        response = requests.get(page_url, headers=HEADERS, timeout=30)
+        session = get_realtor_session()
+        response = session.get(page_url, timeout=30)
         if response.status_code != 200:
             print(f"  Failed to fetch {page_url}: {response.status_code}")
             return []
@@ -2516,6 +2571,21 @@ def get_realtor_listings_from_page(page_url):
             if listing_category:
                 details["category"] = listing_category
             
+            # Extract coordinates from geoLocation in Apollo state
+            latitude = None
+            longitude = None
+            geo_key = f"$ListingDetail:{listing_id}.geoLocation"
+            geo_data = apollo_state.get(geo_key, {})
+            if isinstance(geo_data, dict):
+                try:
+                    lat_val = geo_data.get("latitude")
+                    lng_val = geo_data.get("longitude")
+                    if lat_val is not None and lng_val is not None:
+                        latitude = float(lat_val)
+                        longitude = float(lng_val)
+                except (ValueError, TypeError):
+                    pass
+            
             # Detect municipality from location, description and title
             municipio_info = detect_municipio(location, description, title)
             
@@ -2535,6 +2605,8 @@ def get_realtor_listings_from_page(page_url):
                 "active": True,
                 "municipio_detectado": municipio_info["municipio_detectado"],
                 "departamento": municipio_info["departamento"],
+                "latitude": latitude,
+                "longitude": longitude,
                 "last_updated": datetime.now().isoformat()
             })
         
@@ -2547,189 +2619,17 @@ def get_realtor_listings_from_page(page_url):
         return []
 
 
-def enrich_realtor_listing(listing):
-    """
-    Fetch additional details from individual Realtor.com listing page.
-    Adds description and published_date that are not available in list view.
-    """
-    try:
-        url = listing.get("url", "")
-        if not url:
-            return listing
-        
-        response = requests.get(url, headers=HEADERS, timeout=30)
-        if response.status_code != 200:
-            return listing
-        
-        soup = BeautifulSoup(response.text, "html.parser")
-        next_data = soup.select_one("script#__NEXT_DATA__")
-        
-        if not next_data or not next_data.string:
-            return listing
-        
-        data = json.loads(next_data.string)
-        apollo_state = data.get("props", {}).get("apolloState", {})
-        
-        # Find the listing detail
-        listing_id = listing.get("external_id", "")
-        detail_key = f"ListingDetail:{listing_id}"
-        detail = apollo_state.get(detail_key, {})
-        
-        if not detail:
-            # Try to find any ListingDetail
-            for key, value in apollo_state.items():
-                if key.startswith("ListingDetail:") and isinstance(value, dict):
-                    detail = value
-                    break
-        
-        # Extract description
-        description = detail.get("description", "")
-        if description:
-            listing["description"] = remove_emojis(description[:1000])
-        
-        # Extract published date
-        published_at = detail.get("publishedAt", "")
-        if published_at:
-            try:
-                dt = datetime.strptime(published_at.split(" ")[0], "%Y-%m-%d")
-                listing["published_date"] = dt.strftime("%d/%m/%Y")
-            except:
-                pass
-        
-        # Extract property type if not already set
-        if not listing.get("details", {}).get("property_type"):
-            prop_types = detail.get("propertyTypes", {})
-            if isinstance(prop_types, dict) and prop_types.get("json"):
-                prop_list = prop_types.get("json", [])
-                if prop_list:
-                    listing.setdefault("details", {})["property_type"] = prop_list[0]
-        
-        return listing
-        
-    except Exception as e:
-        print(f"    Error enriching {listing.get('url', '')}: {e}")
-        return listing
-
-
-def enrich_realtor_listings(listings, max_workers=2):
-    """Enrich multiple Realtor.com listings with rate limiting to avoid bot detection.
-    
-    Uses slower sequential requests with random delays since Realtor.com 
-    has aggressive bot detection.
-    """
-    if not listings:
-        return listings
-    
-    print(f"  Enriching {len(listings)} listings with full details (rate-limited)...")
-    enriched = []
-    completed = 0
-    
-    # Enhanced headers for Realtor.com to look more like a real browser
-    realtor_headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9,es;q=0.8',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'DNT': '1',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-        'Sec-Fetch-Dest': 'document',
-        'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Site': 'none',
-        'Sec-Fetch-User': '?1',
-        'Cache-Control': 'max-age=0',
-    }
-    
-    # Use a session to maintain cookies
-    session = requests.Session()
-    session.headers.update(realtor_headers)
-    
-    for listing in listings:
-        # Random delay between 2-4 seconds to appear more human
-        if completed > 0:
-            delay = random.uniform(2.0, 4.0)
-            time.sleep(delay)
-        
-        try:
-            url = listing.get("url", "")
-            if not url:
-                enriched.append(listing)
-                continue
-            
-            response = session.get(url, timeout=30)
-            if response.status_code == 200:
-                soup = BeautifulSoup(response.text, "html.parser")
-                next_data = soup.select_one("script#__NEXT_DATA__")
-                
-                if next_data and next_data.string:
-                    data = json.loads(next_data.string)
-                    apollo_state = data.get("props", {}).get("apolloState", {})
-                    
-                    # Find the listing detail
-                    listing_id = listing.get("external_id", "")
-                    detail_key = f"ListingDetail:{listing_id}"
-                    detail = apollo_state.get(detail_key, {})
-                    
-                    if not detail:
-                        for key, value in apollo_state.items():
-                            if key.startswith("ListingDetail:") and isinstance(value, dict):
-                                detail = value
-                                break
-                    
-                    # Extract description
-                    description = detail.get("description", "")
-                    if description:
-                        listing["description"] = remove_emojis(description[:1000])
-                    
-                    # Extract published date
-                    published_at = detail.get("publishedAt", "")
-                    if published_at:
-                        try:
-                            dt = datetime.strptime(published_at.split(" ")[0], "%Y-%m-%d")
-                            listing["published_date"] = dt.strftime("%d/%m/%Y")
-                        except:
-                            pass
-                    
-                    # Fallback: Extract publishedAt from raw HTML if not found in apolloState
-                    if not listing.get("published_date"):
-                        pub_match = re.search(r'"publishedAt"\s*:\s*"(\d{4}-\d{2}-\d{2})', response.text)
-                        if pub_match:
-                            try:
-                                dt = datetime.strptime(pub_match.group(1), "%Y-%m-%d")
-                                listing["published_date"] = dt.strftime("%d/%m/%Y")
-                            except:
-                                pass
-                    
-                    # Extract property type if not already set
-                    if not listing.get("details", {}).get("property_type"):
-                        prop_types = detail.get("propertyTypes", {})
-                        if isinstance(prop_types, dict) and prop_types.get("json"):
-                            prop_list = prop_types.get("json", [])
-                            if prop_list:
-                                listing.setdefault("details", {})["property_type"] = prop_list[0]
-            elif response.status_code == 403:
-                print(f"    ⚠ 403 blocked for: {url[:50]}... (continuing)")
-            
-            enriched.append(listing)
-            
-        except Exception as e:
-            print(f"    Error enriching {listing.get('url', '')[:50]}: {e}")
-            enriched.append(listing)
-        
-        completed += 1
-        if completed % 10 == 0 or completed == len(listings):
-            print(f"    Enriched {completed}/{len(listings)}")
-    
-    return enriched
-
 def get_realtor_all_listings(base_url, max_listings=None, listing_type="sale"):
     """
     Fetch all listings from Realtor.com by paginating through pages.
     Each page contains listings embedded in __NEXT_DATA__.
+    Includes retry with exponential backoff on 403 errors.
     """
     all_listings = []
     page = 1
     max_pages = 50  # Safety limit
+    consecutive_failures = 0
+    max_consecutive_failures = 3  # Stop after 3 consecutive failed pages
     
     while page <= max_pages:
         # Build URL with page parameter
@@ -2739,11 +2639,29 @@ def get_realtor_all_listings(base_url, max_listings=None, listing_type="sale"):
             page_url = f"{base_url}?page={page}"
         
         print(f"  Fetching page {page}: {page_url}")
-        listings = get_realtor_listings_from_page(page_url)
+        
+        # Retry logic with exponential backoff
+        listings = None
+        for attempt in range(3):
+            listings = get_realtor_listings_from_page(page_url)
+            if listings:
+                consecutive_failures = 0
+                break
+            # Exponential backoff: 5s, 15s, 30s
+            backoff = [5, 15, 30][attempt]
+            if attempt < 2:
+                print(f"    Retry {attempt + 1}/3 after {backoff}s backoff...")
+                time.sleep(backoff)
         
         if not listings:
-            print(f"  No more listings found on page {page}")
-            break
+            consecutive_failures += 1
+            if consecutive_failures >= max_consecutive_failures:
+                print(f"  Stopping: {max_consecutive_failures} consecutive page failures")
+                break
+            print(f"  No listings from page {page} after retries, trying next page...")
+            page += 1
+            time.sleep(random.uniform(3.0, 5.0))
+            continue
         
         # Set listing type for all listings
         for listing in listings:
@@ -2772,7 +2690,7 @@ def get_realtor_all_listings(base_url, max_listings=None, listing_type="sale"):
             break
         
         page += 1
-        time.sleep(0.5)  # Rate limiting
+        time.sleep(random.uniform(1.5, 3.0))  # Rate limiting with jitter
     
     return all_listings
 
@@ -2800,11 +2718,7 @@ def main_realtor(limit=None, max_days=None):
     sale_data = get_realtor_all_listings(REALTOR_SALE_URL, max_listings=remaining_limit, listing_type="sale")
     print(f"  Got {len(sale_data)} sale listings from list view")
     
-    # Enrich with individual page data (description, published_date)
-    if sale_data:
-        sale_data = enrich_realtor_listings(sale_data)
-    
-    # Filter by date after enrichment (when we have published_date)
+    # Filter by date (description and published_date already extracted from list pages)
     if max_days and max_days > 0:
         filtered_sale = []
         for listing in sale_data:
@@ -2829,11 +2743,7 @@ def main_realtor(limit=None, max_days=None):
         rent_data = get_realtor_all_listings(REALTOR_RENT_URL, max_listings=remaining_limit, listing_type="rent")
         print(f"  Got {len(rent_data)} rent listings from list view")
         
-        # Enrich with individual page data
-        if rent_data:
-            rent_data = enrich_realtor_listings(rent_data)
-        
-        # Filter by date after enrichment
+        # Filter by date (description and published_date already extracted from list pages)
         if max_days and max_days > 0:
             filtered_rent = []
             for listing in rent_data:
@@ -3249,6 +3159,20 @@ def scrape_vivolatam_listing(url, listing_type="sale"):
         if date_data.get('published_date'):
             published_date = date_data['published_date']
         
+        # Extract coordinates from embedded RSC data
+        # Pattern: "coords":[LAT,LNG] or "center":[LAT,LNG] in escaped JSON
+        latitude = None
+        longitude = None
+        coord_match = re.search(r'\\"coords\\"\s*:\s*\[\s*(-?\d{1,3}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)\s*\]', raw_html)
+        if not coord_match:
+            coord_match = re.search(r'\\"center\\"\s*:\s*\[\s*(-?\d{1,3}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)\s*\]', raw_html)
+        if coord_match:
+            try:
+                latitude = float(coord_match.group(1))
+                longitude = float(coord_match.group(2))
+            except (ValueError, TypeError):
+                pass
+        
         # Detect listing type from title/URL
         title_lower = title.lower()
         url_lower = url.lower()
@@ -3280,6 +3204,8 @@ def scrape_vivolatam_listing(url, listing_type="sale"):
             "active": True,
             "municipio_detectado": municipio_info["municipio_detectado"],
             "departamento": municipio_info["departamento"],
+            "latitude": latitude,
+            "longitude": longitude,
             "last_updated": datetime.now().isoformat()
         }
         

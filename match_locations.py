@@ -13,6 +13,7 @@ Usage:
 
 import argparse
 import json
+import math
 import unicodedata
 import requests
 from typing import Dict, List, Optional, Tuple
@@ -136,7 +137,7 @@ def load_location_groups(supabase: Client) -> Dict[int, Dict]:
                     # Also add without prefix
                     alt_names.append(remove_location_prefixes(details))
                 
-                groups[level][loc_id] = {
+                entry = {
                     'id': loc_id,
                     'name': name,
                     'normalized': normalized_name,
@@ -144,6 +145,15 @@ def load_location_groups(supabase: Client) -> Dict[int, Dict]:
                     'alt_names': alt_names,
                     'parent_id': row.get('parent_loc_group')
                 }
+                
+                # Load coordinates for L2 (colonias have cords JSONB)
+                if level == 2:
+                    cords = row.get('cords') or {}
+                    if isinstance(cords, dict) and cords.get('latitude') and cords.get('longitude'):
+                        entry['latitude'] = float(cords['latitude'])
+                        entry['longitude'] = float(cords['longitude'])
+                
+                groups[level][loc_id] = entry
             
             print(f"   Loaded {len(groups[level])} entries from {table_name}")
             
@@ -255,6 +265,423 @@ def get_parent_chain(loc_id: int, level: int, groups: Dict) -> Dict[str, Optiona
     return result
 
 
+def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Calculate distance in km between two coordinates using Haversine formula."""
+    R = 6371  # Earth radius in km
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
+    return R * 2 * math.asin(math.sqrt(a))
+
+
+# ============== L2 AUTO-CREATION ==============
+# Known colonia/neighborhood prefixes used to extract candidate L2 names from scraped text.
+# These are ordered by specificity (longer prefixes first to avoid partial matches).
+COLONIA_PREFIXES = [
+    'residencial ', 'urbanizacion ', 'urbanización ', 'lotificacion ', 'lotificación ',
+    'comunidad ', 'condominio ', 'reparto ', 'colonia ', 'barrio ', 'cantón ', 'canton ',
+    'caserio ', 'caserío ', 'parcelacion ', 'parcelación ',
+    'res. ', 'col. ', 'urb. ', 'bo. ', 'cond. ',
+]
+
+# Minimum name length to accept as a valid colonia candidate (avoids single letters/noise)
+MIN_COLONIA_NAME_LEN = 4
+
+# Distance threshold: don't create a new L2 if one already exists within this radius
+L2_DEDUP_RADIUS_KM = 1.0
+
+
+def extract_colonia_candidate(texts: Dict[str, str]) -> Optional[Tuple[str, str, str]]:
+    """Extract a candidate colonia/neighborhood name from listing text fields.
+    
+    Looks for known prefixes (Residencial, Colonia, etc.) followed by a name.
+    Only considers title and location fields (high confidence), not description.
+    
+    Args:
+        texts: Dict of source -> normalized text (from extract_searchable_text or inline)
+    
+    Returns:
+        (display_name, normalized_name, source_field) or None if no candidate found.
+        display_name preserves the prefix, e.g. "Residencial Los Almendros"
+        normalized_name is the search-ready version.
+    """
+    import re
+    
+    # Only use high-confidence fields (title, location) for immediate insert.
+    # Description is too noisy — those go to staging.
+    high_confidence_sources = ['title', 'location']
+    low_confidence_sources = ['details', 'description']
+    
+    def _find_in_text(text: str, source: str) -> Optional[Tuple[str, str, str]]:
+        if not text:
+            return None
+        for prefix in COLONIA_PREFIXES:
+            idx = text.find(prefix)
+            if idx == -1:
+                continue
+            # Extract the name after the prefix, up to a comma, period, dash, or end of meaningful text
+            after = text[idx + len(prefix):]
+            # Capture words until we hit a delimiter or another known prefix
+            match = re.match(r'([a-záéíóúñü0-9][a-záéíóúñü0-9 ]{2,50})', after)
+            if not match:
+                continue
+            raw_name = match.group(1).strip()
+            if len(raw_name) < MIN_COLONIA_NAME_LEN:
+                continue
+            # Build display name: capitalize prefix + name
+            display = (prefix.strip() + ' ' + raw_name).strip()
+            display = ' '.join(w.capitalize() if w not in ('de', 'del', 'la', 'las', 'los', 'el', 'y') else w for w in display.split())
+            normalized = normalize_text(display)
+            return (display, normalized, source)
+        return None
+    
+    # Try high-confidence sources first
+    for source in high_confidence_sources:
+        result = _find_in_text(texts.get(source, ''), source)
+        if result:
+            return result
+    
+    # Try low-confidence sources (will be flagged for staging, not immediate insert)
+    for source in low_confidence_sources:
+        result = _find_in_text(texts.get(source, ''), source)
+        if result:
+            return result
+    
+    return None
+
+
+def check_l2_duplicate(candidate_normalized: str, lat: float, lng: float, 
+                        l3_id: int, groups: Dict) -> Optional[int]:
+    """Check if a candidate L2 already exists (by name or proximity).
+    
+    Args:
+        candidate_normalized: Normalized candidate name
+        lat, lng: Listing coordinates
+        l3_id: Parent municipality ID
+        groups: Location groups dict
+    
+    Returns:
+        Existing L2 id if duplicate found, None if candidate is genuinely new.
+    """
+    l2_data = groups.get(2, {})
+    candidate_stripped = remove_location_prefixes(candidate_normalized)
+    
+    for loc_id, info in l2_data.items():
+        # Only check L2s in the same municipality
+        if info.get('parent_id') != l3_id:
+            continue
+        
+        # Check name similarity
+        existing_normalized = info.get('normalized', '')
+        existing_stripped = info.get('no_prefix', '')
+        
+        if (candidate_normalized == existing_normalized or 
+            candidate_stripped == existing_stripped or
+            candidate_normalized == existing_stripped or
+            candidate_stripped == existing_normalized):
+            return loc_id
+        
+        # Check coordinate proximity (within dedup radius)
+        l2_lat = info.get('latitude')
+        l2_lng = info.get('longitude')
+        if l2_lat is not None and l2_lng is not None:
+            dist = haversine_distance(lat, lng, l2_lat, l2_lng)
+            if dist < L2_DEDUP_RADIUS_KM:
+                return loc_id
+    
+    return None
+
+
+def insert_auto_l2(display_name: str, normalized_name: str, lat: float, lng: float,
+                    l3_id: int, groups: Dict, supabase_url: str = None, 
+                    supabase_key: str = None) -> Optional[int]:
+    """Insert a new auto-generated L2 entry into sv_loc_group2 and update in-memory groups.
+    
+    Args:
+        display_name: Human-readable name (e.g. "Residencial Los Almendros")
+        normalized_name: Normalized search name
+        lat, lng: Coordinates for the new L2
+        l3_id: Parent municipality ID
+        groups: Location groups dict (will be updated in-place)
+        supabase_url: Optional Supabase URL
+        supabase_key: Optional Supabase key
+    
+    Returns:
+        New L2 id on success, None on failure.
+    """
+    url = supabase_url or SUPABASE_URL
+    key = supabase_key or SUPABASE_KEY
+    
+    headers = {
+        "apikey": key,
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        "Prefer": "return=representation"
+    }
+    
+    payload = {
+        "loc_name": display_name,
+        "loc_name_search": normalized_name,
+        "parent_loc_group": l3_id,
+        "cords": {"latitude": lat, "longitude": lng},
+        "details": "auto-generated from scraping"
+    }
+    
+    try:
+        resp = requests.post(
+            f"{url}/rest/v1/sv_loc_group2",
+            headers=headers,
+            json=payload,
+            timeout=30
+        )
+        if resp.status_code in (200, 201):
+            data = resp.json()
+            new_id = data[0]['id'] if isinstance(data, list) and data else data.get('id')
+            if new_id:
+                # Update in-memory groups so subsequent listings can match this L2
+                groups.setdefault(2, {})[new_id] = {
+                    'id': new_id,
+                    'name': display_name,
+                    'normalized': normalized_name,
+                    'no_prefix': remove_location_prefixes(display_name),
+                    'alt_names': [normalize_text("auto-generated from scraping")],
+                    'parent_id': l3_id,
+                    'latitude': lat,
+                    'longitude': lng
+                }
+                print(f"    ✓ Auto-created L2 #{new_id}: '{display_name}' under L3={l3_id} at ({lat:.4f}, {lng:.4f})")
+                return new_id
+        else:
+            print(f"    ⚠️ Failed to insert auto L2 '{display_name}': {resp.status_code} - {resp.text[:200]}")
+    except Exception as e:
+        print(f"    ⚠️ Exception inserting auto L2 '{display_name}': {e}")
+    
+    return None
+
+
+def stage_l2_candidate(display_name: str, normalized_name: str, lat: float, lng: float,
+                        l3_id: int, source_field: str, external_id: int,
+                        supabase_url: str = None, supabase_key: str = None) -> bool:
+    """Stage a low-confidence L2 candidate for manual review.
+    
+    Inserts into unmatched_locations with special status 'l2_candidate' so it can
+    be reviewed and promoted to a real L2 later.
+    
+    Returns True on success.
+    """
+    url = supabase_url or SUPABASE_URL
+    key = supabase_key or SUPABASE_KEY
+    
+    headers = {
+        "apikey": key,
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        "Prefer": "resolution=ignore-duplicates,return=minimal"
+    }
+    
+    payload = {
+        "external_id": external_id,
+        "title": display_name[:500],
+        "location_data": {
+            "candidate_l2_name": display_name,
+            "candidate_l2_normalized": normalized_name,
+            "latitude": lat,
+            "longitude": lng,
+            "parent_l3_id": l3_id,
+            "extracted_from": source_field
+        },
+        "searched_text": f"L2 candidate: {display_name} (from {source_field})",
+        "source": "auto-l2-staging",
+        "status": "l2_candidate"
+    }
+    
+    try:
+        resp = requests.post(
+            f"{url}/rest/v1/unmatched_locations",
+            headers=headers,
+            json=payload,
+            timeout=30
+        )
+        if resp.status_code in (200, 201):
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def try_create_l2_from_listing(texts: Dict[str, str], lat: float, lng: float,
+                                l3_id: int, groups: Dict, external_id: int = None,
+                                supabase_url: str = None, supabase_key: str = None) -> Optional[int]:
+    """Attempt to create or stage a new L2 from listing text + coordinates.
+    
+    High confidence (prefix found in title/location) -> immediate insert.
+    Low confidence (prefix found in description only) -> stage for review.
+    
+    Args:
+        texts: Normalized text fields dict
+        lat, lng: Listing coordinates
+        l3_id: Confirmed parent municipality ID
+        groups: Location groups dict
+        external_id: Listing external_id (for staging)
+    
+    Returns:
+        New L2 id if high-confidence insert succeeded, None otherwise.
+    """
+    candidate = extract_colonia_candidate(texts)
+    if not candidate:
+        return None
+    
+    display_name, normalized_name, source_field = candidate
+    
+    # Check for duplicates first
+    existing_id = check_l2_duplicate(normalized_name, lat, lng, l3_id, groups)
+    if existing_id:
+        return existing_id  # Already exists, just return it for matching
+    
+    # High confidence: prefix found in title or location -> immediate insert
+    if source_field in ('title', 'location'):
+        new_id = insert_auto_l2(
+            display_name, normalized_name, lat, lng, l3_id, groups,
+            supabase_url=supabase_url, supabase_key=supabase_key
+        )
+        return new_id
+    
+    # Low confidence: found in description/details -> stage for review
+    if external_id:
+        stage_l2_candidate(
+            display_name, normalized_name, lat, lng, l3_id, source_field,
+            external_id, supabase_url=supabase_url, supabase_key=supabase_key
+        )
+    
+    return None
+
+
+def match_by_coordinates(lat: float, lng: float, groups: Dict, max_l2_km: float = 3.0, max_l3_km: float = 20.0,
+                          texts: Dict[str, str] = None, external_id: int = None,
+                          supabase_url: str = None, supabase_key: str = None) -> Optional[dict]:
+    """Match a listing to L2/L3/L4/L5 hierarchy using coordinates.
+    
+    Two-tier approach:
+    1. Find nearest L2 (colonia) within max_l2_km -> derive full L3/L4/L5 chain
+    2. If no L2 close enough, compute L3 centroids (averaged from child L2 coords)
+       and find nearest L3 (municipality) within max_l3_km -> derive L4/L5
+    3. If Tier 2 matches L3 but no L2, attempt to auto-create an L2 from listing text
+    
+    Args:
+        lat: Listing latitude
+        lng: Listing longitude
+        groups: Location groups dict from load_location_groups()
+        max_l2_km: Maximum distance for L2 match (default 3km)
+        max_l3_km: Maximum distance for L3 fallback match (default 20km)
+        texts: Optional normalized text fields for L2 auto-creation
+        external_id: Optional listing external_id for staging low-confidence candidates
+        supabase_url: Optional Supabase URL for L2 insertion
+        supabase_key: Optional Supabase key for L2 insertion
+    
+    Returns:
+        dict with locGroup2Id..5Id, matchLevel, matchScore, matchSource, matchedText
+        or None if nothing matches within thresholds.
+    """
+    if not lat or not lng:
+        return None
+    
+    l2_data = groups.get(2, {})
+    if not l2_data:
+        return None
+    
+    # --- Tier 1: Find nearest L2 (colonia) ---
+    best_l2_id = None
+    best_l2_dist = float('inf')
+    best_l2_name = ""
+    
+    for loc_id, info in l2_data.items():
+        l2_lat = info.get('latitude')
+        l2_lng = info.get('longitude')
+        if l2_lat is None or l2_lng is None:
+            continue
+        
+        dist = haversine_distance(lat, lng, l2_lat, l2_lng)
+        if dist < best_l2_dist:
+            best_l2_dist = dist
+            best_l2_id = loc_id
+            best_l2_name = info.get('name', '')
+    
+    if best_l2_id is not None and best_l2_dist <= max_l2_km:
+        # L2 matched — derive full chain
+        result = {
+            'locGroup2Id': None, 'locGroup3Id': None, 'locGroup4Id': None, 'locGroup5Id': None,
+            'matchLevel': 2,
+            'matchScore': round(max(0.5, 1.0 - (best_l2_dist / max_l2_km)), 2),
+            'matchSource': 'coordinates',
+            'matchedText': f"{best_l2_name} ({best_l2_dist:.2f}km)"[:255]
+        }
+        chain = get_parent_chain(best_l2_id, 2, groups)
+        result.update(chain)
+        return result
+    
+    # --- Tier 2: No close L2 — compute L3 centroids and find nearest municipality ---
+    # Build L3 centroids by averaging the coordinates of all child L2 entries
+    l3_centroids = {}  # l3_id -> {'lat_sum', 'lng_sum', 'count'}
+    for loc_id, info in l2_data.items():
+        l2_lat = info.get('latitude')
+        l2_lng = info.get('longitude')
+        parent_l3 = info.get('parent_id')
+        if l2_lat is None or l2_lng is None or parent_l3 is None:
+            continue
+        if parent_l3 not in l3_centroids:
+            l3_centroids[parent_l3] = {'lat_sum': 0.0, 'lng_sum': 0.0, 'count': 0}
+        l3_centroids[parent_l3]['lat_sum'] += l2_lat
+        l3_centroids[parent_l3]['lng_sum'] += l2_lng
+        l3_centroids[parent_l3]['count'] += 1
+    
+    best_l3_id = None
+    best_l3_dist = float('inf')
+    best_l3_name = ""
+    
+    for l3_id, centroid in l3_centroids.items():
+        if centroid['count'] == 0:
+            continue
+        c_lat = centroid['lat_sum'] / centroid['count']
+        c_lng = centroid['lng_sum'] / centroid['count']
+        dist = haversine_distance(lat, lng, c_lat, c_lng)
+        if dist < best_l3_dist:
+            best_l3_dist = dist
+            best_l3_id = l3_id
+            best_l3_name = groups.get(3, {}).get(l3_id, {}).get('name', '')
+    
+    if best_l3_id is not None and best_l3_dist <= max_l3_km:
+        # L3 matched — derive L4/L5 from parent chain (no L2)
+        result = {
+            'locGroup2Id': None, 'locGroup3Id': None, 'locGroup4Id': None, 'locGroup5Id': None,
+            'matchLevel': 3,
+            'matchScore': round(max(0.4, 0.9 - (best_l3_dist / max_l3_km)), 2),
+            'matchSource': 'coordinates',
+            'matchedText': f"{best_l3_name} ({best_l3_dist:.2f}km)"[:255]
+        }
+        chain = get_parent_chain(best_l3_id, 3, groups)
+        result.update(chain)
+        
+        # --- Tier 3: Try to auto-create L2 from listing text ---
+        # We have coords + confirmed L3 but no L2 match. If the listing mentions
+        # a recognizable colonia name, create a new L2 entry.
+        if texts:
+            auto_l2_id = try_create_l2_from_listing(
+                texts, lat, lng, best_l3_id, groups,
+                external_id=external_id,
+                supabase_url=supabase_url, supabase_key=supabase_key
+            )
+            if auto_l2_id:
+                result['locGroup2Id'] = auto_l2_id
+                result['matchLevel'] = 2
+                result['matchSource'] = 'coordinates+auto-l2'
+                auto_name = groups.get(2, {}).get(auto_l2_id, {}).get('name', '')
+                result['matchedText'] = f"{auto_name} (auto, {best_l3_name})"[:255]
+        
+        return result
+    
+    return None
+
+
 def find_best_match_in_level(texts: Dict[str, str], level_data: Dict, parent_filter: Optional[int] = None) -> Optional[Tuple[int, float, str, str]]:
     """Find best match in a level, optionally filtering by parent_id.
     
@@ -293,19 +720,41 @@ def find_best_match_in_level(texts: Dict[str, str], level_data: Dict, parent_fil
 
 
 def match_listing(listing: dict, groups: Dict) -> Optional[dict]:
-    """Match a listing to location hierarchy using hybrid approach.
+    """Match a listing to location hierarchy using coordinates (primary) or text (fallback).
     
     Strategy:
-    1. Find L3 (municipality) first - most specific reliable match
-    2. If found, derive full parent chain and search for L2 within it
-    3. If no L3, find L5 (department) with disambiguation check
-    4. Search within L5 for lower levels
-    5. If no L5, try L2 directly as last resort
-    
-    L3-first prevents false department matches, e.g. "Antiguo Cuscatlán"
-    (municipality in La Libertad) incorrectly matching "Cuscatlán" department.
+    1. Try coordinate-based matching first (nearest L2 by distance)
+    2. Fall back to text matching:
+       a. Find L3 (municipality) first - most specific reliable match
+       b. If found, derive full parent chain and search for L2 within it
+       c. If no L3, find L5 (department) with disambiguation check
+       d. Search within L5 for lower levels
+       e. If no L5, try L2 directly as last resort
     """
+    # Try coordinate-based matching first
+    location = listing.get('location') or {}
+    if isinstance(location, str):
+        try:
+            location = json.loads(location)
+        except:
+            location = {}
+    
+    lat = location.get('latitude') if isinstance(location, dict) else None
+    lng = location.get('longitude') if isinstance(location, dict) else None
+    
+    # Extract texts early so we can pass them to coordinate matching for L2 auto-creation
     texts = extract_searchable_text(listing)
+    ext_id = listing.get('external_id')
+    
+    if lat and lng:
+        coord_result = match_by_coordinates(
+            float(lat), float(lng), groups,
+            texts=texts, external_id=ext_id
+        )
+        if coord_result:
+            coord_result['externalId'] = ext_id
+            return coord_result
+    
     MIN_SCORE = 0.9  # Minimum score to accept a match
     
     # Helper to get all IDs at a level that belong to a department
@@ -361,6 +810,19 @@ def match_listing(listing: dict, groups: Dict) -> Optional[dict]:
                     result['matchScore'] = round(l2_score, 2)
                     result['matchSource'] = l2_source
                     result['matchedText'] = l2_text[:255] if l2_text else None
+            
+            # If no L2 found but listing has coordinates, try auto-creating one
+            if result['locGroup2Id'] is None and lat and lng:
+                auto_l2_id = try_create_l2_from_listing(
+                    texts, float(lat), float(lng), l3_id, groups,
+                    external_id=ext_id
+                )
+                if auto_l2_id:
+                    result['locGroup2Id'] = auto_l2_id
+                    result['matchLevel'] = 2
+                    result['matchSource'] = 'text+auto-l2'
+                    auto_name = groups.get(2, {}).get(auto_l2_id, {}).get('name', '')
+                    result['matchedText'] = f"{auto_name} (auto, {l3_text})"[:255]
             
             return result
     
@@ -691,8 +1153,15 @@ def match_scraped_listings(listings: list, supabase_url: str = None, supabase_ke
             'description': normalize_text(listing.get('description', '') or '')
         }
         
-        # Run matching algorithm
-        match_result = match_listing_with_texts(texts, groups)
+        # Extract coordinates (stored directly on listing dict by scrapers)
+        latitude = listing.get('latitude')
+        longitude = listing.get('longitude')
+        
+        # Run matching algorithm (coordinates first, text fallback, L2 auto-creation)
+        match_result = match_listing_with_texts(
+            texts, groups, latitude=latitude, longitude=longitude,
+            external_id=ext_id, supabase_url=url, supabase_key=key
+        )
         
         # Only insert if we got at least one match
         if any(v for k, v in match_result.items() if k.startswith('locGroup') and v is not None):
@@ -811,13 +1280,28 @@ def match_scraped_listings(listings: list, supabase_url: str = None, supabase_ke
     return success, errors
 
 
-def match_listing_with_texts(texts: Dict[str, str], groups: Dict) -> dict:
-    """Match listing to location hierarchy using pre-extracted texts.
+def match_listing_with_texts(texts: Dict[str, str], groups: Dict, latitude: float = None, longitude: float = None,
+                              external_id: int = None, supabase_url: str = None, supabase_key: str = None) -> dict:
+    """Match listing to location hierarchy using coordinates (primary) or text (fallback).
     
-    This is a simplified version of match_listing that takes pre-normalized texts.
+    Strategy:
+    1. If lat/lng available, find nearest L2 by distance -> derive L3/L4/L5
+    2. If no coordinates or no match, fall back to text-based matching
+    3. If L3 matched but no L2, attempt to auto-create L2 from listing text
+    
     Returns dict with locGroup2Id, locGroup3Id, locGroup4Id, locGroup5Id.
     """
     import re
+    
+    # Try coordinate-based matching first (most accurate)
+    if latitude and longitude:
+        coord_result = match_by_coordinates(
+            latitude, longitude, groups,
+            texts=texts, external_id=external_id,
+            supabase_url=supabase_url, supabase_key=supabase_key
+        )
+        if coord_result:
+            return coord_result
     
     MIN_SCORE = 0.9
     
@@ -952,6 +1436,20 @@ def match_listing_with_texts(texts: Dict[str, str], groups: Dict) -> dict:
                     result['matchScore'] = round(l2_score, 2)
                     result['matchSource'] = l2_source
                     result['matchedText'] = l2_text[:255] if l2_text else None
+            
+            # If no L2 found but we have coordinates, try auto-creating one
+            if result['locGroup2Id'] is None and latitude and longitude:
+                auto_l2_id = try_create_l2_from_listing(
+                    texts, latitude, longitude, l3_id, groups,
+                    external_id=external_id,
+                    supabase_url=supabase_url, supabase_key=supabase_key
+                )
+                if auto_l2_id:
+                    result['locGroup2Id'] = auto_l2_id
+                    result['matchLevel'] = 2
+                    result['matchSource'] = 'text+auto-l2'
+                    auto_name = groups.get(2, {}).get(auto_l2_id, {}).get('name', '')
+                    result['matchedText'] = f"{auto_name} (auto, {l3_text})"[:255]
             
             return result
     
