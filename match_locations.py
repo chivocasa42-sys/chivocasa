@@ -100,7 +100,12 @@ def extract_searchable_text(listing: dict) -> Dict[str, str]:
 
 
 def load_location_groups(supabase: Client) -> Dict[int, Dict]:
-    """Load all sv_loc_group tables into memory for fast matching."""
+    """Load all sv_loc_group tables into memory for fast matching.
+    
+    Note: L3 (municipalities), L4 (districts), L5 (departments) are static
+    reference data that never changes. Only L2 (colonias) can grow via
+    auto-creation from scraping.
+    """
     groups = {}
     
     for level in [2, 3, 4, 5]:
@@ -287,30 +292,149 @@ COLONIA_PREFIXES = [
 # Minimum name length to accept as a valid colonia candidate (avoids single letters/noise)
 MIN_COLONIA_NAME_LEN = 4
 
+# Maximum words in a colonia name (prevents capturing entire listing titles)
+MAX_COLONIA_NAME_WORDS = 5
+
 # Distance threshold: don't create a new L2 if one already exists within this radius
 L2_DEDUP_RADIUS_KM = 1.0
 
+# Real estate terms that signal the end of a colonia name (stop the extraction here)
+_STOP_WORDS = {
+    # Sales / rental terms
+    'en', 'venta', 'alquiler', 'renta', 'precio', 'usd', 'dolares',
+    # Property specs
+    'recamara', 'recamaras', 'habitacion', 'habitaciones', 'bano', 'banos',
+    'dormitorio', 'dormitorios', 'garage', 'garaje', 'cochera',
+    # Property types
+    'casa', 'apartamento', 'terreno', 'local', 'bodega', 'oficina',
+    # Lot / block / address parts
+    'lote', 'lotes', 'pasaje', 'poligono', 'manzana', 'bloque', 'block',
+    'edif', 'edificio', 'cluster', 'torre',
+    # Measurements
+    'metros', 'mt2', 'm2', 'v2', 'varas',
+    # Infrastructure / roads
+    'distrito', 'carretera', 'carreterea', 'km', 'calle', 'avenida',
+    'boulevard', 'bulevar', 'autopista',
+    # Prepositions / conjunctions that signal end of name
+    'por', 'con', 'cerca', 'frente', 'atras', 'junto', 'sobre',
+    'minutos',
+    # Adjectives (not colonia names)
+    'nueva', 'nuevo', 'exclusiva', 'exclusivo', 'hermosa', 'hermoso',
+    'amplia', 'amplio', 'moderna', 'moderno', 'bonita', 'bonito',
+    # Subdivision / phase markers
+    'porcion', 'jurisdiccion', 'etapa', 'fase',
+    'primera', 'segunda', 'tercera', 'cuarta', 'quinta',
+    'uno', 'dos', 'tres', 'cuatro', 'cinco',
+    # Roman numerals
+    'i', 'ii', 'iii', 'iv', 'v', 'vi',
+    # Directional
+    'nor', 'poniente', 'oriente',
+    # Colonia prefixes that appear MID-name signal a second location
+    'residencial', 'urbanizacion', 'lotificacion', 'comunidad', 'condominio',
+    'reparto', 'colonia', 'barrio', 'canton', 'caserio', 'parcelacion',
+    # Commercial
+    'comercial', 'industrial', 'recreativo',
+}
 
-def extract_colonia_candidate(texts: Dict[str, str]) -> Optional[Tuple[str, str, str]]:
+# Names that are just generic adjectives/descriptions, not real colonia names
+_INVALID_NAMES = {
+    'exclusiva', 'exclusivo', 'nueva', 'nuevo', 'hermosa', 'hermoso',
+    'moderna', 'moderno', 'bonita', 'bonito', 'amplia', 'amplio',
+    'grande', 'pequena', 'privada', 'privado', 'comercial', 'recreativo',
+    'hacienda',
+}
+
+# Trailing filler words to strip after all other cleanup
+_TRAILING_FILLER = {'la', 'el', 'los', 'las', 'de', 'del', 'y', 'e', 'a',
+                    'san', 'santa', 'nor', 'sur', 'oriente', 'poniente'}
+
+
+_loc_stop_names_cache: Optional[set] = None
+
+
+def _build_location_stop_names(groups: Dict) -> set:
+    """Build a set of normalized L3/L4/L5 names to strip from candidates.
+    
+    Cached at module level because L3/L4/L5 data is static and never changes.
+    Only L2 (colonias) can grow via auto-creation.
+    """
+    global _loc_stop_names_cache
+    if _loc_stop_names_cache is not None:
+        return _loc_stop_names_cache
+    
+    stop_names = set()
+    for level in [3, 4, 5]:
+        for info in groups.get(level, {}).values():
+            name = info.get('normalized', '')
+            if name and len(name) >= 3:
+                stop_names.add(name)
+            no_pref = info.get('no_prefix', '')
+            if no_pref and len(no_pref) >= 3:
+                stop_names.add(no_pref)
+    
+    _loc_stop_names_cache = stop_names
+    return stop_names
+
+
+def extract_colonia_candidate(texts: Dict[str, str], groups: Dict = None) -> Optional[Tuple[str, str, str]]:
     """Extract a candidate colonia/neighborhood name from listing text fields.
     
     Looks for known prefixes (Residencial, Colonia, etc.) followed by a name.
-    Only considers title and location fields (high confidence), not description.
+    Uses stop words, L3/L4/L5 cross-check, and trailing filler stripping.
     
     Args:
         texts: Dict of source -> normalized text (from extract_searchable_text or inline)
+        groups: Optional location groups dict for L3/L4/L5 name cross-check
     
     Returns:
         (display_name, normalized_name, source_field) or None if no candidate found.
-        display_name preserves the prefix, e.g. "Residencial Los Almendros"
-        normalized_name is the search-ready version.
     """
     import re
     
-    # Only use high-confidence fields (title, location) for immediate insert.
-    # Description is too noisy — those go to staging.
+    loc_stop_names = _build_location_stop_names(groups) if groups else set()
+    
     high_confidence_sources = ['title', 'location']
     low_confidence_sources = ['details', 'description']
+    
+    def _strip_location_names(words: list) -> list:
+        """Remove L3/L4/L5 location names from the word list.
+        
+        Two passes:
+        1. Forward scan from position 2+: find the earliest L3/L4/L5 name
+           match and truncate everything from that position onwards.
+        2. Backward scan: strip trailing L3/L4/L5 names and filler repeatedly.
+        """
+        if not loc_stop_names or len(words) <= 1:
+            return words
+        
+        # Pass 1: Forward scan — find earliest L3/L4/L5 name starting at pos 2+
+        # (preserve at least 2 words of the actual colonia name)
+        best_cut = len(words)
+        for start in range(2, len(words)):
+            for window_len in range(1, min(4, len(words) - start + 1)):
+                window = ' '.join(words[start:start + window_len])
+                if window in loc_stop_names:
+                    best_cut = start
+                    break
+            if best_cut < len(words):
+                break
+        words = words[:best_cut]
+        
+        # Pass 2: Backward scan — strip trailing location names + filler repeatedly
+        changed = True
+        while changed and len(words) > 1:
+            changed = False
+            for suffix_len in range(1, min(4, len(words))):
+                tail = ' '.join(words[-suffix_len:])
+                if tail in loc_stop_names:
+                    words = words[:-suffix_len]
+                    changed = True
+                    break
+            while words and words[-1] in _TRAILING_FILLER:
+                words = words[:-1]
+                changed = True
+        
+        return words
     
     def _find_in_text(text: str, source: str) -> Optional[Tuple[str, str, str]]:
         if not text:
@@ -319,18 +443,53 @@ def extract_colonia_candidate(texts: Dict[str, str]) -> Optional[Tuple[str, str,
             idx = text.find(prefix)
             if idx == -1:
                 continue
-            # Extract the name after the prefix, up to a comma, period, dash, or end of meaningful text
             after = text[idx + len(prefix):]
-            # Capture words until we hit a delimiter or another known prefix
-            match = re.match(r'([a-záéíóúñü0-9][a-záéíóúñü0-9 ]{2,50})', after)
-            if not match:
+            # Collect words, stopping at stop words or digits.
+            # Extra lookahead so location stripping has context.
+            extra_lookahead = 4
+            words = []
+            for word_match in re.finditer(r'[a-záéíóúñü]+(?:\d+)?', after):
+                w = word_match.group()
+                if w in _STOP_WORDS:
+                    break
+                if w.isdigit() and len(words) > 0:
+                    break
+                words.append(w)
+                if len(words) >= MAX_COLONIA_NAME_WORDS + extra_lookahead:
+                    break
+            
+            if not words:
                 continue
-            raw_name = match.group(1).strip()
+            
+            # Strip L3/L4/L5 location names (repeatedly, handles stacked names)
+            words = _strip_location_names(words)
+            if not words:
+                continue
+            
+            # Enforce word cap
+            words = words[:MAX_COLONIA_NAME_WORDS]
+            
+            # Final trailing filler strip (after word cap may expose new trailing filler)
+            while words and words[-1] in _TRAILING_FILLER:
+                words = words[:-1]
+            if not words:
+                continue
+            
+            raw_name = ' '.join(words).strip()
             if len(raw_name) < MIN_COLONIA_NAME_LEN:
                 continue
-            # Build display name: capitalize prefix + name
+            
+            # Filter out names that are just generic adjectives
+            content_words = [w for w in words if w not in _TRAILING_FILLER]
+            if not content_words or all(w in _INVALID_NAMES for w in content_words):
+                continue
+            
+            # Build display name: prefix + cleaned name
             display = (prefix.strip() + ' ' + raw_name).strip()
-            display = ' '.join(w.capitalize() if w not in ('de', 'del', 'la', 'las', 'los', 'el', 'y') else w for w in display.split())
+            display = ' '.join(
+                w.capitalize() if w not in ('de', 'del', 'la', 'las', 'los', 'el', 'y')
+                else w for w in display.split()
+            )
             normalized = normalize_text(display)
             return (display, normalized, source)
         return None
@@ -392,10 +551,19 @@ def check_l2_duplicate(candidate_normalized: str, lat: float, lng: float,
     return None
 
 
+def _next_l2_id(groups: Dict) -> int:
+    """Compute the next available L2 id from in-memory groups (DB sequence is unreliable)."""
+    l2_data = groups.get(2, {})
+    return max(l2_data.keys(), default=0) + 1
+
+
 def insert_auto_l2(display_name: str, normalized_name: str, lat: float, lng: float,
                     l3_id: int, groups: Dict, supabase_url: str = None, 
                     supabase_key: str = None) -> Optional[int]:
     """Insert a new auto-generated L2 entry into sv_loc_group2 and update in-memory groups.
+    
+    Uses explicit IDs computed from the in-memory groups dict because the DB
+    sequence is out of sync. Retries with incremented IDs on 409 conflicts.
     
     Args:
         display_name: Human-readable name (e.g. "Residencial Los Almendros")
@@ -419,42 +587,52 @@ def insert_auto_l2(display_name: str, normalized_name: str, lat: float, lng: flo
         "Prefer": "return=representation"
     }
     
-    payload = {
-        "loc_name": display_name,
-        "loc_name_search": normalized_name,
-        "parent_loc_group": l3_id,
-        "cords": {"latitude": lat, "longitude": lng},
-        "details": "auto-generated from scraping"
-    }
+    max_retries = 3
+    new_id = _next_l2_id(groups)
     
-    try:
-        resp = requests.post(
-            f"{url}/rest/v1/sv_loc_group2",
-            headers=headers,
-            json=payload,
-            timeout=30
-        )
-        if resp.status_code in (200, 201):
-            data = resp.json()
-            new_id = data[0]['id'] if isinstance(data, list) and data else data.get('id')
-            if new_id:
+    for attempt in range(max_retries):
+        payload = {
+            "id": new_id,
+            "loc_name": display_name,
+            "loc_name_search": normalized_name,
+            "parent_loc_group": l3_id,
+            "cords": {"latitude": lat, "longitude": lng},
+            "details": "auto-generated from scraping"
+        }
+        
+        try:
+            resp = requests.post(
+                f"{url}/rest/v1/sv_loc_group2",
+                headers=headers,
+                json=payload,
+                timeout=30
+            )
+            if resp.status_code in (200, 201):
+                data = resp.json()
+                actual_id = data[0]['id'] if isinstance(data, list) and data else data.get('id', new_id)
                 # Update in-memory groups so subsequent listings can match this L2
-                groups.setdefault(2, {})[new_id] = {
-                    'id': new_id,
+                groups.setdefault(2, {})[actual_id] = {
+                    'id': actual_id,
                     'name': display_name,
                     'normalized': normalized_name,
                     'no_prefix': remove_location_prefixes(display_name),
-                    'alt_names': [normalize_text("auto-generated from scraping")],
+                    'alt_names': [],
                     'parent_id': l3_id,
                     'latitude': lat,
                     'longitude': lng
                 }
-                print(f"    ✓ Auto-created L2 #{new_id}: '{display_name}' under L3={l3_id} at ({lat:.4f}, {lng:.4f})")
-                return new_id
-        else:
-            print(f"    ⚠️ Failed to insert auto L2 '{display_name}': {resp.status_code} - {resp.text[:200]}")
-    except Exception as e:
-        print(f"    ⚠️ Exception inserting auto L2 '{display_name}': {e}")
+                print(f"    ✓ Auto-created L2 #{actual_id}: '{display_name}' under L3={l3_id} at ({lat:.4f}, {lng:.4f})")
+                return actual_id
+            elif resp.status_code == 409:
+                # Duplicate key — increment and retry
+                new_id += 1
+                continue
+            else:
+                print(f"    ⚠️ Failed to insert auto L2 '{display_name}': {resp.status_code} - {resp.text[:200]}")
+                break
+        except Exception as e:
+            print(f"    ⚠️ Exception inserting auto L2 '{display_name}': {e}")
+            break
     
     return None
 
@@ -527,7 +705,7 @@ def try_create_l2_from_listing(texts: Dict[str, str], lat: float, lng: float,
     Returns:
         New L2 id if high-confidence insert succeeded, None otherwise.
     """
-    candidate = extract_colonia_candidate(texts)
+    candidate = extract_colonia_candidate(texts, groups=groups)
     if not candidate:
         return None
     
