@@ -30,23 +30,7 @@ export default function HeroSection({ onLocationSelect }: HeroSectionProps) {
 
         setIsSearching(true);
         try {
-            const params = new URLSearchParams({
-                q: `${query}, El Salvador`,
-                format: 'json',
-                limit: '5',
-                countrycodes: 'sv'
-            });
-
-            const response = await fetch(
-                `https://nominatim.openstreetmap.org/search?${params}`,
-                {
-                    headers: {
-                        'User-Agent': 'ChivocasaBot/1.0 (https://github.com/chivocasa42-sys)',
-                        'Accept': 'application/json',
-                        'Accept-Language': 'es,en;q=0.9'
-                    }
-                }
-            );
+            const response = await fetch(`/api/geocode?q=${encodeURIComponent(query)}`);
 
             if (response.ok) {
                 const data: SearchResult[] = await response.json();

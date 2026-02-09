@@ -189,23 +189,7 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
 
         setIsSearching(true);
         try {
-            const params = new URLSearchParams({
-                q: `${query}, El Salvador`,
-                format: 'json',
-                limit: '5',
-                countrycodes: 'sv'
-            });
-
-            const response = await fetch(
-                `https://nominatim.openstreetmap.org/search?${params}`,
-                {
-                    headers: {
-                        'User-Agent': 'ChivocasaBot/1.0 (https://github.com/chivocasa42-sys)',
-                        'Accept': 'application/json',
-                        'Accept-Language': 'es,en;q=0.9'
-                    }
-                }
-            );
+            const response = await fetch(`/api/geocode?q=${encodeURIComponent(query)}`);
 
             if (response.ok) {
                 const data: SearchResult[] = await response.json();
@@ -539,7 +523,7 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
                                             <div className="flex items-center justify-between text-sm">
                                                 <div>
                                                     <span className={activeTab === 'sale' ? 'text-emerald-600' : 'text-blue-600'}>
-                                                        Precio mediano:
+                                                        Precio promedio:
                                                     </span>
                                                     <span className={`font-bold ml-2 ${activeTab === 'sale' ? 'text-emerald-800' : 'text-blue-800'}`}>
                                                         {formatPriceShort((activeTab === 'sale' ? saleStats : rentStats)!.median_price)}
@@ -621,42 +605,12 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
 
                                                 {/* Content */}
                                                 <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
-                                                    {/* Top Row: Price + Specs + Badge */}
+                                                    {/* Top Row: Price + Badge */}
                                                     <div className="flex items-center justify-between gap-2">
-                                                        <div className="flex items-center gap-2">
-                                                            {/* Price */}
-                                                            <span className="text-base font-black text-[#272727]">
-                                                                {formatPrice(listing.price)}
-                                                            </span>
-
-                                                            {/* Specs from JSONB */}
-                                                            <div className="flex items-center gap-1.5 text-xs text-slate-600">
-                                                                {listing.specs?.bedrooms && (
-                                                                    <span>
-                                                                        <span className="font-bold">{listing.specs.bedrooms}</span> hab
-                                                                    </span>
-                                                                )}
-                                                                {listing.specs?.bedrooms && listing.specs?.bathrooms && (
-                                                                    <span className="text-slate-300">|</span>
-                                                                )}
-                                                                {listing.specs?.bathrooms && (
-                                                                    <span>
-                                                                        <span className="font-bold">{listing.specs.bathrooms}</span> baños
-                                                                    </span>
-                                                                )}
-                                                                {listing.specs?.area_m2 && (
-                                                                    <>
-                                                                        <span className="text-slate-300">|</span>
-                                                                        <span className="flex items-center gap-0.5">
-                                                                            <svg className="w-3 h-3 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
-                                                                                <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z" />
-                                                                            </svg>
-                                                                            <span className="font-bold">{listing.specs.area_m2}</span> m²
-                                                                        </span>
-                                                                    </>
-                                                                )}
-                                                            </div>
-                                                        </div>
+                                                        {/* Price */}
+                                                        <span className="text-base font-black text-[#272727]">
+                                                            {formatPrice(listing.price)}
+                                                        </span>
 
                                                         {/* Badge */}
                                                         <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase ${listing.listing_type === 'sale'
@@ -665,6 +619,34 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
                                                             }`}>
                                                             {listing.listing_type === 'sale' ? 'VENTA' : 'RENTA'}
                                                         </span>
+                                                    </div>
+
+                                                    {/* Mid Row: Specs */}
+                                                    <div className="flex items-center gap-1.5 text-xs text-slate-600">
+                                                        {listing.specs?.bedrooms && (
+                                                            <span>
+                                                                <span className="font-bold">{listing.specs.bedrooms}</span> hab
+                                                            </span>
+                                                        )}
+                                                        {listing.specs?.bedrooms && listing.specs?.bathrooms && (
+                                                            <span className="text-slate-300">|</span>
+                                                        )}
+                                                        {listing.specs?.bathrooms && (
+                                                            <span>
+                                                                <span className="font-bold">{listing.specs.bathrooms}</span> baños
+                                                            </span>
+                                                        )}
+                                                        {listing.specs?.area_m2 && (
+                                                            <>
+                                                                <span className="text-slate-300">|</span>
+                                                                <span className="flex items-center gap-0.5">
+                                                                    <svg className="w-3 h-3 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
+                                                                        <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z" />
+                                                                    </svg>
+                                                                    <span className="font-bold">{listing.specs.area_m2}</span> m²
+                                                                </span>
+                                                            </>
+                                                        )}
                                                     </div>
 
                                                     {/* Bottom Row: Distance + Tags */}

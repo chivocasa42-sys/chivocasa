@@ -150,23 +150,24 @@ export default function ListingModal({ externalId, onClose }: ListingModalProps)
     const tags = getLocationTags(listing.tags, listing.location);
     const municipio = listing.location?.municipio_detectado;
 
-    return (
-        <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm overflow-y-auto md:flex md:items-center md:justify-center md:p-6" onClick={onClose}>
-            <div className="bg-white w-full min-h-screen md:min-h-0 md:max-w-3xl md:mx-auto md:rounded-xl md:shadow-2xl relative md:max-h-[90vh] md:overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-                {/* Close Button */}
-                <button
-                    onClick={onClose}
-                    className="absolute top-3 right-3 z-50 p-2.5 rounded-full bg-black/40 hover:bg-black/60 text-white transition-all"
-                >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                </button>
+    const hasMap = listing.location?.latitude && listing.location?.longitude;
 
-                {/* Image Carousel */}
+    return (
+        <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm overflow-y-auto flex items-center justify-center p-3 md:p-4" onClick={onClose}>
+            <div className="relative bg-white w-full max-w-3xl rounded-xl shadow-2xl overflow-hidden max-h-[95vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                {/* Image Carousel - compact 16:9 */}
                 <div className="relative bg-slate-900">
-                    {/* Main Image - shorter on mobile, 3:2 on desktop */}
-                    <div className="relative w-full aspect-[4/3] md:aspect-[3/2]">
+                    {/* Close Button - inside the image area */}
+                    <button
+                        onClick={onClose}
+                        className="absolute top-2 right-2 z-50 p-2 rounded-full bg-black/50 hover:bg-black/70 text-white transition-all"
+                    >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+
+                    <div className="relative w-full aspect-[16/9]">
                         {images.length > 0 ? (
                             <img
                                 src={images[currentImageIndex]}
@@ -186,7 +187,7 @@ export default function ListingModal({ externalId, onClose }: ListingModalProps)
                         <>
                             <button
                                 onClick={(e) => { e.stopPropagation(); goToPrev(); }}
-                                className="absolute left-2 md:left-3 top-1/2 -translate-y-1/2 p-2.5 md:p-2 rounded-full bg-white/90 hover:bg-white shadow-lg transition-all"
+                                className="absolute left-2 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/90 hover:bg-white shadow-lg transition-all"
                             >
                                 <svg className="w-5 h-5 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
@@ -194,7 +195,7 @@ export default function ListingModal({ externalId, onClose }: ListingModalProps)
                             </button>
                             <button
                                 onClick={(e) => { e.stopPropagation(); goToNext(); }}
-                                className="absolute right-2 md:right-3 top-1/2 -translate-y-1/2 p-2.5 md:p-2 rounded-full bg-white/90 hover:bg-white shadow-lg transition-all"
+                                className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/90 hover:bg-white shadow-lg transition-all"
                             >
                                 <svg className="w-5 h-5 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
@@ -205,26 +206,26 @@ export default function ListingModal({ externalId, onClose }: ListingModalProps)
 
                     {/* Image Counter */}
                     {images.length > 1 && (
-                        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-black/60 text-white text-xs md:text-sm px-3 py-1 rounded-full">
+                        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/60 text-white text-xs px-2.5 py-0.5 rounded-full">
                             {currentImageIndex + 1} / {images.length}
                         </div>
                     )}
 
                     {/* Sale/Rent Badge */}
-                    <div className="absolute top-3 left-3 bg-white/95 backdrop-blur-sm px-2.5 py-1 rounded text-[11px] md:text-xs font-bold uppercase tracking-wide text-slate-800 flex items-center gap-1.5 shadow">
+                    <div className="absolute top-2 left-2 bg-white/95 backdrop-blur-sm px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wide text-slate-800 flex items-center gap-1.5 shadow">
                         <span className="w-2 h-2 rounded-full bg-red-500"></span>
                         {listing.listing_type === 'sale' ? 'En Venta' : 'En Renta'}
                     </div>
                 </div>
 
-                {/* Thumbnail Strip - scrollable on mobile */}
+                {/* Thumbnail Strip - compact */}
                 {images.length > 1 && (
-                    <div className="bg-slate-100 p-1.5 md:p-2 flex gap-1 md:gap-1.5 overflow-x-auto scrollbar-hide">
+                    <div className="bg-slate-100 p-1 flex gap-0.5 overflow-x-auto scrollbar-hide">
                         {images.map((img, idx) => (
                             <button
                                 key={idx}
                                 onClick={() => setCurrentImageIndex(idx)}
-                                className={`flex-shrink-0 w-14 h-10 md:w-16 md:h-12 rounded overflow-hidden border-2 transition-all ${idx === currentImageIndex
+                                className={`flex-shrink-0 w-12 h-8 md:w-14 md:h-10 rounded overflow-hidden border-2 transition-all ${idx === currentImageIndex
                                     ? 'border-blue-500 ring-1 ring-blue-500'
                                     : 'border-transparent hover:border-slate-300'
                                     }`}
@@ -240,78 +241,109 @@ export default function ListingModal({ externalId, onClose }: ListingModalProps)
                     </div>
                 )}
 
-                {/* Content Section */}
-                <div className="p-4 md:p-5">
-                    {/* Price Row */}
-                    <div className="flex items-center justify-between gap-3 mb-3">
-                        <div className="text-2xl md:text-3xl font-black text-[#272727] tracking-tight">
-                            {formatPrice(listing.price)}
-                            {listing.listing_type === 'rent' && (
-                                <span className="text-sm md:text-base font-normal text-slate-400 ml-1">/mes</span>
+                {/* Content Section - two columns on desktop */}
+                <div className="p-3 md:p-4">
+                    <div className="flex flex-col md:flex-row md:gap-4">
+                        {/* Left column: Price, specs, location, tags */}
+                        <div className="flex-1 min-w-0">
+                            {/* Price */}
+                            <div className="text-2xl md:text-3xl font-black text-[#272727] tracking-tight mb-2">
+                                {formatPrice(listing.price)}
+                                {listing.listing_type === 'rent' && (
+                                    <span className="text-sm font-normal text-slate-400 ml-1">/mes</span>
+                                )}
+                            </div>
+
+                            {/* Specs - below price on mobile, inline on desktop */}
+                            <div className="flex gap-4 mb-2">
+                                {specs.bedrooms && (
+                                    <div className="flex items-center gap-1">
+                                        <span className="text-base font-bold text-[#272727]">{specs.bedrooms}</span>
+                                        <span className="text-xs text-slate-500">hab</span>
+                                    </div>
+                                )}
+                                {specs.bathrooms && (
+                                    <div className="flex items-center gap-1">
+                                        <span className="text-base font-bold text-[#272727]">{specs.bathrooms}</span>
+                                        <span className="text-xs text-slate-500">baños</span>
+                                    </div>
+                                )}
+                                {area > 0 && (
+                                    <div className="flex items-center gap-1">
+                                        <span className="text-base font-bold text-[#272727]">{area.toLocaleString()}</span>
+                                        <span className="text-xs text-slate-500">m²</span>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Location */}
+                            {municipio && (
+                                <div className="text-slate-500 text-sm mb-2 flex items-center gap-1.5">
+                                    <svg className="w-3.5 h-3.5 flex-shrink-0" fill="currentColor" viewBox="0 0 16 16">
+                                        <path d="M8 16s6-5.686 6-10A6 6 0 0 0 2 6c0 4.314 6 10 6 10zm0-7a3 3 0 1 1 0-6 3 3 0 0 1 0 6z" />
+                                    </svg>
+                                    {municipio}
+                                </div>
+                            )}
+
+                            {/* Tags */}
+                            {tags.length > 0 && (
+                                <div className="flex flex-wrap gap-1.5 mb-3 md:mb-0">
+                                    {tags.map((tag, idx) => (
+                                        <span
+                                            key={idx}
+                                            className="bg-slate-100 text-slate-700 text-xs font-medium px-2 py-0.5 rounded-lg"
+                                        >
+                                            {tag}
+                                        </span>
+                                    ))}
+                                </div>
                             )}
                         </div>
 
-                        {/* Specs inline */}
-                        <div className="flex gap-4 md:gap-5 text-center">
-                            {specs.bedrooms && (
-                                <div>
-                                    <div className="text-lg md:text-xl font-bold text-[#272727]">{specs.bedrooms}</div>
-                                    <div className="text-[10px] md:text-xs text-slate-500">hab</div>
-                                </div>
-                            )}
-                            {specs.bathrooms && (
-                                <div>
-                                    <div className="text-lg md:text-xl font-bold text-[#272727]">{specs.bathrooms}</div>
-                                    <div className="text-[10px] md:text-xs text-slate-500">baños</div>
-                                </div>
-                            )}
-                            {area > 0 && (
-                                <div>
-                                    <div className="text-lg md:text-xl font-bold text-[#272727]">{area.toLocaleString()}</div>
-                                    <div className="text-[10px] md:text-xs text-slate-500">m²</div>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Location */}
-                    {municipio && (
-                        <div className="text-slate-500 text-sm mb-3 flex items-center gap-1.5">
-                            <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 16 16">
-                                <path d="M8 16s6-5.686 6-10A6 6 0 0 0 2 6c0 4.314 6 10 6 10zm0-7a3 3 0 1 1 0-6 3 3 0 0 1 0 6z" />
-                            </svg>
-                            {municipio}
-                        </div>
-                    )}
-
-                    {/* Tags */}
-                    {tags.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 md:gap-2 mb-4">
-                            {tags.map((tag, idx) => (
-                                <span
-                                    key={idx}
-                                    className="bg-slate-100 text-slate-700 text-xs md:text-sm font-medium px-2.5 py-1 rounded-lg"
+                        {/* Right column: Map + CTA */}
+                        <div className="md:w-52 lg:w-56 flex-shrink-0 flex flex-col gap-2">
+                            {/* Map Preview - compact */}
+                            {hasMap && (
+                                <a
+                                    href={`https://www.google.com/maps?q=${listing.location.latitude},${listing.location.longitude}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="block rounded-lg overflow-hidden border border-slate-200 hover:border-blue-400 transition-all hover:shadow-md"
                                 >
-                                    {tag}
-                                </span>
-                            ))}
-                        </div>
-                    )}
+                                    <div className="relative">
+                                        <img
+                                            src={`https://static-maps.yandex.ru/1.x/?ll=${listing.location.longitude},${listing.location.latitude}&z=15&size=400,150&l=map&pt=${listing.location.longitude},${listing.location.latitude},pm2rdm`}
+                                            alt="Ubicación en mapa"
+                                            className="w-full h-[80px] md:h-[90px] object-cover"
+                                            loading="lazy"
+                                        />
+                                        <div className="absolute bottom-1 right-1 bg-white/90 backdrop-blur-sm text-[10px] text-slate-600 px-1.5 py-0.5 rounded shadow flex items-center gap-0.5">
+                                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                            </svg>
+                                            Google Maps
+                                        </div>
+                                    </div>
+                                </a>
+                            )}
 
-                    {/* CTA Button - full width on mobile */}
-                    <a
-                        href={listing.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-lg font-bold text-center transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2"
-                    >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                        </svg>
-                        Ver más información
-                    </a>
-                    <div className="mt-2 text-center text-[10px] text-slate-400 font-medium uppercase tracking-wide">
-                        Indexado por <span className="font-black italic text-slate-600">SIVAR<span className="text-blue-600">CASAS</span></span>
+                            {/* CTA Button */}
+                            <a
+                                href={listing.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 px-4 rounded-lg font-bold text-sm text-center transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                </svg>
+                                Ver más información
+                            </a>
+                            <div className="text-center text-[9px] text-slate-400 font-medium uppercase tracking-wide">
+                                Indexado por <span className="font-black italic text-slate-600">SIVAR<span className="text-blue-600">CASAS</span></span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
