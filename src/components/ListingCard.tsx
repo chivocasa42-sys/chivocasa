@@ -2,7 +2,6 @@
 
 import { Listing, ListingSpecs, ListingLocation } from '@/types/listing';
 import LazyImage from './LazyImage';
-import Link from 'next/link';
 
 interface ListingCardProps {
     listing: Listing;
@@ -155,14 +154,12 @@ export default function ListingCard({ listing, onClick, isFeatured }: ListingCar
                 {/* Location Tags */}
                 <div className="flex flex-wrap gap-1.5 mb-3 mt-2">
                     {locationTags.map((tag, idx) => (
-                        <Link
+                        <span
                             key={idx}
-                            href={`/tag/${tag.toLowerCase().replace(/\s+/g, '-')}`}
-                            className="bg-slate-100 text-slate-600 text-[11px] font-medium px-2 py-0.5 rounded hover:bg-blue-100 hover:text-blue-700 transition-colors"
-                            onClick={(e) => e.stopPropagation()}
+                            className="bg-slate-100 text-slate-600 text-[11px] font-medium px-2 py-0.5 rounded"
                         >
                             {tag}
-                        </Link>
+                        </span>
                     ))}
                 </div>
             </div>

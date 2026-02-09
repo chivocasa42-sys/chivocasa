@@ -1,74 +1,83 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useRef, useCallback } from 'react';
 
-interface Tag {
-    tag: string;
+interface SearchResult {
+    display_name: string;
+    lat: string;
+    lon: string;
 }
 
-export default function HeroSection() {
-    const router = useRouter();
+interface HeroSectionProps {
+    onLocationSelect?: (lat: number, lng: number, name: string) => void;
+}
+
+export default function HeroSection({ onLocationSelect }: HeroSectionProps) {
     const [searchQuery, setSearchQuery] = useState('');
-    const [allTags, setAllTags] = useState<Tag[]>([]);
-    const [suggestions, setSuggestions] = useState<Tag[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [showDropdown, setShowDropdown] = useState(false);
+    const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+    const [isSearching, setIsSearching] = useState(false);
     const [selectedIndex, setSelectedIndex] = useState(-1);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
+    const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-    // Preload all tags on mount
-    useEffect(() => {
-        const fetchAllTags = async () => {
-            try {
-                const res = await fetch('/api/tags');
-                if (res.ok) {
-                    const data = await res.json();
-                    setAllTags(data.tags || []);
-                }
-            } catch (error) {
-                console.error('Error fetching tags:', error);
-            } finally {
-                setIsLoading(false);
-            }
-        };
-
-        fetchAllTags();
-    }, []);
-
-    // Filter tags client-side when user types
-    useEffect(() => {
-        if (searchQuery.trim().length < 2) {
-            setSuggestions([]);
-            setShowDropdown(false);
-            setSelectedIndex(-1);
+    // Search places using Nominatim (same as MapExplorer)
+    const searchPlaces = useCallback(async (query: string) => {
+        if (!query.trim() || query.length < 3) {
+            setSearchResults([]);
             return;
         }
 
-        const searchLower = searchQuery.toLowerCase();
-        const filtered = allTags
-            .filter(t => t.tag.toLowerCase().includes(searchLower))
-            .sort((a, b) => {
-                // Prioritize tags that start with the search query
-                const aStarts = a.tag.toLowerCase().startsWith(searchLower);
-                const bStarts = b.tag.toLowerCase().startsWith(searchLower);
-                if (aStarts && !bStarts) return -1;
-                if (!aStarts && bStarts) return 1;
-                return a.tag.localeCompare(b.tag);
-            })
-            .slice(0, 10);
+        setIsSearching(true);
+        try {
+            const params = new URLSearchParams({
+                q: `${query}, El Salvador`,
+                format: 'json',
+                limit: '5',
+                countrycodes: 'sv'
+            });
 
-        setSuggestions(filtered);
-        setShowDropdown(filtered.length > 0);
+            const response = await fetch(
+                `https://nominatim.openstreetmap.org/search?${params}`,
+                {
+                    headers: {
+                        'User-Agent': 'ChivocasaBot/1.0 (https://github.com/chivocasa42-sys)',
+                        'Accept': 'application/json',
+                        'Accept-Language': 'es,en;q=0.9'
+                    }
+                }
+            );
+
+            if (response.ok) {
+                const data: SearchResult[] = await response.json();
+                setSearchResults(data);
+            }
+        } catch (err) {
+            console.error('Search error:', err);
+        } finally {
+            setIsSearching(false);
+        }
+    }, []);
+
+    // Debounced search input
+    const handleSearchInput = useCallback((value: string) => {
+        setSearchQuery(value);
         setSelectedIndex(-1);
-    }, [searchQuery, allTags]);
+
+        if (searchTimeoutRef.current) {
+            clearTimeout(searchTimeoutRef.current);
+        }
+
+        searchTimeoutRef.current = setTimeout(() => {
+            searchPlaces(value);
+        }, 400);
+    }, [searchPlaces]);
 
     // Close dropdown when clicking outside
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-                setShowDropdown(false);
+                setSearchResults([]);
                 setSelectedIndex(-1);
             }
         };
@@ -77,51 +86,54 @@ export default function HeroSection() {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    const handleSelectTag = (tag: string) => {
-        // URL encode the tag slug
-        const slug = tag.toLowerCase().replace(/\s+/g, '-');
-        router.push(`/tag/${encodeURIComponent(slug)}`);
-        setShowDropdown(false);
-        setSearchQuery('');
+    const handleSelectResult = (result: SearchResult) => {
+        const lat = parseFloat(result.lat);
+        const lng = parseFloat(result.lon);
+        const name = result.display_name.split(',')[0];
+
+        setSearchQuery(name);
+        setSearchResults([]);
         setSelectedIndex(-1);
+
+        // Scroll to map explorer and trigger search there
+        if (onLocationSelect) {
+            onLocationSelect(lat, lng, name);
+        }
+
+        const mapSection = document.getElementById('explorar-mapa');
+        if (mapSection) {
+            mapSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
     };
 
     // Handle keyboard navigation
     const handleKeyDown = (e: React.KeyboardEvent) => {
-        if (!showDropdown || suggestions.length === 0) return;
+        if (searchResults.length === 0) return;
 
         switch (e.key) {
             case 'ArrowDown':
                 e.preventDefault();
                 setSelectedIndex(prev =>
-                    prev < suggestions.length - 1 ? prev + 1 : prev
+                    prev < searchResults.length - 1 ? prev + 1 : prev
                 );
                 break;
             case 'ArrowUp':
                 e.preventDefault();
                 setSelectedIndex(prev => prev > 0 ? prev - 1 : -1);
                 break;
+            case 'Enter':
+                e.preventDefault();
+                if (selectedIndex >= 0 && selectedIndex < searchResults.length) {
+                    handleSelectResult(searchResults[selectedIndex]);
+                } else if (searchResults.length > 0) {
+                    handleSelectResult(searchResults[0]);
+                }
+                break;
             case 'Escape':
-                setShowDropdown(false);
+                setSearchResults([]);
                 setSelectedIndex(-1);
                 break;
         }
-    };
-
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-
-        // Only allow selecting from existing suggestions
-        if (suggestions.length > 0) {
-            // If user has navigated with arrows, use that selection
-            if (selectedIndex >= 0 && selectedIndex < suggestions.length) {
-                handleSelectTag(suggestions[selectedIndex].tag);
-            } else {
-                // Otherwise use the first suggestion
-                handleSelectTag(suggestions[0].tag);
-            }
-        }
-        // If no suggestions available, do nothing (don't allow arbitrary input)
     };
 
     return (
@@ -138,54 +150,49 @@ export default function HeroSection() {
             <div className="hero-search-overlay" />
             <div className="hero-search-content">
                 <h1 className="hero-search-title">
-                    Inmuebles en El Salvador: compará venta y renta, y pagá lo justo.
+                    Encontrá tu próximo hogar en El Salvador
                 </h1>
 
-                <form onSubmit={handleSubmit} className="hero-search-form">
+                <div className="hero-search-form">
                     <div className="hero-search-input-wrapper" ref={dropdownRef}>
                         <input
                             type="text"
-                            placeholder="Buscar por ubicación (ej: Santa Tecla, San Salvador...)"
+                            placeholder="Buscar por ubicación (ej: Santa Tecla, Escalón, San Salvador...)"
                             value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
+                            onChange={(e) => handleSearchInput(e.target.value)}
                             onKeyDown={handleKeyDown}
                             ref={inputRef}
                             className="hero-search-input"
                             autoComplete="off"
                         />
 
-                        {showDropdown && suggestions.length > 0 && (
+                        {isSearching && (
+                            <div className="hero-search-loading">
+                                <div className="spinner-small"></div>
+                            </div>
+                        )}
+
+                        {searchResults.length > 0 && (
                             <div className="hero-search-dropdown">
-                                {suggestions.map((item, index) => (
+                                {searchResults.map((result, index) => (
                                     <button
                                         key={index}
                                         type="button"
-                                        onClick={() => handleSelectTag(item.tag)}
+                                        onClick={() => handleSelectResult(result)}
                                         className={`hero-search-dropdown-item${index === selectedIndex ? ' selected' : ''}`}
                                     >
-                                        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                                         </svg>
-                                        {item.tag}
+                                        <span className="truncate">{result.display_name}</span>
                                     </button>
                                 ))}
                             </div>
                         )}
 
-                        {!isLoading && searchQuery.trim().length >= 2 && suggestions.length === 0 && (
-                            <div className="hero-search-dropdown hero-search-no-results">
-                                <span>No se encontraron inmuebles</span>
-                            </div>
-                        )}
-
-                        {isLoading && (
-                            <div className="hero-search-loading">
-                                <div className="spinner-small"></div>
-                            </div>
-                        )}
                     </div>
-                </form>
+                </div>
 
                 <p className="hero-search-slogan">
                     Más casa por tu dinero.

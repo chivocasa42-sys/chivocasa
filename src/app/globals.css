@@ -2636,3 +2636,12 @@ body {
 .oportunidad-content .datos-clave-grid {
   padding: 0;
 }
+
+/* Hide scrollbar for thumbnail strips on mobile */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}

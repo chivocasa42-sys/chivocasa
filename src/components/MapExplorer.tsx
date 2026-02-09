@@ -87,6 +87,10 @@ interface NearbyData {
 type SortOption = 'distance_asc' | 'recent' | 'price_asc' | 'price_desc';
 type ListingTypeFilter = 'sale' | 'rent';
 
+interface MapExplorerProps {
+    externalLocation?: { lat: number; lng: number; name: string } | null;
+}
+
 // Map click handler component
 function MapClickHandler({ onMapClick }: { onMapClick: (lat: number, lng: number) => void }) {
     const MapEvents = require('react-leaflet').useMapEvents;
@@ -129,7 +133,7 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
     { value: 'price_desc', label: 'Precio ↓' },
 ];
 
-export default function MapExplorer() {
+export default function MapExplorer({ externalLocation }: MapExplorerProps) {
     const [selectedLocation, setSelectedLocation] = useState<{ lat: number; lng: number } | null>(null);
     const [radius, setRadius] = useState(1.5);
     const [searchQuery, setSearchQuery] = useState('');
@@ -150,7 +154,23 @@ export default function MapExplorer() {
     // Modal state
     const [selectedListingId, setSelectedListingId] = useState<string | number | null>(null);
 
+    // Auto-fetch trigger: incremented when a search result is selected
+    const [autoFetchTrigger, setAutoFetchTrigger] = useState(0);
+
     const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+    // React to external location from hero search bar
+    useEffect(() => {
+        if (externalLocation) {
+            setSelectedLocation({ lat: externalLocation.lat, lng: externalLocation.lng });
+            setMapCenter([externalLocation.lat, externalLocation.lng]);
+            setSearchQuery(externalLocation.name);
+            setNearbyData(null);
+            setError(null);
+            setCurrentPage(0);
+            setAutoFetchTrigger(prev => prev + 1);
+        }
+    }, [externalLocation]);
 
     // Handle map click
     const handleMapClick = useCallback((lat: number, lng: number) => {
@@ -222,6 +242,7 @@ export default function MapExplorer() {
         setNearbyData(null);
         setError(null);
         setCurrentPage(0);
+        setAutoFetchTrigger(prev => prev + 1);
     }, []);
 
     // Fetch nearby listings with pagination
@@ -258,6 +279,14 @@ export default function MapExplorer() {
             setIsPaginating(false);
         }
     }, [selectedLocation, radius, sortBy, activeTab]);
+
+    // Auto-fetch when a search result is selected (from hero or map explorer search)
+    useEffect(() => {
+        if (autoFetchTrigger > 0 && selectedLocation) {
+            fetchNearbyListings(0, false);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [autoFetchTrigger]);
 
     // Handle tab change
     const handleTabChange = useCallback((tab: ListingTypeFilter) => {
@@ -347,7 +376,7 @@ export default function MapExplorer() {
                             </div>
 
                             {/* Map Container - z-index lower than modal */}
-                            <div className="rounded-lg overflow-hidden border border-[var(--border-color)] mb-3 relative" style={{ height: '320px', zIndex: 0 }}>
+                            <div className="rounded-lg overflow-hidden border border-[var(--border-color)] mb-3 relative h-[240px] md:h-[320px]" style={{ zIndex: 0 }}>
                                 {mapReady && (
                                     <MapContainer
                                         center={mapCenter}
@@ -400,26 +429,24 @@ export default function MapExplorer() {
                                     </span>
                                 </div>
 
-                                {/* Sort + Coords + Button */}
-                                <div className="flex items-center justify-between gap-2">
-                                    <button
-                                        onClick={() => fetchNearbyListings(0, false)}
-                                        disabled={!selectedLocation || isLoading}
-                                        className={`btn-primary px-4 py-1.5 rounded-lg text-sm font-semibold transition-all ${!selectedLocation
-                                            ? 'opacity-50 cursor-not-allowed'
-                                            : 'hover:shadow-lg'
-                                            }`}
-                                    >
-                                        {isLoading ? 'Buscando...' : 'Ver Listados'}
-                                    </button>
-                                </div>
+                                {/* Button */}
+                                <button
+                                    onClick={() => fetchNearbyListings(0, false)}
+                                    disabled={!selectedLocation || isLoading}
+                                    className={`w-full btn-primary px-4 py-2.5 md:py-1.5 rounded-lg text-sm font-semibold transition-all ${!selectedLocation
+                                        ? 'opacity-50 cursor-not-allowed'
+                                        : 'hover:shadow-lg'
+                                        }`}
+                                >
+                                    {isLoading ? 'Buscando...' : 'Ver Listados'}
+                                </button>
                             </div>
                         </div>
                     </div>
 
                     {/* Right: Results Panel */}
                     <div className="flex-1 lg:w-1/2">
-                        <div className="card-float p-4 h-full min-h-[480px]">
+                        <div className="card-float p-3 md:p-4 h-full min-h-[300px] md:min-h-[480px]">
                             {/* Tabs: VENTA | ALQUILER */}
                             <div className="flex border-b border-[var(--border-color)] mb-4">
                                 <button

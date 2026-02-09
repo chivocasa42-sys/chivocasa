@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import Navbar from '@/components/Navbar';
 import HeroSection from '@/components/HeroSection';
 import FeatureCards from '@/components/FeatureCards';
@@ -13,6 +13,12 @@ import DepartmentCard from '@/components/DepartmentCard';
 import SectionHeader from '@/components/SectionHeader';
 import { departamentoToSlug } from '@/lib/slugify';
 import Link from 'next/link';
+
+interface HeroLocation {
+  lat: number;
+  lng: number;
+  name: string;
+}
 
 interface DepartmentStats {
   departamento: string;
@@ -34,6 +40,12 @@ export default function Home() {
   const [period, setPeriod] = useState<PeriodType>('30d');
   const [view, setView] = useState<ViewType>('sale');
   const [orderBy, setOrderBy] = useState<OrderType>('activity');
+
+  // Hero → MapExplorer bridge
+  const [heroLocation, setHeroLocation] = useState<HeroLocation | null>(null);
+  const handleHeroLocationSelect = useCallback((lat: number, lng: number, name: string) => {
+    setHeroLocation({ lat, lng, name });
+  }, []);
 
   useEffect(() => {
     async function fetchStats() {
@@ -156,8 +168,8 @@ export default function Home() {
         onRefresh={() => window.location.reload()}
       />
 
-      {/* Hero Section - Earnwave Style */}
-      <HeroSection />
+      {/* Hero Section */}
+      <HeroSection onLocationSelect={handleHeroLocationSelect} />
 
       <main className="container mx-auto px-4 max-w-7xl">
         {/* Loading / Error / Content */}
@@ -182,7 +194,7 @@ export default function Home() {
             <KPIStrip stats={kpiStats} />
 
             {/* Map Explorer - Interactive location search */}
-            <MapExplorer />
+            <MapExplorer externalLocation={heroLocation} />
 
             {/* Departamentos Grid */}
             <div id="departamentos" className="mb-8 scroll-mt-24">
