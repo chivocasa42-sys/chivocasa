@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Leaflet Map Styles */
+@import "leaflet/dist/leaflet.css";
+
 /* =============================================
    SIVARCASAS - DESIGN SYSTEM PREMIUM (EARNWAVE STYLE)
    ============================================= */

@@ -8,6 +8,7 @@ import HomeHeader from '@/components/HomeHeader';
 import KPIStrip from '@/components/KPIStrip';
 import RankingsSection from '@/components/RankingsSection';
 import TrendsSection from '@/components/TrendsSection';
+import MapExplorer from '@/components/MapExplorer';
 import DepartmentCard from '@/components/DepartmentCard';
 import SectionHeader from '@/components/SectionHeader';
 import { departamentoToSlug } from '@/lib/slugify';
@@ -179,6 +180,9 @@ export default function Home() {
           <>
             {/* KPI Strip */}
             <KPIStrip stats={kpiStats} />
+
+            {/* Map Explorer - Interactive location search */}
+            <MapExplorer />
 
             {/* Departamentos Grid */}
             <div id="departamentos" className="mb-8 scroll-mt-24">

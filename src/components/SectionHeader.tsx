@@ -21,7 +21,7 @@ export default function SectionHeader({
                 {title[0]} <span className="text-[var(--primary)]">{title[1]}</span>
             </h2>
             {subtitle && (
-                <p className="text-base text-[var(--text-muted)] max-w-xl mx-auto">
+                <p className="text-base text-[var(--text-muted)] mx-auto">
                     {subtitle}
                 </p>
             )}
