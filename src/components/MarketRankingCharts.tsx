@@ -131,7 +131,7 @@ export default function MarketRankingCharts({ departments, activeFilter = 'all' 
       if (shouldCache) writeCache(depts);
       return true;
     }
-  }, [handleBarClick, triggerPulse]);
+  }, [handleBarClick, triggerPulse, activeFilter]);
 
   // Fetch fresh data from API (with concurrency lock)
   const fetchAndUpdate = useCallback(async () => {

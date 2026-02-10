@@ -74,6 +74,9 @@
       tooltip: {
         trigger: 'axis',
         axisPointer: { type: 'shadow' },
+        renderMode: 'html',
+        appendToBody: true,
+        confine: false,
         backgroundColor: tokens.bgCard,
         borderColor: tokens.bgSubtle,
         borderWidth: 1,
@@ -81,6 +84,18 @@
           fontFamily: 'Inter, sans-serif',
           fontSize: 13,
           color: tokens.textPrimary,
+        },
+        position: function (point, params, dom, rect, size) {
+          var x = point[0] + 10;
+          var y = point[1] - size.contentSize[1] / 2;
+          var vw = window.innerWidth;
+          var vh = window.innerHeight;
+          var margin = 10;
+          if (x + size.contentSize[0] > vw - margin) x = point[0] - size.contentSize[0] - 10;
+          if (x < margin) x = margin;
+          if (y + size.contentSize[1] > vh - margin) y = vh - margin - size.contentSize[1];
+          if (y < margin) y = margin;
+          return [x, y];
         },
         formatter: function (params) {
           var p = params[0];
@@ -179,6 +194,9 @@
       tooltip: {
         trigger: 'axis',
         axisPointer: { type: 'shadow' },
+        renderMode: 'html',
+        appendToBody: true,
+        confine: false,
         backgroundColor: tokens.bgCard,
         borderColor: tokens.bgSubtle,
         borderWidth: 1,
@@ -186,6 +204,18 @@
           fontFamily: 'Inter, sans-serif',
           fontSize: 13,
           color: tokens.textPrimary,
+        },
+        position: function (point, params, dom, rect, size) {
+          var x = point[0] + 10;
+          var y = point[1] - size.contentSize[1] / 2;
+          var vw = window.innerWidth;
+          var vh = window.innerHeight;
+          var margin = 10;
+          if (x + size.contentSize[0] > vw - margin) x = point[0] - size.contentSize[0] - 10;
+          if (x < margin) x = margin;
+          if (y + size.contentSize[1] > vh - margin) y = vh - margin - size.contentSize[1];
+          if (y < margin) y = margin;
+          return [x, y];
         },
         formatter: function (params) {
           var p = params[0];
