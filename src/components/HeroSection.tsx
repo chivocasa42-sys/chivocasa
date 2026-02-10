@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import Image from 'next/image';
 
 interface SearchResult {
     display_name: string;
@@ -122,15 +123,14 @@ export default function HeroSection({ onLocationSelect }: HeroSectionProps) {
 
     return (
         <section className="hero-search">
-            {/* LCP Image - Preloaded with high priority for Core Web Vitals */}
-            <img
+            {/* LCP Image - Next.js Image for automatic responsive srcset + optimization */}
+            <Image
                 src="/jardin-ca-01.webp"
                 alt=""
                 aria-hidden="true"
-                fetchPriority="high"
-                decoding="sync"
-                width={1920}
-                height={1080}
+                fill
+                priority
+                sizes="100vw"
                 className="hero-search-bg"
             />
             <div className="hero-search-overlay" />

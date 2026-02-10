@@ -401,8 +401,9 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
                             <div className="space-y-3">
                                 {/* Radius Slider */}
                                 <div className="flex items-center gap-2">
-                                    <label className="text-xs text-[var(--text-secondary)] whitespace-nowrap">Radio:</label>
+                                    <label htmlFor="map-radius-slider" className="text-xs text-[var(--text-secondary)] whitespace-nowrap">Radio:</label>
                                     <input
+                                        id="map-radius-slider"
                                         type="range"
                                         min="0.5"
                                         max="10"
@@ -557,6 +558,7 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
                                                     <button
                                                         onClick={goToPrevPage}
                                                         disabled={currentPage === 0 || isPaginating}
+                                                        aria-label="Página anterior"
                                                         className={`w-7 h-7 flex items-center justify-center rounded-full border transition-all ${currentPage === 0
                                                             ? 'border-gray-200 text-gray-300 cursor-not-allowed'
                                                             : 'border-[var(--border-color)] text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)]'
@@ -572,6 +574,7 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
                                                     <button
                                                         onClick={goToNextPage}
                                                         disabled={!nearbyData.pagination.has_more || isPaginating}
+                                                        aria-label="Página siguiente"
                                                         className={`w-7 h-7 flex items-center justify-center rounded-full border transition-all ${!nearbyData.pagination.has_more
                                                             ? 'border-gray-200 text-gray-300 cursor-not-allowed'
                                                             : 'border-[var(--border-color)] text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)]'
@@ -657,7 +660,7 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
 
                                                     {/* Bottom Row: Distance + Tags */}
                                                     <div className="flex items-center gap-2 text-xs">
-                                                        <span className="font-medium text-[var(--text-muted)]">{parseFloat(listing.distance_km).toFixed(1)} km</span>
+                                                        <span className="font-medium text-slate-600">{parseFloat(listing.distance_km).toFixed(1)} km</span>
                                                         {listing.tags && listing.tags.length > 0 && (
                                                             <>
                                                                 <span className="text-[var(--text-muted)]">•</span>

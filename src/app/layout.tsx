@@ -67,9 +67,6 @@ export default function RootLayout({
 }) {
   return (
     <html lang="es" suppressHydrationWarning>
-      <head>
-        <link rel="preload" href="/jardin-ca-01.webp" as="image" type="image/webp" />
-      </head>
       <body className={inter.className}>
         {children}
 
