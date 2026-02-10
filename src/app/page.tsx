@@ -1,17 +1,45 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import dynamic from 'next/dynamic';
 import Navbar from '@/components/Navbar';
 import HeroSection from '@/components/HeroSection';
 import FeatureCards from '@/components/FeatureCards';
 import HomeHeader from '@/components/HomeHeader';
 import KPIStrip from '@/components/KPIStrip';
-import MarketRankingCharts from '@/components/MarketRankingCharts';
-import MapExplorer from '@/components/MapExplorer';
 import DepartmentCard from '@/components/DepartmentCard';
 import SectionHeader from '@/components/SectionHeader';
 import { departamentoToSlug } from '@/lib/slugify';
 import Link from 'next/link';
+
+// Dynamic imports — keep heavy components (Leaflet, ECharts) out of initial bundle
+const MapExplorer = dynamic(() => import('@/components/MapExplorer'), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full rounded-2xl border border-[#e2e8f0] bg-[var(--bg-card)] overflow-hidden mb-8" style={{ height: '500px' }}>
+      <div className="skeleton-pulse w-full h-full" />
+    </div>
+  ),
+});
+
+const MarketRankingCharts = dynamic(() => import('@/components/MarketRankingCharts'), {
+  ssr: false,
+  loading: () => (
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="ranking-chart-skeleton">
+          <div className="skeleton-title" />
+          <div className="skeleton-subtitle" />
+          <div className="skeleton-bars">
+            <div className="skeleton-bar" style={{ width: '90%' }} />
+            <div className="skeleton-bar" style={{ width: '65%' }} />
+            <div className="skeleton-bar" style={{ width: '45%' }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  ),
+});
 
 interface HeroLocation {
   lat: number;

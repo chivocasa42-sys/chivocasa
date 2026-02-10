@@ -64,9 +64,9 @@ function scriptsAlreadyLoaded(): boolean {
 
 // Pill config per filter — reuses same classes as DepartmentCard
 const PILL_CONFIG: Record<ViewType, { label: string; pillClass: string; labelClass: string }> = {
-  all:  { label: 'TOTAL', pillClass: 'dept-card__pill--todos',  labelClass: 'dept-card__pill-label--todos' },
-  sale: { label: 'VENTA', pillClass: '',                        labelClass: 'dept-card__pill-label--venta' },
-  rent: { label: 'RENTA', pillClass: 'dept-card__pill--renta',  labelClass: 'dept-card__pill-label--renta' },
+  all: { label: 'TOTAL', pillClass: 'dept-card__pill--todos', labelClass: 'dept-card__pill-label--todos' },
+  sale: { label: 'VENTA', pillClass: '', labelClass: 'dept-card__pill-label--venta' },
+  rent: { label: 'RENTA', pillClass: 'dept-card__pill--renta', labelClass: 'dept-card__pill-label--renta' },
 };
 
 export default function MarketRankingCharts({ departments, activeFilter = 'all' }: MarketRankingChartsProps) {
@@ -295,13 +295,13 @@ export default function MarketRankingCharts({ departments, activeFilter = 'all' 
       {/* Apache ECharts CDN — afterInteractive for faster load + reliable onLoad on SPA */}
       <Script
         src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"
-        strategy="afterInteractive"
+        strategy="lazyOnload"
         onLoad={onEChartsLoad}
       />
       {/* Interop script */}
       <Script
         src="/js/marketRankingCharts.js"
-        strategy="afterInteractive"
+        strategy="lazyOnload"
         onLoad={onInteropLoad}
       />
 
