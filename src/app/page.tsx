@@ -190,6 +190,17 @@ export default function Home() {
           </div>
         ) : (
           <>
+            {/* Market Panorama Header */}
+            <div className="pt-8 mb-4">
+              <SectionHeader
+                title={['Panorama del mercado inmobiliario', 'en El Salvador']}
+                subtitle="Precios promedio, rentas mensuales y nuevas oportunidades inmobiliarias, actualizadas para ayudarte a tomar decisiones con mayor confianza."
+              />
+              <p className="text-xs md:text-sm text-[var(--text-muted)] text-center -mt-6 mb-8 max-w-4xl mx-auto italic opacity-75">
+                Los valores mostrados son promedios estimados y pueden variar según la zona y el tipo de propiedad.
+              </p>
+            </div>
+
             {/* KPI Strip */}
             <KPIStrip stats={kpiStats} />
 
