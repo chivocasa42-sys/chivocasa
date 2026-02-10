@@ -6,8 +6,7 @@ import HeroSection from '@/components/HeroSection';
 import FeatureCards from '@/components/FeatureCards';
 import HomeHeader from '@/components/HomeHeader';
 import KPIStrip from '@/components/KPIStrip';
-import RankingsSection from '@/components/RankingsSection';
-import TrendsSection from '@/components/TrendsSection';
+import MarketRankingCharts from '@/components/MarketRankingCharts';
 import MapExplorer from '@/components/MapExplorer';
 import DepartmentCard from '@/components/DepartmentCard';
 import SectionHeader from '@/components/SectionHeader';
@@ -232,21 +231,9 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Rankings */}
+            {/* Rankings — CanvasJS Charts with lazy load + polling */}
             <div id="rankings">
-              <RankingsSection
-                topExpensive={rankings.topExpensive}
-                topCheap={rankings.topCheap}
-                topActive={rankings.topActive}
-              />
-            </div>
-
-            {/* Tendencias */}
-            <div id="tendencias">
-              <TrendsSection
-                departmentData={departments}
-                period={period}
-              />
+              <MarketRankingCharts departments={departments} />
             </div>
 
             {/* No Clasificado - solo mostrar si hay data */}
