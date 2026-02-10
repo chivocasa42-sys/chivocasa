@@ -252,7 +252,7 @@ export default function Home() {
 
             {/* Rankings — CanvasJS Charts with lazy load + polling */}
             <div id="rankings">
-              <MarketRankingCharts departments={departments} />
+              <MarketRankingCharts departments={departments} activeFilter={view} />
             </div>
 
             {/* No Clasificado - solo mostrar si hay data */}

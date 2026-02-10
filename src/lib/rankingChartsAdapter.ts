@@ -57,23 +57,47 @@ export interface DepartmentStats {
   total_count: number;
 }
 
-export function computeRankings(departments: DepartmentStats[]) {
-  const topExpensive = departments
-    .filter(d => d.sale && d.sale.avg > 0)
-    .sort((a, b) => (b.sale?.avg || 0) - (a.sale?.avg || 0))
-    .slice(0, 3)
-    .map(d => ({ name: d.departamento, value: d.sale?.avg || 0 }));
+export type ViewType = 'all' | 'sale' | 'rent';
 
-  const topCheap = departments
-    .filter(d => d.sale && d.sale.avg > 0)
-    .sort((a, b) => (a.sale?.avg || 0) - (b.sale?.avg || 0))
+// Get the relevant avg price for a department based on the active filter
+function getAvgPrice(d: DepartmentStats, view: ViewType): number {
+  if (view === 'sale') return d.sale?.avg || 0;
+  if (view === 'rent') return d.rent?.avg || 0;
+  // 'all': weighted average of sale and rent
+  const saleAvg = d.sale?.avg || 0;
+  const rentAvg = d.rent?.avg || 0;
+  const saleCount = d.sale?.count || 0;
+  const rentCount = d.rent?.count || 0;
+  const total = saleCount + rentCount;
+  if (total === 0) return 0;
+  return (saleAvg * saleCount + rentAvg * rentCount) / total;
+}
+
+// Get the relevant listing count for a department based on the active filter
+function getCount(d: DepartmentStats, view: ViewType): number {
+  if (view === 'sale') return d.sale?.count || 0;
+  if (view === 'rent') return d.rent?.count || 0;
+  return d.total_count;
+}
+
+export function computeRankings(departments: DepartmentStats[], view: ViewType = 'all') {
+  const withPrice = departments.filter(d => getAvgPrice(d, view) > 0);
+
+  const topExpensive = [...withPrice]
+    .sort((a, b) => getAvgPrice(b, view) - getAvgPrice(a, view))
     .slice(0, 3)
-    .map(d => ({ name: d.departamento, value: d.sale?.avg || 0 }));
+    .map(d => ({ name: d.departamento, value: getAvgPrice(d, view) }));
+
+  const topCheap = [...withPrice]
+    .sort((a, b) => getAvgPrice(a, view) - getAvgPrice(b, view))
+    .slice(0, 3)
+    .map(d => ({ name: d.departamento, value: getAvgPrice(d, view) }));
 
   const topActive = [...departments]
-    .sort((a, b) => b.total_count - a.total_count)
+    .filter(d => getCount(d, view) > 0)
+    .sort((a, b) => getCount(b, view) - getCount(a, view))
     .slice(0, 3)
-    .map(d => ({ name: d.departamento, value: d.total_count }));
+    .map(d => ({ name: d.departamento, value: getCount(d, view) }));
 
   return { topExpensive, topCheap, topActive };
 }

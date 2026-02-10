@@ -10,6 +10,7 @@ import {
   toCheapDataPoints,
   toActiveDataPoints,
   type DepartmentStats,
+  type ViewType,
 } from '@/lib/rankingChartsAdapter';
 
 declare global {
@@ -28,6 +29,7 @@ declare global {
 
 interface MarketRankingChartsProps {
   departments: DepartmentStats[];
+  activeFilter?: ViewType;
 }
 
 const REFRESH_INTERVAL_MS = 30_000;
@@ -60,7 +62,14 @@ function scriptsAlreadyLoaded(): boolean {
     !!window.MarketRankingCharts;
 }
 
-export default function MarketRankingCharts({ departments }: MarketRankingChartsProps) {
+// Pill config per filter — reuses same classes as DepartmentCard
+const PILL_CONFIG: Record<ViewType, { label: string; pillClass: string; labelClass: string }> = {
+  all:  { label: 'TOTAL', pillClass: 'dept-card__pill--todos',  labelClass: 'dept-card__pill-label--todos' },
+  sale: { label: 'VENTA', pillClass: '',                        labelClass: 'dept-card__pill-label--venta' },
+  rent: { label: 'RENTA', pillClass: 'dept-card__pill--renta',  labelClass: 'dept-card__pill-label--renta' },
+};
+
+export default function MarketRankingCharts({ departments, activeFilter = 'all' }: MarketRankingChartsProps) {
   const router = useRouter();
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error' | 'empty'>('idle');
   const [pulsing, setPulsing] = useState(false);
@@ -88,7 +97,7 @@ export default function MarketRankingCharts({ departments }: MarketRankingCharts
   const renderCharts = useCallback((depts: DepartmentStats[], shouldCache = true) => {
     if (!window.MarketRankingCharts || !window.MarketRankingCharts.isReady()) return false;
 
-    const { topExpensive, topCheap, topActive } = computeRankings(depts);
+    const { topExpensive, topCheap, topActive } = computeRankings(depts, activeFilter);
 
     if (topExpensive.length === 0 && topCheap.length === 0 && topActive.length === 0) {
       setStatus('empty');
@@ -262,6 +271,17 @@ export default function MarketRankingCharts({ departments }: MarketRankingCharts
     };
   }, [tryInit, startPolling, stopPolling]);
 
+  // Re-render immediately when filter changes (no 30s wait)
+  useEffect(() => {
+    if (!chartsInitialized.current) return;
+    if (departments.length > 0) {
+      renderCharts(departments);
+    } else {
+      const cached = readCache();
+      if (cached && cached.length > 0) renderCharts(cached, false);
+    }
+  }, [activeFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Retry handler
   const handleRetry = () => {
     setStatus('loading');
@@ -338,15 +358,20 @@ export default function MarketRankingCharts({ departments }: MarketRankingCharts
           className="grid grid-cols-1 md:grid-cols-3 gap-5"
           style={{ display: status === 'ready' ? 'grid' : 'none' }}
         >
-          <div className="ranking-chart-card">
-            <div id="chart-expensive" className="ranking-chart-canvas" />
-          </div>
-          <div className="ranking-chart-card">
-            <div id="chart-cheap" className="ranking-chart-canvas" />
-          </div>
-          <div className="ranking-chart-card">
-            <div id="chart-active" className="ranking-chart-canvas" />
-          </div>
+          {['chart-expensive', 'chart-cheap', 'chart-active'].map((id) => {
+            const pill = PILL_CONFIG[activeFilter];
+            return (
+              <div key={id} className="ranking-chart-card">
+                {/* Filter pill — same markup/classes as DepartmentCard */}
+                <div className="dept-card__badge-pill">
+                  <div className={`dept-card__pill ${pill.pillClass}`}>
+                    <span className={`dept-card__pill-label ${pill.labelClass}`}>{pill.label}</span>
+                  </div>
+                </div>
+                <div id={id} className="ranking-chart-canvas" />
+              </div>
+            );
+          })}
         </div>
       </div>
     </>
