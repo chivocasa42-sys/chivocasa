@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useMemo, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
 
 export type FilterType = 'all' | 'sale' | 'rent';
 export type SortOption = 'price_asc' | 'price_desc' | 'recent';
@@ -42,8 +41,6 @@ function formatPriceShort(n: number): string {
 }
 
 export function useDepartmentFilters({ slug, initialType = 'all' }: UseDepartmentFiltersOptions) {
-  const router = useRouter();
-
   const [filters, setFilters] = useState<DepartmentFilters>({
     ...DEFAULTS,
     listingType: initialType,
@@ -53,14 +50,10 @@ export function useDepartmentFilters({ slug, initialType = 'all' }: UseDepartmen
 
   const setType = useCallback((type: FilterType) => {
     setFilters(prev => ({ ...prev, listingType: type }));
-    // Sync URL for SEO
-    if (type === 'all') {
-      router.push(`/${slug}`, { scroll: false });
-    } else {
-      const urlSegment = type === 'sale' ? 'venta' : 'renta';
-      router.push(`/${slug}/${urlSegment}`, { scroll: false });
-    }
-  }, [slug, router]);
+    // Sync URL for SEO without triggering Next.js navigation/remount
+    const url = type === 'all' ? `/${slug}` : `/${slug}/${type === 'sale' ? 'venta' : 'renta'}`;
+    window.history.replaceState(null, '', url);
+  }, [slug]);
 
   const setSort = useCallback((sort: SortOption) => {
     setFilters(prev => ({ ...prev, sort }));
