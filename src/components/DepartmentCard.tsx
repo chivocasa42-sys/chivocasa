@@ -11,7 +11,7 @@ interface DepartmentCardProps {
     priceRangeMin: number;
     priceRangeMax: number;
     slug: string;
-    activeFilter?: 'sale' | 'rent';
+    activeFilter?: 'all' | 'sale' | 'rent';
 }
 
 function formatPrice(price: number): string {
@@ -26,7 +26,7 @@ function formatPriceCompact(price: number): string {
     return '$' + Math.round(price).toLocaleString();
 }
 
-function getFilterSegment(filter?: 'sale' | 'rent'): string {
+function getFilterSegment(filter?: 'all' | 'sale' | 'rent'): string {
     if (filter === 'sale') return '/venta';
     if (filter === 'rent') return '/renta';
     return '';
@@ -41,10 +41,11 @@ export default function DepartmentCard({
     // Determine which pill to show and its count
     const showVenta = activeFilter === 'sale' || !activeFilter;
     const showRenta = activeFilter === 'rent';
-    const pillCount = activeFilter === 'rent' ? (rentCount ?? 0) : (saleCount ?? 0);
-    const pillLabel = activeFilter === 'rent' ? 'RENTA' : 'VENTA';
-    const pillClass = activeFilter === 'rent' ? 'dept-card__pill--renta' : 'dept-card__pill--venta';
-    const pillLabelClass = activeFilter === 'rent' ? 'dept-card__pill-label--renta' : 'dept-card__pill-label--venta';
+    const isAll = activeFilter === 'all';
+    const pillCount = isAll ? totalCount : (activeFilter === 'rent' ? (rentCount ?? 0) : (saleCount ?? 0));
+    const pillLabel = isAll ? 'TOTAL' : (activeFilter === 'rent' ? 'RENTA' : 'VENTA');
+    const pillClass = isAll ? 'dept-card__pill--todos' : (activeFilter === 'rent' ? 'dept-card__pill--renta' : 'dept-card__pill--venta');
+    const pillLabelClass = isAll ? 'dept-card__pill-label--todos' : (activeFilter === 'rent' ? 'dept-card__pill-label--renta' : 'dept-card__pill-label--venta');
 
     return (
         <Link

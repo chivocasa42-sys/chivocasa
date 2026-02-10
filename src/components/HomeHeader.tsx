@@ -1,6 +1,6 @@
 'use client';
 
-type ViewType = 'sale' | 'rent';
+type ViewType = 'all' | 'sale' | 'rent';
 
 interface HomeHeaderProps {
     view: ViewType;
@@ -8,6 +8,7 @@ interface HomeHeaderProps {
 }
 
 const viewLabels: Record<ViewType, string> = {
+    'all': 'Total',
     'sale': 'Venta',
     'rent': 'Renta'
 };
@@ -24,7 +25,7 @@ export default function HomeHeader({
                 <div className="control-group">
                     {/* <label className="control-label">Mercado</label> - Removed as per user request */}
                     <div className="segmented-control">
-                        {(['sale', 'rent'] as ViewType[]).map(v => (
+                        {(['all', 'sale', 'rent'] as ViewType[]).map(v => (
                             <button
                                 key={v}
                                 onClick={() => onViewChange(v)}

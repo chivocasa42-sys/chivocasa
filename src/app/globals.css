@@ -2030,6 +2030,15 @@ body {
     0 1px 3px -1px rgba(0, 0, 0, 0.1) !important;
 }
 
+/* Todos variant for badge */
+.dept-card__badge-pill .dept-card__pill--todos,
+.dept-card__pill--todos {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+  box-shadow:
+    0 2px 8px -2px rgba(5, 150, 105, 0.35),
+    0 1px 3px -1px rgba(0, 0, 0, 0.1) !important;
+}
+
 /* Legacy Badge - Hidden */
 .dept-card__badge {
   display: none;
@@ -2140,6 +2149,12 @@ body {
 
 .dept-card__pill-label--renta {
   background: linear-gradient(145deg, #f87171 0%, #ef4444 50%, #dc2626 100%) !important;
+  color: #ffffff !important;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.15);
+}
+
+.dept-card__pill-label--todos {
+  background: linear-gradient(145deg, #34d399 0%, #10b981 50%, #059669 100%) !important;
   color: #ffffff !important;
   text-shadow: 0 1px 1px rgba(0, 0, 0, 0.15);
 }
@@ -2771,6 +2786,87 @@ body {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
+}
+
+/* =============================================
+   SKELETON LOADING CARDS
+   ============================================= */
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.skeleton-card {
+  background: #ffffff;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+}
+
+.skeleton-pulse {
+  background: linear-gradient(90deg,
+      #f1f5f9 0%,
+      #e2e8f0 40%,
+      #f1f5f9 60%,
+      #f1f5f9 100%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+  border-radius: 4px;
+}
+
+.skeleton-card__image {
+  aspect-ratio: 4/3;
+  width: 100%;
+}
+
+.skeleton-card__body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.skeleton-card__price {
+  height: 28px;
+  width: 55%;
+}
+
+.skeleton-card__specs {
+  height: 16px;
+  width: 75%;
+}
+
+.skeleton-card__tags {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.skeleton-card__tag {
+  height: 20px;
+  width: 60px;
+  border-radius: 4px;
+}
+
+/* Skeleton for Best Opportunity section */
+.skeleton-opportunity {
+  height: 180px;
+  border-radius: 16px;
+  margin-bottom: 32px;
+}
+
+/* Skeleton for filter bar */
+.skeleton-filter-bar {
+  height: 120px;
+  border-radius: 12px;
+  margin-bottom: 32px;
 }
