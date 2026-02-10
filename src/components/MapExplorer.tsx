@@ -23,8 +23,10 @@ const Circle = dynamic(
     { ssr: false }
 );
 
-// San Salvador default coordinates
+// San Salvador, Centro default coordinates
 const DEFAULT_CENTER: [number, number] = [13.6929, -89.2182];
+const DEFAULT_LOCATION = { lat: 13.6929, lng: -89.2182 };
+const DEFAULT_LOCATION_NAME = 'San Salvador';
 const DEFAULT_ZOOM = 12;
 const LISTINGS_PER_PAGE = 3;
 
@@ -134,9 +136,9 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
 ];
 
 export default function MapExplorer({ externalLocation }: MapExplorerProps) {
-    const [selectedLocation, setSelectedLocation] = useState<{ lat: number; lng: number } | null>(null);
+    const [selectedLocation, setSelectedLocation] = useState<{ lat: number; lng: number } | null>(DEFAULT_LOCATION);
     const [radius, setRadius] = useState(1.5);
-    const [searchQuery, setSearchQuery] = useState('');
+    const [searchQuery, setSearchQuery] = useState(DEFAULT_LOCATION_NAME);
     const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
     const [isSearching, setIsSearching] = useState(false);
     const [nearbyData, setNearbyData] = useState<NearbyData | null>(null);
@@ -154,8 +156,8 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
     // Modal state
     const [selectedListingId, setSelectedListingId] = useState<string | number | null>(null);
 
-    // Auto-fetch trigger: incremented when a search result is selected
-    const [autoFetchTrigger, setAutoFetchTrigger] = useState(0);
+    // Auto-fetch trigger: starts at 1 to fetch default location on mount
+    const [autoFetchTrigger, setAutoFetchTrigger] = useState(1);
 
     const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
