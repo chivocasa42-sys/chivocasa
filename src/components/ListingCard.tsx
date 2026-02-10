@@ -107,15 +107,19 @@ export default function ListingCard({ listing, onClick, isFeatured }: ListingCar
     const timeSinceText = getTimeSinceText(listing.published_date);
 
     return (
-        <div
-            className="group bg-white rounded-lg shadow-sm border border-slate-200 hover:shadow-xl transition-all cursor-pointer overflow-hidden"
+        <article
+            className="group bg-white rounded-lg shadow-sm border border-slate-200 hover:shadow-xl transition-all cursor-pointer overflow-hidden focus-visible:outline-2 focus-visible:outline-[var(--primary)] focus-visible:outline-offset-2"
             onClick={onClick}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick?.(); } }}
+            tabIndex={0}
+            role="button"
+            aria-label={listing.title || `Propiedad - ${formatPrice(listing.price)}`}
         >
             {/* Image Section - Larger aspect ratio */}
             <div className="relative aspect-[4/3] overflow-hidden">
                 <LazyImage
                     src={getImageUrl(listing.images)}
-                    alt="Propiedad"
+                    alt={listing.title || 'Propiedad en venta o renta'}
                     className="w-full h-full group-hover:scale-105 transition-transform duration-500"
                     placeholderSrc="/placeholder.webp"
                 />
@@ -177,7 +181,7 @@ export default function ListingCard({ listing, onClick, isFeatured }: ListingCar
                 {/* Time Since Published */}
                 {timeSinceText && (
                     <div className="flex items-center gap-1 text-[11px] text-slate-400 mb-2">
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
                         {timeSinceText}
@@ -196,6 +200,6 @@ export default function ListingCard({ listing, onClick, isFeatured }: ListingCar
                     ))}
                 </div>
             </div>
-        </div>
+        </article>
     );
 }

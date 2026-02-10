@@ -276,7 +276,7 @@ export default function DepartmentPage() {
                         href="/"
                         className="inline-flex items-center gap-2 text-[var(--primary)] hover:text-[var(--primary-hover)] mb-5 font-medium transition-colors"
                     >
-                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 16 16">
+                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
                             <path fillRule="evenodd" d="M15 8a.5.5 0 0 0-.5-.5H2.707l3.147-3.146a.5.5 0 1 0-.708-.708l-4 4a.5.5 0 0 0 0 .708l4 4a.5.5 0 0 0 .708-.708L2.707 8.5H14.5A.5.5 0 0 0 15 8z" />
                         </svg>
                         Volver al índice
@@ -325,6 +325,7 @@ export default function DepartmentPage() {
                                     value={sortBy}
                                     onChange={(e) => setSortBy(e.target.value as SortOption)}
                                     className="dropdown-select"
+                                    aria-label="Ordenar por"
                                 >
                                     <option value="price_asc">Precio: menor a mayor</option>
                                     <option value="price_desc">Precio: mayor a menor</option>
@@ -391,7 +392,7 @@ export default function DepartmentPage() {
                         <div className="card-float border-l-4 border-l-[var(--primary)] bg-gradient-to-r from-[var(--primary-light)] to-white p-4 md:p-5 mb-8">
                             <div className="flex flex-wrap items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-100">
                                 <div className="flex items-center gap-2">
-                                    <svg className="w-4 h-4 text-[var(--primary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <svg className="w-4 h-4 text-[var(--primary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
                                     </svg>
                                     <h2 className="text-xs font-black uppercase tracking-widest text-[var(--text-primary)]">Filtros</h2>
@@ -406,7 +407,7 @@ export default function DepartmentPage() {
                                         disabled={!selectedMunicipio}
                                         className="text-xs font-semibold text-[var(--primary)] hover:text-[var(--primary-hover)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
                                     >
-                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
                                         </svg>
                                         Limpiar filtros

@@ -116,7 +116,7 @@ export default function ListingModal({ externalId, onClose }: ListingModalProps)
 
     if (isLoading) {
         return (
-            <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+            <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose} role="dialog" aria-modal="true" aria-label="Cargando propiedad">
                 <div className="bg-white w-full max-w-sm mx-auto rounded-xl shadow-2xl p-8 flex items-center justify-center min-h-[200px]" onClick={(e) => e.stopPropagation()}>
                     <div className="flex flex-col items-center gap-4">
                         <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
@@ -129,10 +129,10 @@ export default function ListingModal({ externalId, onClose }: ListingModalProps)
 
     if (error || !listing) {
         return (
-            <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+            <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose} role="dialog" aria-modal="true" aria-label="Error al cargar propiedad">
                 <div className="bg-white w-full max-w-sm mx-auto rounded-xl shadow-2xl p-6 text-center" onClick={(e) => e.stopPropagation()}>
                     <div className="text-red-500 mb-3">
-                        <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                         </svg>
                     </div>
@@ -153,7 +153,7 @@ export default function ListingModal({ externalId, onClose }: ListingModalProps)
     const hasMap = listing.location?.latitude && listing.location?.longitude;
 
     return (
-        <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm overflow-y-auto flex items-center justify-center p-3 md:p-4" onClick={onClose}>
+        <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm overflow-y-auto flex items-center justify-center p-3 md:p-4" onClick={onClose} role="dialog" aria-modal="true" aria-label="Detalles de propiedad">
             <div className="relative bg-white w-full max-w-3xl rounded-xl shadow-2xl overflow-hidden max-h-[95vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
                 {/* Image Carousel - compact 16:9 */}
                 <div className="relative bg-slate-900">
@@ -161,8 +161,9 @@ export default function ListingModal({ externalId, onClose }: ListingModalProps)
                     <button
                         onClick={onClose}
                         className="absolute top-2 right-2 z-50 p-2 rounded-full bg-black/50 hover:bg-black/70 text-white transition-all"
+                        aria-label="Cerrar"
                     >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
                         </svg>
                     </button>
@@ -188,16 +189,18 @@ export default function ListingModal({ externalId, onClose }: ListingModalProps)
                             <button
                                 onClick={(e) => { e.stopPropagation(); goToPrev(); }}
                                 className="absolute left-2 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/90 hover:bg-white shadow-lg transition-all"
+                                aria-label="Imagen anterior"
                             >
-                                <svg className="w-5 h-5 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-5 h-5 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
                                 </svg>
                             </button>
                             <button
                                 onClick={(e) => { e.stopPropagation(); goToNext(); }}
                                 className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/90 hover:bg-white shadow-lg transition-all"
+                                aria-label="Imagen siguiente"
                             >
-                                <svg className="w-5 h-5 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-5 h-5 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
                                 </svg>
                             </button>
