@@ -13,6 +13,8 @@ export interface CardListing {
     bathrooms: number | null;
     area: number | null;
     municipio: string | null;
+    published_date: string | null;
+    last_updated: string | null;
     total_count: number;
 }
 

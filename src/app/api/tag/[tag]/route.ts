@@ -15,6 +15,8 @@ export interface CardListing {
     area: number | null;
     municipio: string | null;
     tags: string[] | null;  // For client-side tag filtering
+    published_date: string | null;
+    last_updated: string | null;
     total_count: number;
 }
 

@@ -78,10 +78,33 @@ function getLocationTags(location: ListingLocation | undefined, tags?: string[] 
     return locationTags.slice(0, 3);
 }
 
+// Get human-readable "time since" text in Spanish
+function getTimeSinceText(dateStr: string | undefined | null): string | null {
+    if (!dateStr) return null;
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return null;
+
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    if (diffMs < 0) return null;
+
+    const days = Math.floor(diffMs / 86400000);
+
+    if (days === 0) return 'Hoy';
+    if (days === 1) return 'Hace 1 día';
+    if (days < 7) return `Hace ${days} días`;
+    if (days < 14) return 'Hace 1 semana';
+    if (days < 30) return `Hace ${Math.floor(days / 7)} semanas`;
+    if (days < 60) return 'Hace 1 mes';
+    if (days < 365) return `Hace ${Math.floor(days / 30)} meses`;
+    return `Hace más de 1 año`;
+}
+
 export default function ListingCard({ listing, onClick, isFeatured }: ListingCardProps) {
     const specs = listing.specs || {};
     const area = getArea(specs);
     const locationTags = getLocationTags(listing.location, listing.tags);
+    const timeSinceText = getTimeSinceText(listing.published_date);
 
     return (
         <div
@@ -150,6 +173,16 @@ export default function ListingCard({ listing, onClick, isFeatured }: ListingCar
                         - {listing.listing_type === 'sale' ? 'Venta' : 'Renta'}
                     </span>
                 </div>
+
+                {/* Time Since Published */}
+                {timeSinceText && (
+                    <div className="flex items-center gap-1 text-[11px] text-slate-400 mb-2">
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        {timeSinceText}
+                    </div>
+                )}
 
                 {/* Location Tags */}
                 <div className="flex flex-wrap gap-1.5 mb-3 mt-2">

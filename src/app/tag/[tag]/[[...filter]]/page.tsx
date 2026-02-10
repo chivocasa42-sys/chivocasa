@@ -21,6 +21,8 @@ interface CardListing {
     area: number | null;
     municipio: string | null;
     tags: string[] | null;  // For client-side filtering
+    published_date: string | null;
+    last_updated: string | null;
     total_count: number;
 }
 
@@ -202,7 +204,8 @@ export default function TagPage() {
                 listing_type: l.listing_type,
                 images: l.first_image ? [l.first_image] : null,
                 specs: Object.keys(specs).length > 0 ? specs : null,
-                location: l.municipio ? { municipio_detectado: l.municipio } : null
+                location: l.municipio ? { municipio_detectado: l.municipio } : null,
+                published_date: l.published_date || l.last_updated || undefined
             };
         });
     }, [filteredListings]);
