@@ -632,6 +632,10 @@ def check_listing_still_active(url, source):
         'este anuncio está desactivado o expirado',
         'anuncio desactivado',
         'anuncio expirado',
+        'anuncio borrado',
+        'eliminado por el anunciante',
+        'ya no está disponible',
+        'ya no esta disponible',
     ]
     
     headers = {
@@ -767,6 +771,111 @@ def validate_and_deactivate_listings(run_start_time, sources=None, max_workers=5
         return validated, deactivated
     
     return validated, 0
+
+
+def validate_all_active_listings(sources=None, max_workers=10):
+    """
+    Validate ALL active listings in the database by checking if their URLs
+    are still live. This is a lightweight check (HTTP GET only, no full scrape)
+    that runs much faster than run_update_mode.
+    
+    Args:
+        sources: Optional list of source names to filter (e.g., ["Encuentra24"])
+        max_workers: Number of concurrent validation requests
+    
+    Returns:
+        Tuple of (validated_count, deactivated_count)
+    """
+    print("\n" + "="*60)
+    print("VALIDATE-ALL MODE: Checking all active listings")
+    print("="*60)
+    
+    # Determine which sources to validate
+    all_source_names = ["Encuentra24", "MiCasaSV", "Realtor", "VivoLatam"]
+    if sources:
+        sources_to_check = [s for s in sources if s in all_source_names]
+    else:
+        sources_to_check = all_source_names
+    
+    print(f"Sources to validate: {', '.join(sources_to_check)}")
+    
+    total_validated = 0
+    total_deactivated = 0
+    
+    for source in sources_to_check:
+        print(f"\n--- Validating {source} ---")
+        
+        # Fetch all active listings for this source
+        active_listings = get_active_listings_from_db(source=source)
+        
+        if not active_listings:
+            print(f"  No active listings found for {source}")
+            continue
+        
+        print(f"  Found {len(active_listings)} active listings to validate")
+        
+        # Validate listings concurrently
+        to_deactivate = []
+        validated = 0
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_listing = {
+                executor.submit(check_listing_still_active, l['url'], source): l
+                for l in active_listings
+            }
+            
+            for future in as_completed(future_to_listing):
+                listing = future_to_listing[future]
+                validated += 1
+                
+                try:
+                    is_active, reason = future.result()
+                    if not is_active:
+                        to_deactivate.append(listing['external_id'])
+                        print(f"    ✗ INACTIVE: {listing['url'][:70]}... ({reason})")
+                except Exception as e:
+                    print(f"    ? ERROR: {listing['url'][:70]}... ({e})")
+                
+                # Progress update every 100 listings
+                if validated % 100 == 0:
+                    print(f"    Progress: {validated}/{len(active_listings)} checked ({len(to_deactivate)} inactive)")
+        
+        print(f"  {source}: {validated} checked, {len(to_deactivate)} inactive")
+        
+        # Deactivate confirmed inactive listings
+        if to_deactivate:
+            deactivated = deactivate_listings(to_deactivate)
+            total_deactivated += deactivated
+            print(f"  Deactivated {deactivated} listings")
+        
+        total_validated += validated
+    
+    # Refresh materialized view after deactivations
+    if total_deactivated > 0:
+        print("\n=== Refreshing Materialized View ===")
+        try:
+            refresh_url = f"{SUPABASE_URL}/rest/v1/rpc/refresh_mv_sd_depto_stats"
+            refresh_resp = requests.post(
+                refresh_url,
+                headers={
+                    "apikey": SUPABASE_SERVICE_KEY,
+                    "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+                    "Content-Type": "application/json"
+                },
+                json={}
+            )
+            if refresh_resp.status_code in [200, 204]:
+                print("  Materialized view refreshed successfully!")
+            else:
+                print(f"  Warning: Could not refresh view. Status: {refresh_resp.status_code}")
+        except Exception as e:
+            print(f"  Warning: Error refreshing view: {e}")
+    
+    print(f"\n=== VALIDATE-ALL COMPLETE ===")
+    print(f"Total validated: {total_validated}")
+    print(f"Total deactivated: {total_deactivated}")
+    
+    return total_validated, total_deactivated
 
 
 def deactivate_listings(external_ids):
@@ -1862,7 +1971,7 @@ def scrape_listing(url, listing_type):
         page_html = str(soup)
         
         # Find all unique image suffixes for this listing (format: 29872317_abc123)
-        image_pattern = re.compile(rf'{external_id}_([a-z0-9]+)')
+        image_pattern = re.compile(rf'{external_id}_([a-z0-9]+(?:-[a-z0-9]+)*)')
         unique_suffixes = set(image_pattern.findall(page_html))
         
         if unique_suffixes:
@@ -2406,6 +2515,48 @@ def scrape_micasasv_listings_concurrent(urls, listing_type, max_workers=5, max_d
     
     return results, old_listing_count
 
+def get_realtor_detail_published_date(detail_url):
+    """
+    Fetch a single Realtor.com listing detail page and extract publishedAt
+    from its __NEXT_DATA__ JSON. Used as fallback when the list-page JSON
+    doesn't include the date.
+    
+    Args:
+        detail_url: Full URL of the listing detail page
+    
+    Returns:
+        Published date string in DD/MM/YYYY format, or empty string if not found
+    """
+    try:
+        session = get_realtor_session()
+        resp = session.get(detail_url, timeout=20)
+        if resp.status_code != 200:
+            return ""
+        
+        soup = BeautifulSoup(resp.text, "html.parser")
+        next_data = soup.select_one("script#__NEXT_DATA__")
+        
+        if not next_data or not next_data.string:
+            return ""
+        
+        data = json.loads(next_data.string)
+        apollo_state = data.get("props", {}).get("apolloState", {})
+        
+        # Find the ListingDetail entry with publishedAt
+        for key, value in apollo_state.items():
+            if key.startswith("ListingDetail:") and isinstance(value, dict):
+                published_at = value.get("publishedAt", "")
+                if published_at:
+                    try:
+                        dt = datetime.strptime(published_at.split(" ")[0], "%Y-%m-%d")
+                        return dt.strftime("%d/%m/%Y")
+                    except:
+                        pass
+        return ""
+    except Exception:
+        return ""
+
+
 def get_realtor_listings_from_page(page_url):
     """
     Extract listing data directly from Realtor.com page's __NEXT_DATA__ JSON.
@@ -2559,6 +2710,10 @@ def get_realtor_listings_from_page(page_url):
                     published_date = dt.strftime("%d/%m/%Y")
                 except:
                     pass
+            
+            # Fallback: fetch detail page if published_date is still empty
+            if not published_date and full_url:
+                published_date = get_realtor_detail_published_date(full_url)
             
             # Build details dict
             details = {}
@@ -3481,6 +3636,11 @@ if __name__ == "__main__":
         action="store_true",
         help="Update mode: re-scrape existing active listings from DB and update them (instead of scraping new listings)"
     )
+    parser.add_argument(
+        "--validate-all",
+        action="store_true",
+        help="Validate-all mode: check ALL active listings in DB to see if they are still live (lightweight HTTP check, no full re-scrape)"
+    )
     args = parser.parse_args()
     
     # Get source flags
@@ -3504,8 +3664,10 @@ if __name__ == "__main__":
     if not sources:
         sources = None  # run_update_mode will use all sources
     
-    # Check for update mode
-    if args.update:
+    # Check for validate-all mode first (lightweight)
+    if args.validate_all:
+        validate_all_active_listings(sources=sources, max_workers=10)
+    elif args.update:
         # Update mode: re-scrape and update existing active listings
         run_update_mode(sources=sources, limit=args.limit)
     else:
