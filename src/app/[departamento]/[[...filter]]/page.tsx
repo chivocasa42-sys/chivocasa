@@ -7,7 +7,10 @@ import Navbar from '@/components/Navbar';
 import ListingCard from '@/components/ListingCard';
 import ListingModal from '@/components/ListingModal';
 import BestOpportunitySection from '@/components/BestOpportunitySection';
-import MunicipalityFilterChips from '@/components/MunicipalityFilterChips';
+import DepartmentFilterBar from '@/components/DepartmentFilterBar';
+import ActiveFilterChips from '@/components/ActiveFilterChips';
+import { useDepartmentFilters } from '@/hooks/useDepartmentFilters';
+import type { FilterType, SortOption } from '@/hooks/useDepartmentFilters';
 import { slugToDepartamento } from '@/lib/slugify';
 
 // Lean listing shape from new API (v2 - location hierarchy)
@@ -52,8 +55,7 @@ interface PaginationState {
     hasMore: boolean;
 }
 
-type FilterType = 'all' | 'sale' | 'rent';
-type SortOption = 'recent' | 'price_asc' | 'price_desc';
+// FilterType and SortOption imported from useDepartmentFilters
 
 const PAGE_SIZE = 24;
 
@@ -81,8 +83,24 @@ export default function DepartmentPage() {
     const filterSlug = filterParam?.[0]; // First segment: 'venta' or 'alquiler'
     const filter: FilterType = tipoToFilter(filterSlug);
 
+    // Unified filter state (single source of truth)
+    const {
+        filters,
+        setType,
+        setSort,
+        applyPrice,
+        clearPrice,
+        setMunicipio,
+        toggleCategory,
+        removeChip,
+        clearAll,
+        activeChips,
+        activeFiltersCount,
+        hasActiveFilters,
+        priceLabel,
+    } = useDepartmentFilters({ slug, initialType: filter });
+
     const [listings, setListings] = useState<CardListing[]>([]);
-    const [sortBy, setSortBy] = useState<SortOption>('price_asc');
     const [isLoading, setIsLoading] = useState(true);
     const [isLoadingMore, setIsLoadingMore] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -99,27 +117,24 @@ export default function DepartmentPage() {
     const [bestSale, setBestSale] = useState<TopScoredListing | null>(null);
     const [bestRent, setBestRent] = useState<TopScoredListing | null>(null);
 
-    // Municipality filtering (server-side)
-    const [selectedMunicipio, setSelectedMunicipio] = useState<string | null>(null);
     // Available municipalities in this department
     const [municipalities, setMunicipalities] = useState<Municipality[]>([]);
 
-    // Reset municipality selection when filter type changes (to get fresh counts)
-    useEffect(() => {
-        setSelectedMunicipio(null);
-    }, [filter]);
-
-    // Fetch listings with pagination and optional municipality filter
+    // Fetch listings with pagination and optional filters
     const fetchListings = useCallback(async (
         offset: number,
         type: FilterType,
         sort: SortOption,
         municipio: string | null = null,
-        append: boolean = false
+        append: boolean = false,
+        priceMin: number | null = null,
+        priceMax: number | null = null,
     ) => {
         const typeParam = type === 'all' ? '' : `&type=${type}`;
         const municipioParam = municipio ? `&municipio=${encodeURIComponent(municipio)}` : '';
-        const res = await fetch(`/api/department/${slug}?limit=${PAGE_SIZE}&offset=${offset}${typeParam}&sort=${sort}${municipioParam}`);
+        const priceMinParam = priceMin != null ? `&price_min=${priceMin}` : '';
+        const priceMaxParam = priceMax != null ? `&price_max=${priceMax}` : '';
+        const res = await fetch(`/api/department/${slug}?limit=${PAGE_SIZE}&offset=${offset}${typeParam}&sort=${sort}${municipioParam}${priceMinParam}${priceMaxParam}`);
 
         if (!res.ok) {
             if (res.status === 404) {
@@ -146,7 +161,7 @@ export default function DepartmentPage() {
         return data;
     }, [slug]);
 
-    // Initial load - refetch when filter or municipio changes
+    // Initial load - refetch when any filter changes
     useEffect(() => {
         async function fetchData() {
             setIsLoading(true);
@@ -155,7 +170,7 @@ export default function DepartmentPage() {
             try {
                 // Fetch listings and best opportunities in parallel
                 const [listingsData, topScoredRes] = await Promise.all([
-                    fetchListings(0, filter, sortBy, selectedMunicipio),
+                    fetchListings(0, filters.listingType, filters.sort, filters.municipio, false, filters.priceMin, filters.priceMax),
                     fetch(`/api/department/${slug}/top-scored?type=all&limit=1`)
                 ]);
 
@@ -173,7 +188,7 @@ export default function DepartmentPage() {
         }
 
         if (slug) fetchData();
-    }, [slug, fetchListings, filter, sortBy, selectedMunicipio]);
+    }, [slug, fetchListings, filters.listingType, filters.sort, filters.municipio, filters.priceMin, filters.priceMax]);
 
     // Load more handler
     const handleLoadMore = useCallback(async () => {
@@ -182,13 +197,13 @@ export default function DepartmentPage() {
         setIsLoadingMore(true);
         try {
             const newOffset = pagination.offset + PAGE_SIZE;
-            await fetchListings(newOffset, filter, sortBy, selectedMunicipio, true);
+            await fetchListings(newOffset, filters.listingType, filters.sort, filters.municipio, true, filters.priceMin, filters.priceMax);
         } catch (err) {
             console.error('Error loading more:', err);
         } finally {
             setIsLoadingMore(false);
         }
-    }, [isLoadingMore, pagination.hasMore, pagination.offset, filter, sortBy, fetchListings]);
+    }, [isLoadingMore, pagination.hasMore, pagination.offset, filters, fetchListings]);
 
     // Intersection Observer for infinite scroll
     // Disabled when filter tags are selected
@@ -237,8 +252,8 @@ export default function DepartmentPage() {
     };
 
     // Determine which best opportunities to show based on filter
-    const showBestSale = filter === 'all' || filter === 'sale';
-    const showBestRent = filter === 'all' || filter === 'rent';
+    const showBestSale = filters.listingType === 'all' || filters.listingType === 'sale';
+    const showBestRent = filters.listingType === 'all' || filters.listingType === 'rent';
 
     const featuredIds = useMemo(() => {
         const ids = new Set<string>();
@@ -247,21 +262,7 @@ export default function DepartmentPage() {
         return ids;
     }, [bestSale?.external_id, bestRent?.external_id]);
 
-    const clearMunicipioFilter = useCallback(() => setSelectedMunicipio(null), []);
-
     const resultsCount = pagination.total;
-
-    const appliedSummary = useMemo(() => {
-        const parts: string[] = [];
-        if (filter === 'sale') parts.push('Venta');
-        if (filter === 'rent') parts.push('Renta');
-
-        if (selectedMunicipio) {
-            parts.push(selectedMunicipio);
-        }
-
-        return parts;
-    }, [filter, selectedMunicipio]);
 
     return (
         <>
@@ -282,64 +283,49 @@ export default function DepartmentPage() {
                         Volver al índice
                     </Link>
 
-                    <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-                        <div>
-                            <h1 className="text-4xl md:text-5xl font-black text-[var(--text-primary)] tracking-tight">
-                                {departamento}
-                            </h1>
-                            <p className="status-line">
-                                {isLoading ? (
-                                    <span>Cargando…</span>
-                                ) : (
-                                    <>
-                                        <span>{pagination.total}</span> propiedades{getFilterDisplayText(filter) ? ` ${getFilterDisplayText(filter)}` : ''} · <span>Mostrando {listings.length}</span>
-                                    </>
-                                )}
-                            </p>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-4">
-                            <div className="pill-group">
-                                <Link
-                                    href={`/${slug}`}
-                                    className={`pill-btn ${filter === 'all' ? 'active' : ''}`}
-                                >
-                                    Todos
-                                </Link>
-                                <Link
-                                    href={`/${slug}/venta`}
-                                    className={`pill-btn ${filter === 'sale' ? 'active' : ''}`}
-                                >
-                                    Venta
-                                </Link>
-                                <Link
-                                    href={`/${slug}/renta`}
-                                    className={`pill-btn ${filter === 'rent' ? 'active' : ''}`}
-                                >
-                                    Renta
-                                </Link>
-                            </div>
-
-                            <div className="dropdown-control">
-                                <select
-                                    value={sortBy}
-                                    onChange={(e) => setSortBy(e.target.value as SortOption)}
-                                    className="dropdown-select"
-                                    aria-label="Ordenar por"
-                                >
-                                    <option value="price_asc">Precio: menor a mayor</option>
-                                    <option value="price_desc">Precio: mayor a menor</option>
-                                    <option value="recent">Más recientes</option>
-                                </select>
-                                <div className="dropdown-icon" aria-hidden="true">
-                                    <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
-                                        <path d="M6 8l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                                    </svg>
-                                </div>
-                            </div>
-                        </div>
+                    <div>
+                        <h1 className="text-4xl md:text-5xl font-black text-[var(--text-primary)] tracking-tight">
+                            {departamento}
+                        </h1>
+                        <p className="status-line">
+                            {isLoading ? (
+                                <span>Cargando…</span>
+                            ) : (
+                                <>
+                                    <span>{pagination.total}</span> propiedades{getFilterDisplayText(filters.listingType) ? ` ${getFilterDisplayText(filters.listingType)}` : ''} · <span>Mostrando {listings.length}</span>
+                                </>
+                            )}
+                        </p>
                     </div>
                 </div>
+
+                {/* Unified Filter Bar */}
+                <DepartmentFilterBar
+                    listingType={filters.listingType}
+                    sort={filters.sort}
+                    priceLabel={priceLabel}
+                    priceMin={filters.priceMin}
+                    priceMax={filters.priceMax}
+                    activeFiltersCount={activeFiltersCount}
+                    hasActiveFilters={hasActiveFilters}
+                    resultsCount={resultsCount}
+                    municipalities={municipalities}
+                    selectedMunicipio={filters.municipio}
+                    categories={filters.categories}
+                    onTypeChange={setType}
+                    onSortChange={setSort}
+                    onPriceApply={applyPrice}
+                    onPriceClear={clearPrice}
+                    onMunicipioSelect={setMunicipio}
+                    onCategoryToggle={toggleCategory}
+                    onClearAll={clearAll}
+                />
+
+                {/* Active Filter Chips */}
+                <ActiveFilterChips
+                    chips={activeChips}
+                    onRemove={removeChip}
+                />
 
                 {/* Content */}
                 {isLoading ? (
@@ -389,50 +375,14 @@ export default function DepartmentPage() {
                             departamentoName={departamento}
                         />
 
-                        <div className="card-float border-l-4 border-l-[var(--primary)] bg-gradient-to-r from-[var(--primary-light)] to-white p-4 md:p-5 mb-8">
-                            <div className="flex flex-wrap items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-100">
-                                <div className="flex items-center gap-2">
-                                    <svg className="w-4 h-4 text-[var(--primary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-                                    </svg>
-                                    <h2 className="text-xs font-black uppercase tracking-widest text-[var(--text-primary)]">Filtros</h2>
-                                </div>
-                                <div className="flex items-center gap-4">
-                                    <span className="text-xs text-[var(--text-muted)]">
-                                        Resultados: <span className="font-bold text-[var(--text-secondary)]">{resultsCount}</span>
-                                    </span>
-                                    <button
-                                        type="button"
-                                        onClick={clearMunicipioFilter}
-                                        disabled={!selectedMunicipio}
-                                        className="text-xs font-semibold text-[var(--primary)] hover:text-[var(--primary-hover)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
-                                    >
-                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                                        </svg>
-                                        Limpiar filtros
-                                    </button>
-                                </div>
-                            </div>
-
-                            {municipalities.length > 0 && (
-                                <MunicipalityFilterChips
-                                    municipalities={municipalities}
-                                    selectedMunicipio={selectedMunicipio}
-                                    onSelect={setSelectedMunicipio}
-                                    maxVisible={10}
-                                />
-                            )}
-                        </div>
-
                         <div className="mb-8">
                             <div className="text-center mb-6 pb-4 border-b border-slate-200">
                                 <h2 className="text-2xl md:text-3xl font-black text-[var(--text-primary)] tracking-tight mb-2">
                                     Todas las propiedades
                                 </h2>
-                                {appliedSummary.length > 0 ? (
+                                {hasActiveFilters ? (
                                     <p className="text-base text-[var(--text-muted)]">
-                                        Aplicando: <span className="font-semibold text-[var(--text-secondary)]">{appliedSummary.join(' · ')}</span>
+                                        Aplicando: <span className="font-semibold text-[var(--text-secondary)]">{activeChips.map(c => c.label).join(' · ')}</span>
                                     </p>
                                 ) : (
                                     <p className="text-base text-[var(--text-muted)]">
@@ -472,7 +422,7 @@ export default function DepartmentPage() {
                             ) : (
                                 <div className="card-float p-8 text-center">
                                     <p className="text-[var(--text-secondary)]">
-                                        No hay propiedades {getFilterDisplayText(filter)} en este departamento.
+                                        No hay propiedades {getFilterDisplayText(filters.listingType)} en este departamento.
                                     </p>
                                 </div>
                             )}

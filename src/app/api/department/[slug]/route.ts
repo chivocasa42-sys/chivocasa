@@ -38,6 +38,10 @@ export async function GET(
         const listingType = searchParams.get('type'); // 'sale', 'rent', or null for all
         const sortBy = searchParams.get('sort') || 'recent';
         const municipio = searchParams.get('municipio'); // NEW: filter by municipality
+        const priceMinRaw = searchParams.get('price_min');
+        const priceMaxRaw = searchParams.get('price_max');
+        const priceMin = priceMinRaw ? parseFloat(priceMinRaw) : null;
+        const priceMax = priceMaxRaw ? parseFloat(priceMaxRaw) : null;
 
         // Validar slug
         if (!isValidDepartamentoSlug(slug)) {
@@ -111,6 +115,15 @@ export async function GET(
             return true;
         });
 
+        // Apply price range filter (post-RPC, same pattern as misclassification filter)
+        const priceFiltered = (priceMin != null || priceMax != null)
+            ? filteredData.filter(listing => {
+                if (priceMin != null && listing.price < priceMin) return false;
+                if (priceMax != null && listing.price > priceMax) return false;
+                return true;
+            })
+            : filteredData;
+
         // Parse municipalities if fetched
         let municipalities: Municipality[] = [];
         if (municipalitiesRes && municipalitiesRes.ok) {
@@ -124,7 +137,7 @@ export async function GET(
         return NextResponse.json({
             departamento,
             slug,
-            listings: filteredData,
+            listings: priceFiltered,
             municipalities, // NEW: available municipalities for filtering
             pagination: {
                 total,
