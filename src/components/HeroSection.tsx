@@ -129,6 +129,8 @@ export default function HeroSection({ onLocationSelect }: HeroSectionProps) {
                 aria-hidden="true"
                 fetchPriority="high"
                 decoding="sync"
+                width={1920}
+                height={1080}
                 className="hero-search-bg"
             />
             <div className="hero-search-overlay" />
@@ -142,6 +144,7 @@ export default function HeroSection({ onLocationSelect }: HeroSectionProps) {
                         <input
                             type="text"
                             placeholder="Buscar por ubicación (ej: Santa Tecla, Escalón, San Salvador...)"
+                            aria-label="Buscar por ubicación"
                             value={searchQuery}
                             onChange={(e) => handleSearchInput(e.target.value)}
                             onKeyDown={handleKeyDown}

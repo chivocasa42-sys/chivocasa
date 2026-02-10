@@ -331,6 +331,7 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
                                 <input
                                     type="text"
                                     placeholder="Buscar lugar (Santa Tecla, Escalón...)"
+                                    aria-label="Buscar lugar en el mapa"
                                     value={searchQuery}
                                     onChange={(e) => handleSearchInput(e.target.value)}
                                     className="w-full px-4 py-2 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--text-primary)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent"
@@ -486,9 +487,9 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
                                     <div className="w-16 h-16 bg-[var(--bg-subtle)] rounded-full flex items-center justify-center mb-4">
                                         <span className="text-3xl">🗺️</span>
                                     </div>
-                                    <h4 className="text-base font-semibold text-[var(--text-primary)] mb-2">
+                                    <h3 className="text-base font-semibold text-[var(--text-primary)] mb-2">
                                         Selecciona una ubicación
-                                    </h4>
+                                    </h3>
                                     <p className="text-sm text-[var(--text-muted)] max-w-xs">
                                         Haz clic en el mapa o busca un lugar para ver propiedades cercanas con precios y estadísticas
                                     </p>
@@ -595,7 +596,10 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
                                                 <div className="w-24 h-20 flex-shrink-0 rounded-md overflow-hidden bg-slate-200">
                                                     <img
                                                         src={listing.first_image || '/placeholder.webp'}
-                                                        alt=""
+                                                        alt={listing.title}
+                                                        loading="lazy"
+                                                        width={96}
+                                                        height={80}
                                                         className="w-full h-full object-cover"
                                                         onError={(e) => {
                                                             (e.target as HTMLImageElement).src = '/placeholder.webp';
