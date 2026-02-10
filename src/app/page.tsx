@@ -6,8 +6,7 @@ import HeroSection from '@/components/HeroSection';
 import FeatureCards from '@/components/FeatureCards';
 import HomeHeader from '@/components/HomeHeader';
 import KPIStrip from '@/components/KPIStrip';
-import RankingsSection from '@/components/RankingsSection';
-import TrendsSection from '@/components/TrendsSection';
+import MarketRankingCharts from '@/components/MarketRankingCharts';
 import MapExplorer from '@/components/MapExplorer';
 import DepartmentCard from '@/components/DepartmentCard';
 import SectionHeader from '@/components/SectionHeader';
@@ -28,7 +27,7 @@ interface DepartmentStats {
 }
 
 type PeriodType = '7d' | '30d' | '90d';
-type ViewType = 'sale' | 'rent';
+type ViewType = 'all' | 'sale' | 'rent';
 type OrderType = 'activity' | 'price' | 'variation';
 
 export default function Home() {
@@ -38,7 +37,7 @@ export default function Home() {
 
   // Controles
   const [period, setPeriod] = useState<PeriodType>('30d');
-  const [view, setView] = useState<ViewType>('sale');
+  const [view, setView] = useState<ViewType>('all');
   const [orderBy, setOrderBy] = useState<OrderType>('activity');
 
   // Hero → MapExplorer bridge
@@ -126,6 +125,7 @@ export default function Home() {
     } else if (view === 'rent') {
       filtered = filtered.filter(d => d.rent && d.rent.count > 0);
     }
+    // 'all' shows everything — no additional filtering
 
     // Ordenar
     switch (orderBy) {
@@ -152,12 +152,19 @@ export default function Home() {
     if (view === 'rent' && dept.rent) {
       return { median: dept.rent.avg, min: dept.rent.min, max: dept.rent.max };
     }
-    // All: usar venta si existe
+    // 'all': weighted average of sale and rent prices, combined min/max
     const saleAvg = dept.sale?.avg || 0;
+    const rentAvg = dept.rent?.avg || 0;
+    const saleCount = dept.sale?.count || 0;
+    const rentCount = dept.rent?.count || 0;
+    const totalCount = saleCount + rentCount;
+    const weightedMedian = totalCount > 0
+      ? (saleAvg * saleCount + rentAvg * rentCount) / totalCount
+      : 0;
     return {
-      median: saleAvg,
-      min: dept.sale?.min || dept.rent?.min || 0,
-      max: dept.sale?.max || dept.rent?.max || 0
+      median: weightedMedian || saleAvg || rentAvg,
+      min: Math.min(dept.sale?.min || Infinity, dept.rent?.min || Infinity) === Infinity ? 0 : Math.min(dept.sale?.min || Infinity, dept.rent?.min || Infinity),
+      max: Math.max(dept.sale?.max || 0, dept.rent?.max || 0)
     };
   };
 
@@ -243,21 +250,9 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Rankings */}
+            {/* Rankings — CanvasJS Charts with lazy load + polling */}
             <div id="rankings">
-              <RankingsSection
-                topExpensive={rankings.topExpensive}
-                topCheap={rankings.topCheap}
-                topActive={rankings.topActive}
-              />
-            </div>
-
-            {/* Tendencias */}
-            <div id="tendencias">
-              <TrendsSection
-                departmentData={departments}
-                period={period}
-              />
+              <MarketRankingCharts departments={departments} />
             </div>
 
             {/* No Clasificado - solo mostrar si hay data */}

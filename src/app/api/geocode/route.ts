@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+// Strip diacritical marks (accents) so users can search without special characters
+// e.g. "Escalon" matches "Escalón", "San Jose" matches "San José"
+function removeAccents(str: string): string {
+    return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
 export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const q = searchParams.get('q');
@@ -8,8 +14,10 @@ export async function GET(request: NextRequest) {
         return NextResponse.json([]);
     }
 
+    const normalizedQuery = removeAccents(q);
+
     const params = new URLSearchParams({
-        q: `${q}, El Salvador`,
+        q: `${normalizedQuery}, El Salvador`,
         format: 'json',
         limit: '5',
         countrycodes: 'sv'

@@ -67,7 +67,7 @@ export async function GET(
                     p_sort_by: sortBy,
                     p_municipio: municipio || null
                 }),
-                cache: 'no-store' // Disable caching to ensure filter is always applied
+                cache: 'no-store'  // Disable Next.js data cache for listings (always fresh from Supabase)
             }),
             // Fetch municipalities on initial load (offset 0), filtered by listing type
             (offset === 0 && !municipio)

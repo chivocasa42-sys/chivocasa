@@ -1030,6 +1030,135 @@ body {
 }
 
 /* =============================================
+   RANKING CHARTS (CanvasJS)
+   ============================================= */
+
+.ranking-chart-card {
+  background: var(--bg-card);
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  box-shadow: var(--shadow-card);
+  padding: 1.25rem;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.ranking-chart-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-float);
+  border-color: #cbd5e1;
+}
+
+.ranking-chart-canvas {
+  width: 100%;
+  height: 260px;
+}
+
+@media (max-width: 768px) {
+  .ranking-chart-canvas {
+    height: 220px;
+  }
+
+  .ranking-chart-card {
+    border-radius: 12px;
+    padding: 1rem;
+  }
+}
+
+/* Live indicator bar */
+.ranking-charts-live-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-bottom: 0.75rem;
+  padding-right: 0.25rem;
+}
+
+.ranking-charts-live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+  animation: livePulse 2s ease-in-out infinite;
+}
+
+.ranking-charts-live-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--success);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.ranking-charts-live-ago {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+@keyframes livePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* Skeleton loading */
+.ranking-chart-skeleton {
+  background: var(--bg-card);
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  box-shadow: var(--shadow-card);
+  padding: 1.25rem;
+  min-height: 300px;
+}
+
+.skeleton-title {
+  height: 16px;
+  width: 60%;
+  background: linear-gradient(90deg, var(--bg-subtle) 25%, #e2e8f0 50%, var(--bg-subtle) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+
+.skeleton-subtitle {
+  height: 12px;
+  width: 45%;
+  background: linear-gradient(90deg, var(--bg-subtle) 25%, #e2e8f0 50%, var(--bg-subtle) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: 4px;
+  margin-bottom: 24px;
+}
+
+.skeleton-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.skeleton-bar {
+  height: 32px;
+  background: linear-gradient(90deg, var(--bg-subtle) 25%, #e2e8f0 50%, var(--bg-subtle) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: 6px;
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@media (max-width: 768px) {
+  .ranking-chart-skeleton {
+    border-radius: 12px;
+    min-height: 240px;
+  }
+}
+
+/* =============================================
    UTILIDADES
    ============================================= */
 
@@ -1901,6 +2030,15 @@ body {
     0 1px 3px -1px rgba(0, 0, 0, 0.1) !important;
 }
 
+/* Todos variant for badge */
+.dept-card__badge-pill .dept-card__pill--todos,
+.dept-card__pill--todos {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+  box-shadow:
+    0 2px 8px -2px rgba(5, 150, 105, 0.35),
+    0 1px 3px -1px rgba(0, 0, 0, 0.1) !important;
+}
+
 /* Legacy Badge - Hidden */
 .dept-card__badge {
   display: none;
@@ -2011,6 +2149,12 @@ body {
 
 .dept-card__pill-label--renta {
   background: linear-gradient(145deg, #f87171 0%, #ef4444 50%, #dc2626 100%) !important;
+  color: #ffffff !important;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.15);
+}
+
+.dept-card__pill-label--todos {
+  background: linear-gradient(145deg, #34d399 0%, #10b981 50%, #059669 100%) !important;
   color: #ffffff !important;
   text-shadow: 0 1px 1px rgba(0, 0, 0, 0.15);
 }
@@ -2642,6 +2786,87 @@ body {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
+}
+
+/* =============================================
+   SKELETON LOADING CARDS
+   ============================================= */
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.skeleton-card {
+  background: #ffffff;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+}
+
+.skeleton-pulse {
+  background: linear-gradient(90deg,
+      #f1f5f9 0%,
+      #e2e8f0 40%,
+      #f1f5f9 60%,
+      #f1f5f9 100%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+  border-radius: 4px;
+}
+
+.skeleton-card__image {
+  aspect-ratio: 4/3;
+  width: 100%;
+}
+
+.skeleton-card__body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.skeleton-card__price {
+  height: 28px;
+  width: 55%;
+}
+
+.skeleton-card__specs {
+  height: 16px;
+  width: 75%;
+}
+
+.skeleton-card__tags {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.skeleton-card__tag {
+  height: 20px;
+  width: 60px;
+  border-radius: 4px;
+}
+
+/* Skeleton for Best Opportunity section */
+.skeleton-opportunity {
+  height: 180px;
+  border-radius: 16px;
+  margin-bottom: 32px;
+}
+
+/* Skeleton for filter bar */
+.skeleton-filter-bar {
+  height: 120px;
+  border-radius: 12px;
+  margin-bottom: 32px;
 }

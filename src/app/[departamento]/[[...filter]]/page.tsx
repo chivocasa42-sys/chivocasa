@@ -339,9 +339,35 @@ export default function DepartmentPage() {
 
                 {/* Content */}
                 {isLoading ? (
-                    <div className="flex flex-col justify-center items-center min-h-[400px] gap-4">
-                        <div className="spinner"></div>
-                        <p className="text-[var(--text-secondary)]">Cargando propiedades...</p>
+                    <div className="mb-8">
+                        {/* Skeleton: Best Opportunity */}
+                        <div className="skeleton-pulse skeleton-opportunity" />
+
+                        {/* Skeleton: Filter bar */}
+                        <div className="skeleton-pulse skeleton-filter-bar" />
+
+                        {/* Skeleton: Section header */}
+                        <div className="text-center mb-6 pb-4 border-b border-slate-200">
+                            <div className="skeleton-pulse mx-auto mb-2" style={{ height: 32, width: 260 }} />
+                            <div className="skeleton-pulse mx-auto" style={{ height: 18, width: 320 }} />
+                        </div>
+
+                        {/* Skeleton: Listing cards grid */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+                            {Array.from({ length: 8 }).map((_, i) => (
+                                <div key={i} className="skeleton-card">
+                                    <div className="skeleton-pulse skeleton-card__image" />
+                                    <div className="skeleton-card__body">
+                                        <div className="skeleton-pulse skeleton-card__price" />
+                                        <div className="skeleton-pulse skeleton-card__specs" />
+                                        <div className="skeleton-card__tags">
+                                            <div className="skeleton-pulse skeleton-card__tag" />
+                                            <div className="skeleton-pulse skeleton-card__tag" />
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 ) : error ? (
                     <div className="card-float p-8 text-center">
