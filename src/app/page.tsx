@@ -226,18 +226,20 @@ export default function Home() {
         ) : (
           <>
             {/* Market Panorama Header */}
-            <div className="pt-8 mb-4">
+            <div className="mb-4">
               <SectionHeader
                 title={['Panorama del mercado inmobiliario', 'en El Salvador']}
                 subtitle="Precios promedio, rentas mensuales y nuevas oportunidades inmobiliarias, actualizadas para ayudarte a tomar decisiones con mayor confianza."
               />
-              <p className="text-xs md:text-sm text-[var(--text-muted)] text-center -mt-6 mb-8 max-w-4xl mx-auto italic opacity-75">
-                Los valores mostrados son promedios estimados y pueden variar según la zona y el tipo de propiedad.
-              </p>
             </div>
 
             {/* KPI Strip */}
             <KPIStrip stats={kpiStats} />
+
+            {/* Disclaimer — below KPIs, above Map Explorer */}
+            <p className="text-xs md:text-sm text-[var(--text-muted)] text-center mt-1 mb-4 max-w-4xl mx-auto italic opacity-75">
+              Los valores mostrados son promedios estimados y pueden variar según la zona y el tipo de propiedad.
+            </p>
 
             {/* Map Explorer - Interactive location search */}
             <MapExplorer externalLocation={heroLocation} />
@@ -281,6 +283,14 @@ export default function Home() {
             {/* Rankings — CanvasJS Charts with lazy load + polling */}
             <div id="rankings">
               <MarketRankingCharts departments={departments} activeFilter={view} />
+            </div>
+
+            {/* Duplicate filter buttons below charts for convenience */}
+            <div className="mt-6 mb-8">
+              <HomeHeader
+                view={view}
+                onViewChange={setView}
+              />
             </div>
 
             {/* No Clasificado - solo mostrar si hay data */}
