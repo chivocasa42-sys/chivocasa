@@ -1196,8 +1196,8 @@ body {
   gap: 10px;
   flex-wrap: wrap;
 }
-.dept-filter-bar__row1 { display: contents; }
-.dept-filter-bar__row2 { display: contents; }
+.dept-filter-bar__row1 { display: flex; align-items: center; gap: 10px; }
+.dept-filter-bar__row2 { display: flex; align-items: center; gap: 10px; }
 .dept-filter-bar__price-wrapper { position: relative; }
 .dept-filter-bar__meta {
   display: flex;
