@@ -308,19 +308,19 @@
 
       // Chart A: Zonas Más Caras (horizontal bar)
       var elA = document.getElementById(config.containerIds[0]);
-      var chartA = echarts.init(elA);
+      var chartA = echarts.getInstanceByDom(elA) || echarts.init(elA);
       chartA.setOption(buildHorizontalBarOption('ZONAS MÁS CARAS', '(Precio Típico Mediana)', expData, tokens, tokens.success));
       attachClickHandler(chartA, expData);
 
       // Chart B: Zonas Más Económicas (horizontal bar)
       var elB = document.getElementById(config.containerIds[1]);
-      var chartB = echarts.init(elB);
+      var chartB = echarts.getInstanceByDom(elB) || echarts.init(elB);
       chartB.setOption(buildHorizontalBarOption('ZONAS MÁS ECONÓMICAS', '(Precio Típico Mediana)', chpData, tokens, tokens.primary));
       attachClickHandler(chartB, chpData);
 
       // Chart C: Zonas Más Activas (column)
       var elC = document.getElementById(config.containerIds[2]);
-      var chartC = echarts.init(elC);
+      var chartC = echarts.getInstanceByDom(elC) || echarts.init(elC);
       chartC.setOption(buildColumnOption('ZONAS MÁS ACTIVAS', '(Activos Hoy)', actData, tokens, tokens.warning));
       attachClickHandler(chartC, actData);
 

@@ -1081,6 +1081,11 @@ body {
   border-radius: 50%;
   background: var(--success);
   animation: livePulse 2s ease-in-out infinite;
+  transition: transform 0.2s ease;
+}
+
+.ranking-charts-live-dot-pulse {
+  transform: scale(1.8);
 }
 
 .ranking-charts-live-text {
@@ -1089,11 +1094,6 @@ body {
   color: var(--success);
   text-transform: uppercase;
   letter-spacing: 0.05em;
-}
-
-.ranking-charts-live-ago {
-  font-size: 12px;
-  color: var(--text-muted);
 }
 
 @keyframes livePulse {

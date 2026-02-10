@@ -32,28 +32,60 @@ interface MarketRankingChartsProps {
 
 const REFRESH_INTERVAL_MS = 30_000;
 const SECTION_ID = 'market-ranking-charts-section';
+const CACHE_KEY = 'mrc_ranking_cache';
+
+// localStorage helpers
+function readCache(): DepartmentStats[] | null {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { data: DepartmentStats[]; ts: number };
+    if (Date.now() - parsed.ts > 300_000) return null;
+    return parsed.data;
+  } catch {
+    return null;
+  }
+}
+
+function writeCache(data: DepartmentStats[]) {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ data, ts: Date.now() }));
+  } catch { /* quota exceeded — ignore */ }
+}
+
+// Detect if scripts are already loaded globally (SPA return navigation)
+function scriptsAlreadyLoaded(): boolean {
+  return typeof window !== 'undefined' &&
+    typeof window.echarts !== 'undefined' &&
+    !!window.MarketRankingCharts;
+}
 
 export default function MarketRankingCharts({ departments }: MarketRankingChartsProps) {
   const router = useRouter();
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error' | 'empty'>('idle');
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [secondsAgo, setSecondsAgo] = useState(0);
+  const [pulsing, setPulsing] = useState(false);
 
   const chartsInitialized = useRef(false);
   const isVisible = useRef(false);
   const pollingTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const tickTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const echartsLoaded = useRef(false);
-  const interopLoaded = useRef(false);
+  const echartsLoaded = useRef(scriptsAlreadyLoaded());
+  const interopLoaded = useRef(scriptsAlreadyLoaded());
   const initialDataRendered = useRef(false);
+  const fetchInFlight = useRef(false);
 
   // Navigate on bar click
   const handleBarClick = useCallback((slug: string) => {
     router.push(`/${slug}`);
   }, [router]);
 
+  // Micro-pulse on the LIVE dot when fresh data arrives
+  const triggerPulse = useCallback(() => {
+    setPulsing(true);
+    setTimeout(() => setPulsing(false), 400);
+  }, []);
+
   // Render charts with current data
-  const renderCharts = useCallback((depts: DepartmentStats[]) => {
+  const renderCharts = useCallback((depts: DepartmentStats[], shouldCache = true) => {
     if (!window.MarketRankingCharts || !window.MarketRankingCharts.isReady()) return false;
 
     const { topExpensive, topCheap, topActive } = computeRankings(depts);
@@ -79,21 +111,23 @@ export default function MarketRankingCharts({ departments }: MarketRankingCharts
       if (success) {
         chartsInitialized.current = true;
         setStatus('ready');
-        setLastUpdated(new Date());
-        setSecondsAgo(0);
+        triggerPulse();
+        if (shouldCache) writeCache(depts);
         return true;
       }
       return false;
     } else {
       window.MarketRankingCharts.updateAllCharts(expData, cheapData, activeData);
-      setLastUpdated(new Date());
-      setSecondsAgo(0);
+      triggerPulse();
+      if (shouldCache) writeCache(depts);
       return true;
     }
-  }, [handleBarClick]);
+  }, [handleBarClick, triggerPulse]);
 
-  // Fetch fresh data from API
+  // Fetch fresh data from API (with concurrency lock)
   const fetchAndUpdate = useCallback(async () => {
+    if (fetchInFlight.current) return;
+    fetchInFlight.current = true;
     try {
       const res = await fetch('/api/department-stats');
       if (!res.ok) throw new Error('Failed to fetch');
@@ -103,7 +137,8 @@ export default function MarketRankingCharts({ departments }: MarketRankingCharts
       if (!chartsInitialized.current) {
         setStatus('error');
       }
-      // If charts already rendered, silently skip failed refresh
+    } finally {
+      fetchInFlight.current = false;
     }
   }, [renderCharts]);
 
@@ -127,26 +162,45 @@ export default function MarketRankingCharts({ departments }: MarketRankingCharts
 
   // Try to initialize charts when both scripts are loaded
   const tryInit = useCallback(() => {
+    // Re-check global availability (covers SPA return where onLoad doesn't re-fire)
+    if (scriptsAlreadyLoaded()) {
+      echartsLoaded.current = true;
+      interopLoaded.current = true;
+    }
+
     if (!echartsLoaded.current || !interopLoaded.current) return;
     if (!isVisible.current) return;
     if (initialDataRendered.current) return;
 
-    setStatus('loading');
+    // 1) Try localStorage cache for instant render (warm-start)
+    const cached = readCache();
+    if (cached && cached.length > 0) {
+      const ok = renderCharts(cached, false);
+      if (ok) {
+        initialDataRendered.current = true;
+        fetchAndUpdate();
+        startPolling();
+        return;
+      }
+    }
 
-    // Use passed departments for first render (avoids extra fetch)
+    // 2) Try prop data
     if (departments.length > 0) {
+      setStatus('loading');
       const ok = renderCharts(departments);
       if (ok) {
         initialDataRendered.current = true;
         startPolling();
+        return;
       }
-    } else {
-      // Fallback: fetch from API
-      fetchAndUpdate().then(() => {
-        initialDataRendered.current = true;
-        startPolling();
-      });
     }
+
+    // 3) Fallback: fetch from API
+    setStatus('loading');
+    fetchAndUpdate().then(() => {
+      initialDataRendered.current = true;
+      startPolling();
+    });
   }, [departments, renderCharts, fetchAndUpdate, startPolling]);
 
   // Handle ECharts CDN load
@@ -161,59 +215,52 @@ export default function MarketRankingCharts({ departments }: MarketRankingCharts
     tryInit();
   }, [tryInit]);
 
-  // Setup IntersectionObserver after mount
+  // Setup IntersectionObserver after mount (with rootMargin + immediate check)
   useEffect(() => {
-    const checkAndObserve = () => {
-      const el = document.getElementById(SECTION_ID);
-      if (!el) return;
+    const el = document.getElementById(SECTION_ID);
+    if (!el) return;
 
-      const obs = new IntersectionObserver(
-        (entries) => {
-          entries.forEach((entry) => {
-            if (entry.isIntersecting) {
-              isVisible.current = true;
-              tryInit();
-              startPolling();
-            } else {
-              isVisible.current = false;
-              stopPolling();
-            }
-          });
-        },
-        { threshold: 0.3 }
-      );
-
-      obs.observe(el);
-
-      return () => {
-        obs.disconnect();
-      };
+    const handleVisible = () => {
+      if (!isVisible.current) {
+        isVisible.current = true;
+        tryInit();
+        startPolling();
+      }
     };
 
-    const cleanup = checkAndObserve();
+    const handleHidden = () => {
+      isVisible.current = false;
+      stopPolling();
+    };
+
+    const obs = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            handleVisible();
+          } else {
+            handleHidden();
+          }
+        });
+      },
+      { threshold: 0.3, rootMargin: '300px 0px 300px 0px' }
+    );
+
+    obs.observe(el);
+
+    // Immediate check: if already in viewport, don't wait for scroll
+    const rect = el.getBoundingClientRect();
+    const inViewport = rect.top < window.innerHeight + 300 && rect.bottom > -300;
+    if (inViewport) {
+      handleVisible();
+    }
 
     return () => {
-      cleanup?.();
+      obs.disconnect();
       stopPolling();
-      if (chartsInitialized.current && window.MarketRankingCharts) {
-        window.MarketRankingCharts.destroyCharts();
-        chartsInitialized.current = false;
-      }
+      // Do NOT destroy charts — let getInstanceByDom reuse them on return navigation
     };
   }, [tryInit, startPolling, stopPolling]);
-
-  // "Updated X seconds ago" ticker
-  useEffect(() => {
-    tickTimer.current = setInterval(() => {
-      if (lastUpdated) {
-        setSecondsAgo(Math.round((Date.now() - lastUpdated.getTime()) / 1000));
-      }
-    }, 1000);
-
-    return () => {
-      if (tickTimer.current) clearInterval(tickTimer.current);
-    };
-  }, [lastUpdated]);
 
   // Retry handler
   const handleRetry = () => {
@@ -225,16 +272,16 @@ export default function MarketRankingCharts({ departments }: MarketRankingCharts
 
   return (
     <>
-      {/* Apache ECharts CDN — lazy loaded, no watermark */}
+      {/* Apache ECharts CDN — afterInteractive for faster load + reliable onLoad on SPA */}
       <Script
         src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"
-        strategy="lazyOnload"
+        strategy="afterInteractive"
         onLoad={onEChartsLoad}
       />
       {/* Interop script */}
       <Script
         src="/js/marketRankingCharts.js"
-        strategy="lazyOnload"
+        strategy="afterInteractive"
         onLoad={onInteropLoad}
       />
 
@@ -244,14 +291,11 @@ export default function MarketRankingCharts({ departments }: MarketRankingCharts
           subtitle="Top de departamentos según precio mediano y nivel de oferta inmobiliaria."
         />
 
-        {/* Live indicator */}
+        {/* Live indicator — simple, no timer */}
         {status === 'ready' && (
           <div className="ranking-charts-live-bar">
-            <span className="ranking-charts-live-dot" />
-            <span className="ranking-charts-live-text">Live</span>
-            <span className="ranking-charts-live-ago">
-              Actualizado hace {secondsAgo < 5 ? 'un momento' : `${secondsAgo}s`}
-            </span>
+            <span className={`ranking-charts-live-dot${pulsing ? ' ranking-charts-live-dot-pulse' : ''}`} />
+            <span className="ranking-charts-live-text">LIVE</span>
           </div>
         )}
 

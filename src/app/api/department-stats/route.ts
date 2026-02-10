@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 
-
+// In-memory cache for department stats (avoids re-querying Supabase on every 30s poll)
+let memCache: { data: unknown; ts: number } | null = null;
+const MEM_CACHE_TTL = 30_000; // 30 seconds
 
 // Tipos para la vista materializada
 export interface DepartmentStats {
@@ -14,6 +16,13 @@ export interface DepartmentStats {
 
 export async function GET() {
     try {
+        // Return cached response if fresh
+        if (memCache && Date.now() - memCache.ts < MEM_CACHE_TTL) {
+            return NextResponse.json(memCache.data, {
+                headers: { 'X-Cache': 'HIT', 'Cache-Control': 'public, max-age=30, stale-while-revalidate=60' },
+            });
+        }
+
         const url = `${process.env.SUPABASE_URL}/rest/v1/mv_sd_depto_stats?select=*&order=count.desc`;
 
         const res = await fetch(url, {
@@ -67,7 +76,12 @@ export async function GET() {
         // Convertir a array y ordenar por total_count
         const result = Object.values(grouped).sort((a, b) => b.total_count - a.total_count);
 
-        return NextResponse.json(result);
+        // Update in-memory cache
+        memCache = { data: result, ts: Date.now() };
+
+        return NextResponse.json(result, {
+            headers: { 'X-Cache': 'MISS', 'Cache-Control': 'public, max-age=30, stale-while-revalidate=60' },
+        });
     } catch (error) {
         console.error('Error fetching department stats:', error);
         return NextResponse.json({ error: 'Failed to fetch department stats' }, { status: 500 });
