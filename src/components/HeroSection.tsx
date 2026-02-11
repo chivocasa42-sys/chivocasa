@@ -55,7 +55,7 @@ export default function HeroSection({ onLocationSelect }: HeroSectionProps) {
 
         searchTimeoutRef.current = setTimeout(() => {
             searchPlaces(value);
-        }, 400);
+        }, 250);
     }, [searchPlaces]);
 
     // Close dropdown when clicking outside

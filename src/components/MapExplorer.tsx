@@ -214,7 +214,7 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
 
         searchTimeoutRef.current = setTimeout(() => {
             searchPlaces(value);
-        }, 500);
+        }, 250);
     }, [searchPlaces]);
 
     // Select a search result
