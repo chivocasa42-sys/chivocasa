@@ -10,27 +10,20 @@ interface Municipality {
 
 interface FiltersPanelProps {
     municipalities: Municipality[];
-    selectedMunicipio: string | null;
-    onMunicipioSelect: (municipio: string | null) => void;
+    selectedMunicipios: string[];
+    onMunicipioToggle: (municipio: string) => void;
+    availableCategories: string[];
     categories: string[];
     onCategoryToggle: (category: string) => void;
     onClose: () => void;
     onClearAll: () => void;
 }
 
-const AVAILABLE_CATEGORIES = [
-    'Casa',
-    'Apartamento',
-    'Terreno',
-    'Local',
-    'Oficina',
-    'Bodega',
-];
-
 export default function FiltersPanel({
     municipalities,
-    selectedMunicipio,
-    onMunicipioSelect,
+    selectedMunicipios,
+    onMunicipioToggle,
+    availableCategories,
     categories,
     onCategoryToggle,
     onClose,
@@ -85,62 +78,70 @@ export default function FiltersPanel({
 
                 {/* Body */}
                 <div className="filters-panel__body">
-                    {/* Ubicación */}
-                    {municipalities.length > 0 && (
-                        <div className="filters-panel__section">
-                            <h4 className="filters-panel__section-title">Ubicación</h4>
-                            <div className="tag-filter-chips">
-                                {visibleMunicipalities.map(({ municipio_id, municipio_name, listing_count }) => {
-                                    const isSelected = selectedMunicipio === municipio_name;
-                                    return (
+                    {/* Ubicación — always visible (static) */}
+                    <div className="filters-panel__section">
+                        <h4 className="filters-panel__section-title">Ubicación</h4>
+                        <div className="tag-filter-chips">
+                            {municipalities.length > 0 ? (
+                                <>
+                                    {visibleMunicipalities.map(({ municipio_id, municipio_name, listing_count }) => {
+                                        const isSelected = selectedMunicipios.includes(municipio_name);
+                                        return (
+                                            <button
+                                                key={municipio_id}
+                                                onClick={() => onMunicipioToggle(municipio_name)}
+                                                className={`tag-chip ${isSelected ? 'selected' : ''}`}
+                                            >
+                                                {municipio_name}
+                                                <span className="tag-chip-count">({listing_count})</span>
+                                                {isSelected && <span className="tag-chip-check">✓</span>}
+                                            </button>
+                                        );
+                                    })}
+                                    {!showAllMunicipios && hiddenCount > 0 && (
                                         <button
-                                            key={municipio_id}
-                                            onClick={() => onMunicipioSelect(isSelected ? null : municipio_name)}
-                                            className={`tag-chip ${isSelected ? 'selected' : ''}`}
+                                            onClick={() => setShowAllMunicipios(true)}
+                                            className="tag-chip tag-chip-more"
                                         >
-                                            {municipio_name}
-                                            <span className="tag-chip-count">({listing_count})</span>
-                                            {isSelected && <span className="tag-chip-check">✓</span>}
+                                            +{hiddenCount} más
                                         </button>
-                                    );
-                                })}
-                                {!showAllMunicipios && hiddenCount > 0 && (
-                                    <button
-                                        onClick={() => setShowAllMunicipios(true)}
-                                        className="tag-chip tag-chip-more"
-                                    >
-                                        +{hiddenCount} más
-                                    </button>
-                                )}
-                                {showAllMunicipios && hiddenCount > 0 && (
-                                    <button
-                                        onClick={() => setShowAllMunicipios(false)}
-                                        className="tag-chip tag-chip-more"
-                                    >
-                                        Menos
-                                    </button>
-                                )}
-                            </div>
+                                    )}
+                                    {showAllMunicipios && hiddenCount > 0 && (
+                                        <button
+                                            onClick={() => setShowAllMunicipios(false)}
+                                            className="tag-chip tag-chip-more"
+                                        >
+                                            Menos
+                                        </button>
+                                    )}
+                                </>
+                            ) : (
+                                <span className="text-sm text-[var(--text-muted)]">Sin ubicaciones disponibles</span>
+                            )}
                         </div>
-                    )}
+                    </div>
 
-                    {/* Categorías */}
+                    {/* Categorías — dynamic from tags */}
                     <div className="filters-panel__section">
                         <h4 className="filters-panel__section-title">Categoría</h4>
                         <div className="tag-filter-chips">
-                            {AVAILABLE_CATEGORIES.map((cat) => {
-                                const isSelected = categories.includes(cat);
-                                return (
-                                    <button
-                                        key={cat}
-                                        onClick={() => onCategoryToggle(cat)}
-                                        className={`tag-chip ${isSelected ? 'selected' : ''}`}
-                                    >
-                                        {cat}
-                                        {isSelected && <span className="tag-chip-check">✓</span>}
-                                    </button>
-                                );
-                            })}
+                            {availableCategories.length > 0 ? (
+                                availableCategories.map((cat) => {
+                                    const isSelected = categories.includes(cat);
+                                    return (
+                                        <button
+                                            key={cat}
+                                            onClick={() => onCategoryToggle(cat)}
+                                            className={`tag-chip ${isSelected ? 'selected' : ''}`}
+                                        >
+                                            {cat}
+                                            {isSelected && <span className="tag-chip-check">✓</span>}
+                                        </button>
+                                    );
+                                })
+                            ) : (
+                                <span className="text-sm text-[var(--text-muted)]">Sin categorías disponibles</span>
+                            )}
                         </div>
                     </div>
                 </div>

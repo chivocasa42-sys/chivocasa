@@ -10,7 +10,7 @@ export interface DepartmentFilters {
   sort: SortOption;
   priceMin: number | null;
   priceMax: number | null;
-  municipio: string | null;
+  municipios: string[];
   categories: string[];
 }
 
@@ -30,7 +30,7 @@ const DEFAULTS: DepartmentFilters = {
   sort: 'price_asc',
   priceMin: null,
   priceMax: null,
-  municipio: null,
+  municipios: [],
   categories: [],
 };
 
@@ -67,8 +67,13 @@ export function useDepartmentFilters({ slug, initialType = 'all' }: UseDepartmen
     setFilters(prev => ({ ...prev, priceMin: null, priceMax: null }));
   }, []);
 
-  const setMunicipio = useCallback((municipio: string | null) => {
-    setFilters(prev => ({ ...prev, municipio }));
+  const toggleMunicipio = useCallback((municipio: string) => {
+    setFilters(prev => {
+      const munis = prev.municipios.includes(municipio)
+        ? prev.municipios.filter(m => m !== municipio)
+        : [...prev.municipios, municipio];
+      return { ...prev, municipios: munis };
+    });
   }, []);
 
   const toggleCategory = useCallback((category: string) => {
@@ -91,22 +96,23 @@ export function useDepartmentFilters({ slug, initialType = 'all' }: UseDepartmen
   const removeChip = useCallback((chipId: string) => {
     if (chipId === 'price') {
       clearPrice();
-    } else if (chipId === 'municipio') {
-      setMunicipio(null);
+    } else if (chipId.startsWith('muni:')) {
+      const muni = chipId.slice(5);
+      toggleMunicipio(muni);
     } else if (chipId.startsWith('cat:')) {
       const cat = chipId.slice(4);
       toggleCategory(cat);
     }
-  }, [clearPrice, setMunicipio, toggleCategory]);
+  }, [clearPrice, toggleMunicipio, toggleCategory]);
 
   // --- Derived ---
 
   const activeChips = useMemo<FilterChip[]>(() => {
     const chips: FilterChip[] = [];
 
-    if (filters.municipio) {
-      chips.push({ id: 'municipio', label: filters.municipio, type: 'municipio' });
-    }
+    filters.municipios.forEach(muni => {
+      chips.push({ id: `muni:${muni}`, label: muni, type: 'municipio' });
+    });
 
     if (filters.priceMin != null || filters.priceMax != null) {
       const minStr = filters.priceMin != null ? formatPriceShort(filters.priceMin) : '$0';
@@ -140,7 +146,7 @@ export function useDepartmentFilters({ slug, initialType = 'all' }: UseDepartmen
     setSort,
     applyPrice,
     clearPrice,
-    setMunicipio,
+    toggleMunicipio,
     toggleCategory,
     removeChip,
     clearAll,

@@ -90,7 +90,7 @@ export default function DepartmentPage() {
         setSort,
         applyPrice,
         clearPrice,
-        setMunicipio,
+        toggleMunicipio,
         toggleCategory,
         removeChip,
         clearAll,
@@ -120,21 +120,26 @@ export default function DepartmentPage() {
     // Available municipalities in this department
     const [municipalities, setMunicipalities] = useState<Municipality[]>([]);
 
+    // Available categories (dynamic from tags)
+    const [availableCategories, setAvailableCategories] = useState<string[]>([]);
+
     // Fetch listings with pagination and optional filters
     const fetchListings = useCallback(async (
         offset: number,
         type: FilterType,
         sort: SortOption,
-        municipio: string | null = null,
+        municipios: string[] = [],
+        categories: string[] = [],
         append: boolean = false,
         priceMin: number | null = null,
         priceMax: number | null = null,
     ) => {
         const typeParam = type === 'all' ? '' : `&type=${type}`;
-        const municipioParam = municipio ? `&municipio=${encodeURIComponent(municipio)}` : '';
+        const municipiosParam = municipios.length > 0 ? `&municipios=${encodeURIComponent(municipios.join(','))}` : '';
+        const categoriesParam = categories.length > 0 ? `&categories=${encodeURIComponent(categories.join(','))}` : '';
         const priceMinParam = priceMin != null ? `&price_min=${priceMin}` : '';
         const priceMaxParam = priceMax != null ? `&price_max=${priceMax}` : '';
-        const res = await fetch(`/api/department/${slug}?limit=${PAGE_SIZE}&offset=${offset}${typeParam}&sort=${sort}${municipioParam}${priceMinParam}${priceMaxParam}`);
+        const res = await fetch(`/api/department/${slug}?limit=${PAGE_SIZE}&offset=${offset}${typeParam}&sort=${sort}${municipiosParam}${categoriesParam}${priceMinParam}${priceMaxParam}`);
 
         if (!res.ok) {
             if (res.status === 404) {
@@ -158,6 +163,11 @@ export default function DepartmentPage() {
             setMunicipalities(data.municipalities);
         }
 
+        // Store available categories from initial load
+        if (data.availableCategories && data.availableCategories.length > 0) {
+            setAvailableCategories(data.availableCategories);
+        }
+
         return data;
     }, [slug]);
 
@@ -170,7 +180,16 @@ export default function DepartmentPage() {
             try {
                 // Fetch listings and best opportunities in parallel
                 const [listingsData, topScoredRes] = await Promise.all([
-                    fetchListings(0, filters.listingType, filters.sort, filters.municipio, false, filters.priceMin, filters.priceMax),
+                    fetchListings(
+                        0,
+                        filters.listingType,
+                        filters.sort,
+                        filters.municipios,
+                        filters.categories,
+                        false,
+                        filters.priceMin,
+                        filters.priceMax
+                    ),
                     fetch(`/api/department/${slug}/top-scored?type=all&limit=1`)
                 ]);
 
@@ -188,7 +207,7 @@ export default function DepartmentPage() {
         }
 
         if (slug) fetchData();
-    }, [slug, fetchListings, filters.listingType, filters.sort, filters.municipio, filters.priceMin, filters.priceMax]);
+    }, [slug, fetchListings, filters.listingType, filters.sort, filters.municipios, filters.categories, filters.priceMin, filters.priceMax]);
 
     // Load more handler
     const handleLoadMore = useCallback(async () => {
@@ -197,7 +216,16 @@ export default function DepartmentPage() {
         setIsLoadingMore(true);
         try {
             const newOffset = pagination.offset + PAGE_SIZE;
-            await fetchListings(newOffset, filters.listingType, filters.sort, filters.municipio, true, filters.priceMin, filters.priceMax);
+            await fetchListings(
+                newOffset,
+                filters.listingType,
+                filters.sort,
+                filters.municipios,
+                filters.categories,
+                true,
+                filters.priceMin,
+                filters.priceMax
+            );
         } catch (err) {
             console.error('Error loading more:', err);
         } finally {
@@ -310,13 +338,14 @@ export default function DepartmentPage() {
                     hasActiveFilters={hasActiveFilters}
                     resultsCount={resultsCount}
                     municipalities={municipalities}
-                    selectedMunicipio={filters.municipio}
+                    selectedMunicipios={filters.municipios}
+                    availableCategories={availableCategories}
                     categories={filters.categories}
                     onTypeChange={setType}
                     onSortChange={setSort}
                     onPriceApply={applyPrice}
                     onPriceClear={clearPrice}
-                    onMunicipioSelect={setMunicipio}
+                    onMunicipioToggle={toggleMunicipio}
                     onCategoryToggle={toggleCategory}
                     onClearAll={clearAll}
                 />

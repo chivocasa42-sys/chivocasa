@@ -21,13 +21,14 @@ interface DepartmentFilterBarProps {
     hasActiveFilters: boolean;
     resultsCount: number;
     municipalities: Municipality[];
-    selectedMunicipio: string | null;
+    selectedMunicipios: string[];
+    availableCategories: string[];
     categories: string[];
     onTypeChange: (type: FilterType) => void;
     onSortChange: (sort: SortOption) => void;
     onPriceApply: (min: number | null, max: number | null) => void;
     onPriceClear: () => void;
-    onMunicipioSelect: (municipio: string | null) => void;
+    onMunicipioToggle: (municipio: string) => void;
     onCategoryToggle: (category: string) => void;
     onClearAll: () => void;
 }
@@ -42,13 +43,14 @@ export default function DepartmentFilterBar({
     hasActiveFilters,
     resultsCount,
     municipalities,
-    selectedMunicipio,
+    selectedMunicipios,
+    availableCategories,
     categories,
     onTypeChange,
     onSortChange,
     onPriceApply,
     onPriceClear,
-    onMunicipioSelect,
+    onMunicipioToggle,
     onCategoryToggle,
     onClearAll,
 }: DepartmentFilterBarProps) {
@@ -69,8 +71,8 @@ export default function DepartmentFilterBar({
     }, [showPrice]);
 
     const sortLabels: Record<SortOption, string> = {
-        price_asc: 'Precio \u2191',
-        price_desc: 'Precio \u2193',
+        price_asc: 'Precio ↑',
+        price_desc: 'Precio ↓',
         recent: 'Recientes',
     };
 
@@ -217,8 +219,9 @@ export default function DepartmentFilterBar({
             {showFilters && (
                 <FiltersPanel
                     municipalities={municipalities}
-                    selectedMunicipio={selectedMunicipio}
-                    onMunicipioSelect={onMunicipioSelect}
+                    selectedMunicipios={selectedMunicipios}
+                    onMunicipioToggle={onMunicipioToggle}
+                    availableCategories={availableCategories}
                     categories={categories}
                     onCategoryToggle={onCategoryToggle}
                     onClose={() => setShowFilters(false)}

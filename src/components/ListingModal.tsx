@@ -110,7 +110,7 @@ export default function ListingModal({ externalId, onClose }: ListingModalProps)
         return () => window.removeEventListener('keydown', handleKeyDown);
     });
 
-    const images = listing?.images || [];
+    const images = (listing?.images || []).slice(0, 5);
     const goToNext = () => setCurrentImageIndex((prev) => (prev + 1) % images.length);
     const goToPrev = () => setCurrentImageIndex((prev) => (prev - 1 + images.length) % images.length);
 
