@@ -16,33 +16,10 @@ function formatPrice(price: number): string {
 
 function getArea(specs: ListingSpecs | undefined | null): number {
     if (!specs) return 0;
-
-    // Priority: area_m2 (normalized by scraper) > fallback fields
-    // area_m2 can be stored as string or number
     if (specs.area_m2) {
         const numValue = parseFloat(String(specs.area_m2));
         if (numValue > 0) return numValue;
     }
-
-    // Check various area field names
-    const areaFields = [
-        'Área construida (m²)',
-        'area',
-        'terreno',          // Land size from Realtor
-        'Área del terreno',
-        'm2',
-        'metros',
-        'habitaciones',     // Sometimes area is here
-    ];
-
-    for (const field of areaFields) {
-        const value = specs[field];
-        if (value) {
-            const numValue = parseFloat(String(value).replace(/[^\d.]/g, ''));
-            if (numValue > 0) return numValue;
-        }
-    }
-
     return 0;
 }
 
@@ -163,7 +140,7 @@ export default function ListingCard({ listing, onClick, isFeatured }: ListingCar
                     {specs.bedrooms !== undefined && (
                         <span><span className="font-bold">{specs.bedrooms}</span> hab</span>
                     )}
-                    {(specs.bedrooms !== undefined && specs.bathrooms !== undefined) && <span className="text-slate-300">|</span>}
+                    {specs.bedrooms !== undefined && specs.bathrooms !== undefined && <span className="text-slate-300">|</span>}
                     {specs.bathrooms !== undefined && (
                         <span><span className="font-bold">{specs.bathrooms}</span> baños</span>
                     )}
@@ -173,9 +150,12 @@ export default function ListingCard({ listing, onClick, isFeatured }: ListingCar
                             <span><span className="font-bold">{area.toLocaleString()}</span> m²</span>
                         </>
                     )}
-                    <span className="text-slate-500 ml-1">
-                        - {listing.listing_type === 'sale' ? 'Venta' : 'Renta'}
-                    </span>
+                    {specs.parking !== undefined && (
+                        <>
+                            <span className="text-slate-300">|</span>
+                            <span><span className="font-bold">{specs.parking}</span> parq</span>
+                        </>
+                    )}
                 </div>
 
                 {/* Time Since Published */}

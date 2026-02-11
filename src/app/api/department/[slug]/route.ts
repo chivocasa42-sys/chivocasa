@@ -57,7 +57,7 @@ export async function GET(
         const categoriesRaw = searchParams.get('categories');
         const categories = categoriesRaw ? categoriesRaw.split(',').map(c => c.trim()).filter(Boolean) : [];
 
-        const hasPostFilters = municipios.length > 0 || categories.length > 0;
+        const hasPostFilters = municipios.length > 0 || categories.length > 0 || priceMin != null || priceMax != null;
 
         // Validar slug
         if (!isValidDepartamentoSlug(slug)) {

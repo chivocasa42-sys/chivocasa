@@ -273,7 +273,7 @@ export default function ListingModal({ externalId, onClose }: ListingModalProps)
                                 )}
                             </div>
 
-                            {/* Specs - below price on mobile, inline on desktop */}
+                            {/* Specs */}
                             <div className="flex gap-4 mb-2">
                                 {specs.bedrooms && (
                                     <div className="flex items-center gap-1">
@@ -293,10 +293,10 @@ export default function ListingModal({ externalId, onClose }: ListingModalProps)
                                         <span className="text-xs text-slate-500">m²</span>
                                     </div>
                                 )}
-                                {(specs.parking || specs.parqueo || specs.parqueos || specs.garages || specs.estacionamiento) && (
+                                {specs.parking && (
                                     <div className="flex items-center gap-1">
-                                        <span className="text-base font-bold text-[#272727]">{specs.parking || specs.parqueo || specs.parqueos || specs.garages || specs.estacionamiento}</span>
-                                        <span className="text-xs text-slate-500">parqueo</span>
+                                        <span className="text-base font-bold text-[#272727]">{specs.parking}</span>
+                                        <span className="text-xs text-slate-500">parq</span>
                                     </div>
                                 )}
                             </div>

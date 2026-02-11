@@ -49,7 +49,7 @@ export function useDepartmentFilters({ slug, initialType = 'all' }: UseDepartmen
   // --- Actions ---
 
   const setType = useCallback((type: FilterType) => {
-    setFilters(prev => ({ ...prev, listingType: type }));
+    setFilters(prev => ({ ...prev, listingType: type, priceMin: null, priceMax: null }));
     // Sync URL for SEO without triggering Next.js navigation/remount
     const url = type === 'all' ? `/${slug}` : `/${slug}/${type === 'sale' ? 'venta' : 'renta'}`;
     window.history.replaceState(null, '', url);

@@ -3338,9 +3338,14 @@ def scrape_vivolatam_listing(url, listing_type="sale"):
                 pass
         
         # Detect listing type from title/URL
+        # If both "venta" AND "alquiler" appear (dual listings), prefer sale
         title_lower = title.lower()
         url_lower = url.lower()
-        if "alquiler" in title_lower or "renta" in title_lower or "rent" in url_lower:
+        has_sale = "venta" in title_lower or "sale" in url_lower
+        has_rent = "alquiler" in title_lower or "renta" in title_lower or "rent" in url_lower
+        if has_sale and has_rent:
+            listing_type = "sale"
+        elif has_rent:
             listing_type = "rent"
         else:
             listing_type = "sale"
