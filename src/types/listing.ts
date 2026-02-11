@@ -11,7 +11,10 @@ export type ListingLocation = string | {
     city?: string;
     state?: string;
     country?: string;
-    [key: string]: string | undefined;
+    departamento?: string;
+    latitude?: number;
+    longitude?: number;
+    [key: string]: string | number | undefined;
 } | null;
 
 export interface ListingContactInfo {

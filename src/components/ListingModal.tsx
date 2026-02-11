@@ -78,6 +78,7 @@ export default function ListingModal({ externalId, onClose }: ListingModalProps)
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
+    const [reverseGeoName, setReverseGeoName] = useState<string | null>(null);
 
     // Fetch full listing data
     useEffect(() => {
@@ -98,6 +99,21 @@ export default function ListingModal({ externalId, onClose }: ListingModalProps)
         }
         fetchListing();
     }, [externalId]);
+
+    // Reverse geocode coords to get location name
+    useEffect(() => {
+        if (!listing) return;
+        const lat = listing.location?.latitude;
+        const lng = listing.location?.longitude;
+        if (!lat || !lng) return;
+
+        fetch(`/api/reverse-geocode?lat=${lat}&lng=${lng}`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.name) setReverseGeoName(data.name);
+            })
+            .catch(() => {});
+    }, [listing]);
 
     // Keyboard navigation
     useEffect(() => {
@@ -277,15 +293,21 @@ export default function ListingModal({ externalId, onClose }: ListingModalProps)
                                         <span className="text-xs text-slate-500">m²</span>
                                     </div>
                                 )}
+                                {(specs.parking || specs.parqueo || specs.parqueos || specs.garages || specs.estacionamiento) && (
+                                    <div className="flex items-center gap-1">
+                                        <span className="text-base font-bold text-[#272727]">{specs.parking || specs.parqueo || specs.parqueos || specs.garages || specs.estacionamiento}</span>
+                                        <span className="text-xs text-slate-500">parqueo</span>
+                                    </div>
+                                )}
                             </div>
 
                             {/* Location */}
-                            {municipio && (
+                            {(municipio || reverseGeoName) && (
                                 <div className="text-slate-500 text-sm mb-2 flex items-center gap-1.5">
                                     <svg className="w-3.5 h-3.5 flex-shrink-0" fill="currentColor" viewBox="0 0 16 16">
                                         <path d="M8 16s6-5.686 6-10A6 6 0 0 0 2 6c0 4.314 6 10 6 10zm0-7a3 3 0 1 1 0-6 3 3 0 0 1 0 6z" />
                                     </svg>
-                                    {municipio}
+                                    {municipio || reverseGeoName}
                                 </div>
                             )}
 

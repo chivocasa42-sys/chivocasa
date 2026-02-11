@@ -1909,6 +1909,8 @@ def scrape_listing(url, listing_type):
                     specs["bedrooms"] = value
                 elif "baños" in label_lower:
                     specs["bathrooms"] = value
+                elif "parqueo" in label_lower or "parking" in label_lower or "estacionamiento" in label_lower or "garaje" in label_lower:
+                    specs["parking"] = value
                 elif "área" in label_lower or "terreno" in label_lower or "construcción" in label_lower:
                     # Store area info with original label
                     specs[label] = value
@@ -2335,6 +2337,8 @@ def scrape_micasasv_listing(url, listing_type):
                     specs["bedrooms"] = value
                 elif "baño" in label:
                     specs["bathrooms"] = value
+                elif "parqueo" in label or "parking" in label or "estacionamiento" in label or "garaje" in label:
+                    specs["parking"] = value
                 elif "área" in label or "tamaño" in label or "terreno" in label or "construcción" in label:
                     specs[label_el.get_text(strip=True)] = value
                 else:
@@ -2351,6 +2355,8 @@ def scrape_micasasv_listing(url, listing_type):
                     specs["bedrooms"] = value
                 elif any("bath" in c or "shower" in c for c in icon_class):
                     specs["bathrooms"] = value
+                elif any("car" in c or "parking" in c or "garage" in c for c in icon_class):
+                    specs["parking"] = value
                 elif any("box" in c or "area" in c for c in icon_class):
                     specs["area"] = value
         
@@ -3253,12 +3259,15 @@ def scrape_vivolatam_listing(url, listing_type="sale"):
         specs = {}
         bedroom_match = re.search(r'(\d+)\s*(?:dormitorio|habitaci)', page_text, re.I)
         bathroom_match = re.search(r'(\d+)\s*(?:baño|bath)', page_text, re.I)
+        parking_match = re.search(r'(\d+)\s*(?:parqueo|parking|estacionamiento|garaje|cochera)', page_text, re.I)
         area_match = re.search(r'([\d.,]+)\s*(m2|metros?\s*cuadrados?|m²|ft2|sqft|sq\s*ft|pies?\s*cuadrados?|v2|varas?\s*cuadradas?|varas?)', page_text, re.I)
         
         if bedroom_match:
             specs["habitaciones"] = bedroom_match.group(1)
         if bathroom_match:
             specs["banos"] = bathroom_match.group(1)
+        if parking_match:
+            specs["parqueo"] = parking_match.group(1)
         if area_match:
             specs["area"] = f"{area_match.group(1)} {area_match.group(2)}"
         

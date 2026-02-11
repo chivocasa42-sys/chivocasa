@@ -36,7 +36,10 @@ RETURNS TABLE (
   bedrooms integer,
   bathrooms numeric,
   area numeric,
+  parking integer,
   municipio text,
+  latitude double precision,
+  longitude double precision,
   total_count bigint
 )
 LANGUAGE plpgsql
@@ -48,7 +51,8 @@ BEGIN
     SELECT DISTINCT ON (sd.external_id)
       sd.*,
       g3.loc_name AS municipio_match,
-      g2.loc_name AS colonia_match
+      g2.loc_name AS colonia_match,
+      g2.cords AS g2_cords
     FROM public.scrapped_data sd
     -- Join to location hierarchy via listing_location_match
     INNER JOIN listing_location_match llm ON sd.external_id = llm.external_id
@@ -78,8 +82,18 @@ BEGIN
     NULLIF(regexp_replace(f.specs->>'bedrooms', '[^0-9.]', '', 'g'), '')::numeric::int AS bedrooms,
     NULLIF(regexp_replace(f.specs->>'bathrooms', '[^0-9.]', '', 'g'), '')::numeric AS bathrooms,
     (f.specs->>'area_m2')::numeric AS area,
+    NULLIF(regexp_replace(f.specs->>'parking', '[^0-9.]', '', 'g'), '')::numeric::int AS parking,
     -- Use L3 (municipality) from hierarchy, fallback to L2 (colonia), then to JSON
     COALESCE(f.municipio_match, f.colonia_match, f.location->>'municipio_detectado') AS municipio,
+    -- Effective coordinates: prefer listing's own coords, fallback to L2 colonia centroid
+    COALESCE(
+      NULLIF(f.location->>'latitude', 'null')::double precision,
+      (f.g2_cords->>'latitude')::double precision
+    ) AS latitude,
+    COALESCE(
+      NULLIF(f.location->>'longitude', 'null')::double precision,
+      (f.g2_cords->>'longitude')::double precision
+    ) AS longitude,
     COUNT(*) OVER() AS total_count
   FROM filtered f
   ORDER BY

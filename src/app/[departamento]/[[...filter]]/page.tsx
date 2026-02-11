@@ -23,7 +23,10 @@ interface CardListing {
     bedrooms: number | null;
     bathrooms: number | null;
     area: number | null;
+    parking: number | null;
     municipio: string | null;
+    latitude: number | null;
+    longitude: number | null;
     published_date: string | null;
     last_updated: string | null;
     total_count: number;
@@ -259,7 +262,8 @@ export default function DepartmentPage() {
             const specs: Record<string, string | number> = {};
             if (l.bedrooms !== null) specs.bedrooms = l.bedrooms;
             if (l.bathrooms !== null) specs.bathrooms = l.bathrooms;
-            if (l.area !== null) specs['Área construida (m²)'] = l.area;
+            if (l.area !== null) specs.area_m2 = l.area;
+            if (l.parking !== null) specs.parking = l.parking;
 
             return {
                 external_id: l.external_id,
@@ -268,7 +272,11 @@ export default function DepartmentPage() {
                 listing_type: l.listing_type,
                 images: l.first_image ? [l.first_image] : null,
                 specs: Object.keys(specs).length > 0 ? specs : null,
-                location: l.municipio ? { municipio_detectado: l.municipio } : null,
+                location: (l.municipio || l.latitude) ? {
+                    municipio_detectado: l.municipio || undefined,
+                    latitude: l.latitude || undefined,
+                    longitude: l.longitude || undefined
+                } : undefined,
                 published_date: l.published_date || l.last_updated || undefined
             };
         });

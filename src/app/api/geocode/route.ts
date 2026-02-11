@@ -28,9 +28,11 @@ export async function GET(request: NextRequest) {
             `https://nominatim.openstreetmap.org/search?${params}`,
             {
                 headers: {
-                    'User-Agent': 'SivarCasas/1.0 (https://sivarcasas.com)',
+                    'User-Agent': 'ChivocasaBot/1.0 (https://github.com/chivocasa42-sys)',
                     'Accept': 'application/json',
-                    'Accept-Language': 'es,en;q=0.9'
+                    'Accept-Language': 'es,en;q=0.9',
+                    'Accept-Encoding': 'gzip, deflate',
+                    'Connection': 'keep-alive'
                 },
                 next: { revalidate: 3600 } // Cache for 1 hour
             }

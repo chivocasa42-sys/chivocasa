@@ -18,7 +18,10 @@ export interface CardListing {
     bedrooms: number | null;
     bathrooms: number | null;
     area: number | null;
+    parking: number | null;
     municipio: string | null;
+    latitude: number | null;
+    longitude: number | null;
     published_date: string | null;
     last_updated: string | null;
     total_count: number;
