@@ -287,8 +287,7 @@ export default function ValuadorPage() {
                     Estimá el valor de tu propiedad basado en datos reales del mercado salvadoreño
                 </p>
                 <p className="text-slate-500 mt-1 text-sm md:text-base">
-                    NOTA:<br />
-                    Los valores son aproximados, calculados a partir de comparaciones de anuncios disponibles. <b>Esto no sustituye una valoración profesional.</b> Consulte con un experto para una valuación oficial.
+                    <b>NOTA:</b> Los valores son aproximados, calculados a partir de comparaciones de anuncios disponibles. <b>Esto no sustituye una valoración profesional.</b> Consulte con un experto para una valuación oficial.
                 </p>
             </div>
 
@@ -322,8 +321,8 @@ export default function ValuadorPage() {
                                             key={pt.value}
                                             onClick={() => setPropertyType(pt.value)}
                                             className={`px-3 py-2 rounded-lg text-xs font-medium transition-all border ${propertyType === pt.value
-                                                    ? 'bg-[#1a2b4a] text-white border-[#1a2b4a]'
-                                                    : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                                                ? 'bg-[#1a2b4a] text-white border-[#1a2b4a]'
+                                                : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
                                                 }`}
                                         >
                                             {pt.label}
@@ -567,8 +566,8 @@ export default function ValuadorPage() {
                                                 </td>
                                                 <td className="px-3 py-3 text-right">
                                                     <span className={`inline-block px-2 py-0.5 rounded text-xs font-bold ${comp.similarity >= 70 ? 'bg-emerald-100 text-emerald-700' :
-                                                            comp.similarity >= 40 ? 'bg-yellow-100 text-yellow-700' :
-                                                                'bg-slate-100 text-slate-500'
+                                                        comp.similarity >= 40 ? 'bg-yellow-100 text-yellow-700' :
+                                                            'bg-slate-100 text-slate-500'
                                                         }`}>
                                                         {comp.similarity}%
                                                     </span>
@@ -605,8 +604,8 @@ export default function ValuadorPage() {
                                                 <span>{comp.distance_km}km</span>
                                             </div>
                                             <span className={`ml-2 flex-shrink-0 inline-block px-2 py-0.5 rounded text-[10px] font-bold ${comp.similarity >= 70 ? 'bg-emerald-100 text-emerald-700' :
-                                                    comp.similarity >= 40 ? 'bg-yellow-100 text-yellow-700' :
-                                                        'bg-slate-100 text-slate-500'
+                                                comp.similarity >= 40 ? 'bg-yellow-100 text-yellow-700' :
+                                                    'bg-slate-100 text-slate-500'
                                                 }`}>
                                                 {comp.similarity}%
                                             </span>
