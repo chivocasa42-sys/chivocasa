@@ -214,7 +214,7 @@ export default function ValuadorPage() {
             .then((depts: { total_count: number }[]) =>
                 setTotalListings(depts.reduce((s, d) => s + d.total_count, 0))
             )
-            .catch(() => {});
+            .catch(() => { });
     }, []);
 
     // Result state
@@ -286,6 +286,10 @@ export default function ValuadorPage() {
                 <p className="text-slate-500 mt-1 text-sm md:text-base">
                     Estimá el valor de tu propiedad basado en datos reales del mercado salvadoreño
                 </p>
+                <p className="text-slate-500 mt-1 text-sm md:text-base">
+                    NOTA:<br />
+                    Los valores son aproximados, calculados a partir de comparaciones de anuncios disponibles. <b>Esto no sustituye una valoración profesional.</b> Consulte con un experto para una valuación oficial.
+                </p>
             </div>
 
             {/* Main content */}
@@ -317,11 +321,10 @@ export default function ValuadorPage() {
                                         <button
                                             key={pt.value}
                                             onClick={() => setPropertyType(pt.value)}
-                                            className={`px-3 py-2 rounded-lg text-xs font-medium transition-all border ${
-                                                propertyType === pt.value
+                                            className={`px-3 py-2 rounded-lg text-xs font-medium transition-all border ${propertyType === pt.value
                                                     ? 'bg-[#1a2b4a] text-white border-[#1a2b4a]'
                                                     : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
-                                            }`}
+                                                }`}
                                         >
                                             {pt.label}
                                         </button>
@@ -563,11 +566,10 @@ export default function ValuadorPage() {
                                                     {comp.distance_km}km
                                                 </td>
                                                 <td className="px-3 py-3 text-right">
-                                                    <span className={`inline-block px-2 py-0.5 rounded text-xs font-bold ${
-                                                        comp.similarity >= 70 ? 'bg-emerald-100 text-emerald-700' :
-                                                        comp.similarity >= 40 ? 'bg-yellow-100 text-yellow-700' :
-                                                        'bg-slate-100 text-slate-500'
-                                                    }`}>
+                                                    <span className={`inline-block px-2 py-0.5 rounded text-xs font-bold ${comp.similarity >= 70 ? 'bg-emerald-100 text-emerald-700' :
+                                                            comp.similarity >= 40 ? 'bg-yellow-100 text-yellow-700' :
+                                                                'bg-slate-100 text-slate-500'
+                                                        }`}>
                                                         {comp.similarity}%
                                                     </span>
                                                 </td>
@@ -602,11 +604,10 @@ export default function ValuadorPage() {
                                                 <span>${comp.price_per_m2.toLocaleString()}/m²</span>
                                                 <span>{comp.distance_km}km</span>
                                             </div>
-                                            <span className={`ml-2 flex-shrink-0 inline-block px-2 py-0.5 rounded text-[10px] font-bold ${
-                                                comp.similarity >= 70 ? 'bg-emerald-100 text-emerald-700' :
-                                                comp.similarity >= 40 ? 'bg-yellow-100 text-yellow-700' :
-                                                'bg-slate-100 text-slate-500'
-                                            }`}>
+                                            <span className={`ml-2 flex-shrink-0 inline-block px-2 py-0.5 rounded text-[10px] font-bold ${comp.similarity >= 70 ? 'bg-emerald-100 text-emerald-700' :
+                                                    comp.similarity >= 40 ? 'bg-yellow-100 text-yellow-700' :
+                                                        'bg-slate-100 text-slate-500'
+                                                }`}>
                                                 {comp.similarity}%
                                             </span>
                                         </div>
