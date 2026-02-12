@@ -242,7 +242,9 @@ export default function Home() {
             </p>
 
             {/* Map Explorer - Interactive location search */}
-            <MapExplorer externalLocation={heroLocation} />
+            <div id="mapa" className="scroll-mt-20">
+              <MapExplorer externalLocation={heroLocation} />
+            </div>
 
             {/* Departamentos Grid */}
             <div id="departamentos" className="mb-8 scroll-mt-24">
@@ -281,7 +283,7 @@ export default function Home() {
             </div>
 
             {/* Rankings — CanvasJS Charts with lazy load + polling */}
-            <div id="rankings">
+            <div id="rankings" className="scroll-mt-20">
               <MarketRankingCharts departments={departments} activeFilter={view} />
             </div>
 
