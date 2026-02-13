@@ -4,6 +4,15 @@ const nextConfig: NextConfig = {
   experimental: {
     optimizePackageImports: ['react-leaflet', 'leaflet', 'echarts'],
     cssChunking: 'strict',
+    optimizeCss: true,
+  },
+  turbopack: {
+    resolveAlias: {
+      // Stub Next.js built-in polyfills — browserslist already targets modern
+      // browsers that natively support all polyfilled APIs (Array.prototype.at,
+      // .flat, .flatMap, Object.fromEntries, Object.hasOwn, String trim*)
+      'next/dist/build/polyfills/polyfill-nomodule': './src/empty-polyfills.js',
+    },
   },
   images: {
     remotePatterns: [

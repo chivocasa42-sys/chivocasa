@@ -136,10 +136,6 @@ export default function TendenciasClient({ initialData }: TendenciasClientProps)
                             {/* KPI Strip */}
                             <KPIStrip stats={kpiStats} />
 
-                            {/* Disclaimer */}
-                            <p className="text-xs md:text-sm text-[var(--text-muted)] text-center mt-1 max-w-4xl mx-auto italic opacity-75">
-                                Los valores mostrados son promedios estimados y pueden variar según la zona y el tipo de propiedad.
-                            </p>
                         </section>
 
                         {/* ── Subtle divider between sections ── */}
@@ -162,6 +158,11 @@ export default function TendenciasClient({ initialData }: TendenciasClientProps)
                                 />
                             </div>
                         </section>
+
+                        {/* Disclaimer */}
+                        <p className="text-xs md:text-sm text-[var(--text-muted)] text-center mt-1 mb-10 max-w-4xl mx-auto italic opacity-75">
+                            Los valores mostrados son promedios estimados y pueden variar según la zona y el tipo de propiedad.
+                        </p>
                     </>
                 )}
             </main>
