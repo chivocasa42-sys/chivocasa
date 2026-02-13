@@ -113,19 +113,13 @@ export default function Tendencias() {
                         </button>
                     </div>
                 ) : (
-                    <>
-                        {/* ── Single page-level filter ── */}
-                        <div className="pt-10 pb-2">
-                            <HomeHeader
-                                view={view}
-                                onViewChange={setView}
-                            />
-                        </div>
 
+
+                    <>
                         {/* ══════════════════════════════════════════════
                             SECTION 1 — Panorama (KPI cards)
                            ══════════════════════════════════════════════ */}
-                        <section className="pt-4 pb-10">
+                        <section className="pt-10 pb-10">
                             <SectionHeader
                                 title={['Panorama del mercado inmobiliario', 'en El Salvador']}
                                 subtitle="Precios promedio, rentas mensuales y nuevas oportunidades inmobiliarias, actualizadas para ayudarte a tomar decisiones con mayor confianza."
@@ -148,7 +142,16 @@ export default function Tendencias() {
                            ══════════════════════════════════════════════ */}
                         <section className="pt-10 pb-12">
                             <div id="rankings" className="scroll-mt-20">
-                                <MarketRankingCharts departments={departments} activeFilter={view} />
+                                <MarketRankingCharts
+                                    departments={departments}
+                                    activeFilter={view}
+                                    filterSlot={
+                                        <HomeHeader
+                                            view={view}
+                                            onViewChange={setView}
+                                        />
+                                    }
+                                />
                             </div>
                         </section>
                     </>

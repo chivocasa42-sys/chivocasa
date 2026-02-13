@@ -30,6 +30,7 @@ declare global {
 interface MarketRankingChartsProps {
   departments: DepartmentStats[];
   activeFilter?: ViewType;
+  filterSlot?: React.ReactNode;
 }
 
 const REFRESH_INTERVAL_MS = 30_000;
@@ -69,7 +70,7 @@ const PILL_CONFIG: Record<ViewType, { label: string; pillClass: string; labelCla
   rent: { label: 'RENTA', pillClass: 'dept-card__pill--renta', labelClass: 'dept-card__pill-label--renta' },
 };
 
-export default function MarketRankingCharts({ departments, activeFilter = 'all' }: MarketRankingChartsProps) {
+export default function MarketRankingCharts({ departments, activeFilter = 'all', filterSlot }: MarketRankingChartsProps) {
   const router = useRouter();
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error' | 'empty'>('idle');
   const [pulsing, setPulsing] = useState(false);
@@ -329,11 +330,11 @@ export default function MarketRankingCharts({ departments, activeFilter = 'all' 
           subtitle="Top de departamentos según precio mediano y nivel de oferta inmobiliaria."
         />
 
-        {/* Live indicator — aligned right, on its own row */}
-        {status === 'ready' && (
-          <div className="ranking-charts-live-bar">
-            <span className={`ranking-charts-live-dot${pulsing ? ' ranking-charts-live-dot-pulse' : ''}`} />
-            <span className="ranking-charts-live-text">LIVE</span>
+
+        {/* Optional filter slot (e.g. Total/Venta/Renta) */}
+        {filterSlot && (
+          <div className="mb-6">
+            {filterSlot}
           </div>
         )}
 
@@ -371,10 +372,13 @@ export default function MarketRankingCharts({ departments, activeFilter = 'all' 
           </div>
         )}
 
-        {/* Chart containers — always in DOM for ECharts to mount into */}
+        {/* Chart containers — always in DOM with real dimensions for ECharts */}
         <div
           className="grid grid-cols-1 md:grid-cols-3 gap-5"
-          style={{ display: status === 'ready' ? 'grid' : 'none' }}
+          style={status === 'ready'
+            ? {}
+            : { opacity: 0, position: 'absolute', pointerEvents: 'none', width: '100%' }
+          }
         >
           {['chart-expensive', 'chart-cheap', 'chart-active'].map((id) => {
             const pill = PILL_CONFIG[activeFilter];
