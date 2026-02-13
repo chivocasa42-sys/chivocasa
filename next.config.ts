@@ -1,4 +1,10 @@
 import type { NextConfig } from "next";
+import path from "path";
+
+const emptyPolyfill = path.resolve(
+  import.meta.dirname ?? __dirname,
+  'src/empty-polyfills.js'
+);
 
 const nextConfig: NextConfig = {
   experimental: {
@@ -8,11 +14,19 @@ const nextConfig: NextConfig = {
   },
   turbopack: {
     resolveAlias: {
-      // Stub Next.js built-in polyfills — browserslist already targets modern
-      // browsers that natively support all polyfilled APIs (Array.prototype.at,
-      // .flat, .flatMap, Object.fromEntries, Object.hasOwn, String trim*)
+      // Stub polyfills for Turbopack dev builds
       'next/dist/build/polyfills/polyfill-nomodule': './src/empty-polyfills.js',
     },
+  },
+  webpack(config, { isServer }) {
+    // Stub polyfills for webpack production builds
+    if (!isServer) {
+      config.resolve.alias = {
+        ...config.resolve.alias,
+        'next/dist/build/polyfills/polyfill-nomodule': emptyPolyfill,
+      };
+    }
+    return config;
   },
   images: {
     remotePatterns: [
@@ -31,13 +45,11 @@ const nextConfig: NextConfig = {
     ];
 
     return departments.flatMap(dept => [
-      // Base redirect: /tag/san-salvador -> /san-salvador
       {
         source: `/tag/${dept}`,
         destination: `/${dept}`,
         permanent: true,
       },
-      // Filter redirect: /tag/san-salvador/venta -> /san-salvador/venta
       {
         source: `/tag/${dept}/:filter`,
         destination: `/${dept}/:filter`,
