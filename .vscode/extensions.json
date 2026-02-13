@@ -1,0 +1,16 @@
+{
+  "recommendations": [
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode",
+    "bradlc.vscode-tailwindcss",
+    "dsznajder.es7-react-js-snippets",
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "eamodio.gitlens",
+    "mikestead.dotenv",
+    "mtxr.sqltools",
+    "editorconfig.editorconfig",
+    "yzhang.markdown-all-in-one",
+    "csstools.postcss"
+  ]
+}

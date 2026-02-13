@@ -2,11 +2,13 @@
 
 import { Listing, ListingSpecs, ListingLocation } from '@/types/listing';
 import LazyImage from './LazyImage';
+import { useFavorites } from '@/hooks/useFavorites';
 
 interface ListingCardProps {
     listing: Listing;
     onClick?: () => void;
     isFeatured?: boolean;
+    hideFavorite?: boolean;
 }
 
 function formatPrice(price: number): string {
@@ -77,11 +79,13 @@ function getTimeSinceText(dateStr: string | undefined | null): string | null {
     return `Hace más de 1 año`;
 }
 
-export default function ListingCard({ listing, onClick, isFeatured }: ListingCardProps) {
+export default function ListingCard({ listing, onClick, isFeatured, hideFavorite }: ListingCardProps) {
     const specs = listing.specs || {};
     const area = getArea(specs);
     const locationTags = getLocationTags(listing.location, listing.tags);
     const timeSinceText = getTimeSinceText(listing.published_date);
+    const { isFavorite, toggleFavorite } = useFavorites();
+    const liked = isFavorite(listing.external_id);
 
     return (
         <article
@@ -127,11 +131,25 @@ export default function ListingCard({ listing, onClick, isFeatured }: ListingCar
 
             {/* Content Section */}
             <div className="p-4">
-                {/* Price */}
-                <div className="text-2xl font-black text-[#272727] tracking-tight mb-1">
-                    {formatPrice(listing.price)}
-                    {listing.listing_type === 'rent' && (
-                        <span className="text-sm font-normal text-slate-500 ml-1">/mes</span>
+                {/* Price + Favorite */}
+                <div className="flex items-center justify-between mb-1">
+                    <div className="text-2xl font-black text-[#272727] tracking-tight">
+                        {formatPrice(listing.price)}
+                        {listing.listing_type === 'rent' && (
+                            <span className="text-sm font-normal text-slate-500 ml-1">/mes</span>
+                        )}
+                    </div>
+                    {!hideFavorite && (
+                        <button
+                            onClick={(e) => { e.stopPropagation(); toggleFavorite(listing.external_id); }}
+                            className="p-1 transition-colors flex-shrink-0"
+                            aria-label={liked ? 'Quitar de favoritos' : 'Agregar a favoritos'}
+                            title={liked ? 'Quitar de favoritos' : 'Agregar a favoritos'}
+                        >
+                            <svg className="w-6 h-6" viewBox="0 0 24 24" fill={liked ? '#ef4444' : 'none'} stroke={liked ? '#ef4444' : '#94a3b8'} strokeWidth="2">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                            </svg>
+                        </button>
                     )}
                 </div>
 

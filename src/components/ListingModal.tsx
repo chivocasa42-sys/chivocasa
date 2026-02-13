@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import LazyImage from './LazyImage';
+import { useFavorites } from '@/hooks/useFavorites';
 
 interface ListingModalProps {
     externalId: string | number; // Can be string to prevent precision loss
@@ -79,6 +80,8 @@ export default function ListingModal({ externalId, onClose }: ListingModalProps)
     const [error, setError] = useState<string | null>(null);
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
     const [reverseGeoName, setReverseGeoName] = useState<string | null>(null);
+    const { isFavorite, toggleFavorite } = useFavorites();
+    const liked = isFavorite(externalId);
 
     // Fetch full listing data
     useEffect(() => {
@@ -313,7 +316,7 @@ export default function ListingModal({ externalId, onClose }: ListingModalProps)
 
                             {/* Tags */}
                             {tags.length > 0 && (
-                                <div className="flex flex-wrap gap-1.5 mb-3 md:mb-0">
+                                <div className="flex flex-wrap gap-1.5 mb-3">
                                     {tags.map((tag, idx) => (
                                         <span
                                             key={idx}
@@ -324,6 +327,22 @@ export default function ListingModal({ externalId, onClose }: ListingModalProps)
                                     ))}
                                 </div>
                             )}
+
+                            {/* Favorite Button */}
+                            <button
+                                onClick={() => toggleFavorite(externalId)}
+                                className="flex items-center gap-2 py-1 transition-colors group/fav"
+                                aria-label={liked ? 'Quitar de favoritos' : 'Agregar a favoritos'}
+                            >
+                                <svg className="w-5 h-5" viewBox="0 0 24 24" fill={liked ? '#ef4444' : 'none'} stroke={liked ? '#ef4444' : '#94a3b8'} strokeWidth="2">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                                </svg>
+                                <span className={`text-sm font-medium ${
+                                    liked ? 'text-red-500' : 'text-slate-500 group-hover/fav:text-red-500'
+                                }`}>
+                                    {liked ? 'Guardado en favoritos' : 'Agregar a favoritos'}
+                                </span>
+                            </button>
                         </div>
 
                         {/* Right column: Map + CTA */}
