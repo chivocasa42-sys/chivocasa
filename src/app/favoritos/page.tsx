@@ -83,7 +83,7 @@ export default function FavoritosPage() {
 
     return (
         <>
-            <Navbar totalListings={0} onRefresh={() => {}} />
+            <Navbar />
 
             <main className="min-h-screen" style={{ background: 'var(--bg-page)' }}>
                 <div className="container mx-auto px-4 max-w-7xl py-6">
@@ -373,7 +373,7 @@ export default function FavoritosPage() {
                                         ))}
                                     </tr>
                                     <tr>
-                                        <td className="p-4 font-semibold text-slate-500">Enlace</td>
+                                        <td className="p-4"></td>
                                         {comparedListings.map(l => (
                                             <td key={String(l.external_id)} className="p-4 text-center">
                                                 <a
@@ -382,7 +382,7 @@ export default function FavoritosPage() {
                                                     rel="noopener noreferrer"
                                                     className="inline-block bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg text-xs font-bold transition-all no-underline"
                                                 >
-                                                    Ver anuncio
+                                                    Más Información
                                                 </a>
                                             </td>
                                         ))}

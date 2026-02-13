@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useFavorites } from '@/hooks/useFavorites';
@@ -13,21 +13,39 @@ const NAV_LINKS = [
 ];
 
 interface NavbarProps {
-    totalListings: number;
+    totalListings?: number;
     lastUpdated?: string;
-    onRefresh: () => void;
+    onRefresh?: () => void;
 }
 
 export default function Navbar({ totalListings, onRefresh }: NavbarProps) {
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [mobileOpen, setMobileOpen] = useState(false);
+    const [autoTotal, setAutoTotal] = useState<number | null>(null);
+
+    // Auto-fetch total when not provided by parent
+    useEffect(() => {
+        if (totalListings !== undefined) return;
+        fetch('/api/department-stats')
+            .then(res => res.ok ? res.json() : [])
+            .then((data: { total_count: number }[]) => {
+                setAutoTotal(data.reduce((sum, d) => sum + (d.total_count || 0), 0));
+            })
+            .catch(() => {});
+    }, [totalListings]);
+
+    const displayTotal = totalListings ?? autoTotal ?? 0;
     const pathname = usePathname();
     const router = useRouter();
     const { favoriteCount } = useFavorites();
 
     const handleRefresh = async () => {
         setIsRefreshing(true);
-        await onRefresh();
+        if (onRefresh) {
+            await onRefresh();
+        } else {
+            window.location.reload();
+        }
         setTimeout(() => setIsRefreshing(false), 1000);
     };
 
@@ -98,7 +116,7 @@ export default function Navbar({ totalListings, onRefresh }: NavbarProps) {
                     <div className="flex items-center gap-2">
                         <span className="inline-flex items-center gap-1.5 text-xs sm:text-sm text-[var(--text-secondary)]">
                             <span className="w-2 h-2 bg-[var(--success)] rounded-full animate-pulse"></span>
-                            <span className="font-semibold">{totalListings.toLocaleString()}</span>
+                            <span className="font-semibold">{displayTotal.toLocaleString()}</span>
                             <span className="hidden sm:inline">activos</span>
                         </span>
                         <button
