@@ -9,6 +9,8 @@ import {
   toExpensiveDataPoints,
   toCheapDataPoints,
   toActiveDataPoints,
+  toAllDeptPriceDataPoints,
+  toMonthlyEvolution,
   type DepartmentStats,
   type ViewType,
 } from '@/lib/rankingChartsAdapter';
@@ -17,7 +19,7 @@ declare global {
   interface Window {
     MarketRankingCharts: {
       initCharts: (config: Record<string, unknown>) => boolean;
-      updateAllCharts: (expensive: unknown[], cheap: unknown[], active: unknown[]) => void;
+      updateAllCharts: (expensive: unknown[], cheap: unknown[], active: unknown[], deptPrice?: unknown[], monthly?: Record<string, unknown>) => void;
       destroyCharts: () => void;
       observeSection: (id: string, onVisible: () => void, onHidden: () => void) => void;
       disconnectObserver: () => void;
@@ -108,6 +110,12 @@ export default function MarketRankingCharts({ departments, activeFilter = 'all',
     const expData = toExpensiveDataPoints(topExpensive);
     const cheapData = toCheapDataPoints(topCheap);
     const activeData = toActiveDataPoints(topActive);
+    const deptPriceData = toAllDeptPriceDataPoints(depts, activeFilter);
+    const monthlyData = toMonthlyEvolution(depts, activeFilter);
+    const monthlyPayload = {
+      months: monthlyData.map(m => m.month),
+      values: monthlyData.map(m => m.value),
+    };
 
     if (!chartsInitialized.current) {
       const success = window.MarketRankingCharts.initCharts({
@@ -115,6 +123,8 @@ export default function MarketRankingCharts({ departments, activeFilter = 'all',
         expensiveData: expData,
         cheapData: cheapData,
         activeData: activeData,
+        deptPriceData: deptPriceData,
+        monthlyData: monthlyPayload,
         onBarClick: handleBarClick,
       });
 
@@ -127,7 +137,7 @@ export default function MarketRankingCharts({ departments, activeFilter = 'all',
       }
       return false;
     } else {
-      window.MarketRankingCharts.updateAllCharts(expData, cheapData, activeData);
+      window.MarketRankingCharts.updateAllCharts(expData, cheapData, activeData, deptPriceData, monthlyPayload);
       triggerPulse();
       if (shouldCache) writeCache(depts);
       return true;
@@ -289,7 +299,7 @@ export default function MarketRankingCharts({ departments, activeFilter = 'all',
     // Wait one frame for the DOM layout to settle after display change
     const raf = requestAnimationFrame(() => {
       if (window.MarketRankingCharts && chartsInitialized.current) {
-        ['chart-expensive', 'chart-cheap', 'chart-active'].forEach(id => {
+        ['chart-expensive', 'chart-cheap', 'chart-active', 'chart-dept-price', 'chart-monthly'].forEach(id => {
           const el = document.getElementById(id);
           if (el && typeof window.echarts !== 'undefined') {
             const instance = (window.echarts as any).getInstanceByDom(el);
@@ -394,6 +404,32 @@ export default function MarketRankingCharts({ departments, activeFilter = 'all',
               </div>
             );
           })}
+        </div>
+
+        {/* Row 2: 2-column grid — Precio Medio + Evolución Mensual */}
+        <div
+          className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-5"
+          style={status === 'ready'
+            ? {}
+            : { opacity: 0, position: 'absolute', pointerEvents: 'none', width: '100%' }
+          }
+        >
+          <div className="ranking-chart-card">
+            <div className="dept-card__badge-pill">
+              <div className={`dept-card__pill ${PILL_CONFIG[activeFilter].pillClass}`}>
+                <span className={`dept-card__pill-label ${PILL_CONFIG[activeFilter].labelClass}`}>{PILL_CONFIG[activeFilter].label}</span>
+              </div>
+            </div>
+            <div id="chart-dept-price" className="ranking-chart-canvas" style={{ height: '340px' }} />
+          </div>
+          <div className="ranking-chart-card">
+            <div className="dept-card__badge-pill">
+              <div className={`dept-card__pill ${PILL_CONFIG[activeFilter].pillClass}`}>
+                <span className={`dept-card__pill-label ${PILL_CONFIG[activeFilter].labelClass}`}>{PILL_CONFIG[activeFilter].label}</span>
+              </div>
+            </div>
+            <div id="chart-monthly" className="ranking-chart-canvas" style={{ height: '340px' }} />
+          </div>
         </div>
       </div>
     </>

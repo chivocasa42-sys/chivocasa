@@ -289,6 +289,121 @@
     };
   }
 
+  // Build ECharts option for a line/area chart (monthly evolution)
+  function buildLineAreaOption(title, subtitle, months, values, tokens, lineColor) {
+    return {
+      animation: true,
+      animationDuration: 600,
+      animationEasing: 'cubicOut',
+      backgroundColor: 'transparent',
+      title: [
+        {
+          text: title,
+          left: 'center',
+          top: 0,
+          textStyle: {
+            fontFamily: 'Inter, sans-serif',
+            fontWeight: 'bold',
+            fontSize: 15,
+            color: tokens.textPrimary,
+          },
+        },
+        {
+          text: subtitle,
+          left: 'center',
+          top: 22,
+          textStyle: {
+            fontFamily: 'Inter, sans-serif',
+            fontSize: 12,
+            fontWeight: 'normal',
+            color: tokens.textMuted,
+          },
+        }
+      ],
+      tooltip: {
+        trigger: 'axis',
+        renderMode: 'html',
+        appendToBody: true,
+        confine: false,
+        backgroundColor: tokens.bgCard,
+        borderColor: tokens.bgSubtle,
+        borderWidth: 1,
+        textStyle: {
+          fontFamily: 'Inter, sans-serif',
+          fontSize: 13,
+          color: tokens.textPrimary,
+        },
+        formatter: function (params) {
+          var p = params[0];
+          return '<strong>' + p.name + ' 2025</strong><br/>' +
+            'Precio medio: <strong>' + formatPrice(p.value) + '</strong>';
+        },
+      },
+      grid: {
+        left: 10,
+        right: 20,
+        top: 52,
+        bottom: 30,
+        containLabel: true,
+      },
+      xAxis: {
+        type: 'category',
+        data: months,
+        axisLine: { show: false },
+        axisTick: { show: false },
+        axisLabel: {
+          fontFamily: 'Inter, sans-serif',
+          fontSize: 11,
+          color: tokens.textMuted,
+        },
+      },
+      yAxis: {
+        type: 'value',
+        axisLine: { show: false },
+        axisTick: { show: false },
+        splitLine: {
+          show: true,
+          lineStyle: { color: tokens.bgSubtle, type: 'dashed' },
+        },
+        axisLabel: {
+          fontFamily: 'Inter, sans-serif',
+          fontSize: 11,
+          color: tokens.textMuted,
+          formatter: function (v) { return formatPrice(v); },
+        },
+      },
+      series: [{
+        type: 'line',
+        data: values,
+        smooth: true,
+        symbol: 'circle',
+        symbolSize: 6,
+        lineStyle: {
+          color: lineColor,
+          width: 3,
+        },
+        itemStyle: {
+          color: lineColor,
+          borderColor: '#fff',
+          borderWidth: 2,
+        },
+        areaStyle: {
+          color: {
+            type: 'linear',
+            x: 0, y: 0, x2: 0, y2: 1,
+            colorStops: [
+              { offset: 0, color: lineColor + '33' },
+              { offset: 1, color: lineColor + '05' },
+            ],
+          },
+        },
+        emphasis: {
+          itemStyle: { shadowBlur: 6, shadowColor: 'rgba(0,0,0,0.15)' },
+        },
+      }],
+    };
+  }
+
   // Attach click handler to an ECharts instance
   function attachClickHandler(chart, dataPoints) {
     chart.on('click', function (params) {
@@ -356,8 +471,32 @@
 
       chartInstances = [chartA, chartB, chartC];
 
+      // Chart D: Precio Medio por Departamento (horizontal bar — all depts)
+      var deptPriceData = config.deptPriceData || [];
+      if (deptPriceData.length > 0) {
+        var elD = document.getElementById('chart-dept-price');
+        if (elD) {
+          var chartD = echarts.getInstanceByDom(elD) || echarts.init(elD);
+          chartD.setOption(buildHorizontalBarOption('PRECIO MEDIO POR DEPARTAMENTO', '(Precio Típico Mediana)', deptPriceData, tokens, tokens.primary));
+          attachClickHandler(chartD, deptPriceData);
+          chartInstances.push(chartD);
+        }
+      }
+
+      // Chart E: Evolución Mensual (line/area)
+      var monthlyData = config.monthlyData || { months: [], values: [] };
+      if (monthlyData.months.length > 0) {
+        var elE = document.getElementById('chart-monthly');
+        if (elE) {
+          var chartE = echarts.getInstanceByDom(elE) || echarts.init(elE);
+          chartE.setOption(buildLineAreaOption('EVOLUCIÓN MENSUAL (2025)', '(Precio Medio Nacional)', monthlyData.months, monthlyData.values, tokens, tokens.success));
+          chartInstances.push(chartE);
+        }
+      }
+
       // Responsive resize
-      setupResizeObserver(config.containerIds);
+      var allIds = (config.containerIds || []).concat(['chart-dept-price', 'chart-monthly']);
+      setupResizeObserver(allIds);
 
       return true;
     },
@@ -382,9 +521,8 @@
       });
     },
 
-    // Update all 3 at once
-    updateAllCharts: function (expensiveData, cheapData, activeData) {
-      if (chartInstances.length !== 3) return;
+    updateAllCharts: function (expensiveData, cheapData, activeData, deptPriceData, monthlyData) {
+      if (chartInstances.length < 3) return;
 
       var tokens = getThemeTokens();
 
@@ -399,6 +537,17 @@
       // Chart C — column
       chartInstances[2].setOption(buildColumnOption('ZONAS MÁS ACTIVAS', '(Activos Hoy)', activeData, tokens, tokens.warning));
       attachClickHandler(chartInstances[2], activeData);
+
+      // Chart D — dept price (if initialized)
+      if (chartInstances[3] && deptPriceData && deptPriceData.length > 0) {
+        chartInstances[3].setOption(buildHorizontalBarOption('PRECIO MEDIO POR DEPARTAMENTO', '(Precio Típico Mediana)', deptPriceData, tokens, tokens.primary));
+        attachClickHandler(chartInstances[3], deptPriceData);
+      }
+
+      // Chart E — monthly evolution (if initialized)
+      if (chartInstances[4] && monthlyData && monthlyData.months.length > 0) {
+        chartInstances[4].setOption(buildLineAreaOption('EVOLUCIÓN MENSUAL (2025)', '(Precio Medio Nacional)', monthlyData.months, monthlyData.values, tokens, tokens.success));
+      }
     },
 
     // Destroy all chart instances
