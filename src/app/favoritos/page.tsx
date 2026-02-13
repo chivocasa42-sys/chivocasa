@@ -87,62 +87,66 @@ export default function FavoritosPage() {
 
             <main className="min-h-screen" style={{ background: 'var(--bg-page)' }}>
                 <div className="container mx-auto px-4 max-w-7xl py-6">
-                    {/* Header */}
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-                        <div>
-                            <Link href="/" className="text-sm text-[var(--primary)] hover:underline mb-2 inline-block no-underline">
-                                &larr; Volver al inicio
-                            </Link>
-                            <h1 className="text-2xl md:text-3xl font-black text-[#272727] tracking-tight">
-                                Mis Favoritos
-                            </h1>
-                            <p className="text-slate-500 text-sm mt-1">
-                                {favoriteCount === 0
-                                    ? 'No tienes propiedades guardadas'
-                                    : `${favoriteCount} propiedad${favoriteCount > 1 ? 'es' : ''} guardada${favoriteCount > 1 ? 's' : ''}`
-                                }
-                            </p>
-                        </div>
-
-                        {favoriteCount > 0 && (
-                            <div className="flex items-center gap-2">
-                                <button
-                                    onClick={() => { setCompareMode(!compareMode); setCompareIds(new Set()); setShowingComparison(false); }}
-                                    className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
-                                        compareMode
-                                            ? 'bg-[var(--primary)] text-white'
-                                            : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
-                                    }`}
-                                >
-                                    {compareMode ? 'Cancelar comparar' : 'Comparar'}
-                                </button>
-                                <button
-                                    onClick={() => { if (confirm('¿Eliminar todos los favoritos?')) clearFavorites(); }}
-                                    className="px-4 py-2 rounded-lg text-sm font-semibold bg-white border border-red-200 text-red-500 hover:bg-red-50 transition-all"
-                                >
-                                    Limpiar todo
-                                </button>
+                    {/* Sticky Header with buttons */}
+                    <div className="sticky top-14 z-30 bg-[var(--bg-page)] py-4 mb-6 border-b border-slate-100 -mx-4 px-4">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                            <div>
+                                <Link href="/" className="text-sm text-[var(--primary)] hover:underline mb-2 inline-block no-underline">
+                                    &larr; Volver al inicio
+                                </Link>
+                                <h1 className="text-2xl md:text-3xl font-black text-[#272727] tracking-tight">
+                                    Mis Favoritos
+                                </h1>
+                                <p className="text-slate-500 text-sm mt-1">
+                                    {favoriteCount === 0
+                                        ? 'No tienes propiedades guardadas'
+                                        : `${favoriteCount} propiedad${favoriteCount > 1 ? 'es' : ''} guardada${favoriteCount > 1 ? 's' : ''}`
+                                    }
+                                </p>
                             </div>
-                        )}
+
+                            {favoriteCount > 0 && (
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={() => { setCompareMode(!compareMode); setCompareIds(new Set()); setShowingComparison(false); }}
+                                        className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+                                            compareMode
+                                                ? 'bg-[var(--primary)] text-white'
+                                                : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+                                        }`}
+                                    >
+                                        {compareMode ? 'Cancelar comparar' : 'Comparar'}
+                                    </button>
+                                    <button
+                                        onClick={() => { if (confirm('¿Eliminar todos los favoritos?')) clearFavorites(); }}
+                                        className="px-4 py-2 rounded-lg text-sm font-semibold bg-white border border-red-200 text-red-500 hover:bg-red-50 transition-all"
+                                    >
+                                        Limpiar todo
+                                    </button>
+                                </div>
+                            )}
+                        </div>
                     </div>
 
-                    {/* Compare bar */}
+                    {/* Sticky Compare bar */}
                     {compareMode && compareIds.size > 0 && (
-                        <div className="mb-6 bg-[var(--primary)] text-white rounded-xl p-4 flex items-center justify-between">
+                        <div className="sticky top-[88px] z-20 mb-6 bg-[var(--primary)] text-white rounded-xl p-4 flex items-center justify-between shadow-lg">
                             <span className="text-sm font-medium">
                                 {compareIds.size} seleccionada{compareIds.size > 1 ? 's' : ''} (máx. 4)
                             </span>
-                            <button
-                                onClick={() => setShowingComparison(true)}
-                                className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${
-                                    compareIds.size < 2
-                                        ? 'bg-white/50 text-[var(--primary)]/50 cursor-not-allowed'
-                                        : 'bg-white text-[var(--primary)] hover:bg-slate-100'
-                                }`}
-                                disabled={compareIds.size < 2}
-                            >
-                                Ver comparación
-                            </button>
+                            {!showingComparison && (
+                                <button
+                                    onClick={() => setShowingComparison(true)}
+                                    className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${
+                                        compareIds.size < 2
+                                            ? 'bg-white/50 text-[var(--primary)]/50 cursor-not-allowed'
+                                            : 'bg-white text-[var(--primary)] hover:bg-slate-100'
+                                    }`}
+                                    disabled={compareIds.size < 2}
+                                >
+                                    Ver comparación
+                                </button>
+                            )}
                         </div>
                     )}
 
