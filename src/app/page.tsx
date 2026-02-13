@@ -1,5 +1,6 @@
 'use client';
 
+import './pages.css';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import Navbar from '@/components/Navbar';

@@ -8,6 +8,7 @@ import type { Metadata } from 'next';
 import { JsonLd } from '@/components/JsonLd';
 import { generateBreadcrumbSchema } from '@/lib/seo';
 import { slugToDepartamento } from '@/lib/slugify';
+import '../pages.css';
 
 interface Props {
     params: Promise<{ departamento: string; filter?: string[] }>;

@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { unstable_cache } from 'next/cache';
 import TendenciasClient from '@/components/TendenciasClient';
 
 export const metadata: Metadata = {
@@ -23,6 +24,16 @@ export const metadata: Metadata = {
         url: 'https://sivarcasas.com/tendencias',
         type: 'website',
     },
+    twitter: {
+        card: 'summary_large_image',
+        title: 'Tendencias del Mercado Inmobiliario | sivarcasas',
+        description:
+            'Rankings, precios promedio y evolución mensual del mercado inmobiliario en El Salvador.',
+    },
+    robots: {
+        index: true,
+        follow: true,
+    },
 };
 
 interface DepartmentStatsRow {
@@ -34,7 +45,7 @@ interface DepartmentStatsRow {
     count: number;
 }
 
-async function fetchDepartmentStats() {
+async function _fetchDepartmentStats() {
     try {
         const url = `${process.env.SUPABASE_URL}/rest/v1/mv_sd_depto_stats?select=*&order=count.desc`;
         const res = await fetch(url, {
@@ -87,6 +98,12 @@ async function fetchDepartmentStats() {
         return [];
     }
 }
+
+const fetchDepartmentStats = unstable_cache(
+    _fetchDepartmentStats,
+    ['tendencias-dept-stats'],
+    { revalidate: 300, tags: ['dept-stats'] }
+);
 
 export default async function TendenciasPage() {
     const initialData = await fetchDepartmentStats();
