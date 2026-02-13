@@ -222,10 +222,14 @@ export default function MarketRankingCharts({ departments, activeFilter = 'all',
     });
   }, [departments, renderCharts, fetchAndUpdate, startPolling]);
 
-  // Handle ECharts CDN load
-  const onEChartsLoad = useCallback(() => {
-    echartsLoaded.current = true;
-    tryInit();
+  // Dynamically import modular ECharts (tree-shaken, ~80 KiB vs 326 KiB CDN)
+  useEffect(() => {
+    if (echartsLoaded.current) return;
+    import('@/lib/echarts').then((mod) => {
+      window.echarts = mod.default as unknown;
+      echartsLoaded.current = true;
+      tryInit();
+    });
   }, [tryInit]);
 
   // Handle interop script load
@@ -320,12 +324,6 @@ export default function MarketRankingCharts({ departments, activeFilter = 'all',
 
   return (
     <>
-      {/* Apache ECharts CDN — afterInteractive for faster load + reliable onLoad on SPA */}
-      <Script
-        src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"
-        strategy="lazyOnload"
-        onLoad={onEChartsLoad}
-      />
       {/* Interop script */}
       <Script
         src="/js/marketRankingCharts.js"

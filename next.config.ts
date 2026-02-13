@@ -2,7 +2,8 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   experimental: {
-    optimizePackageImports: ['react-leaflet', 'leaflet'],
+    optimizePackageImports: ['react-leaflet', 'leaflet', 'echarts'],
+    cssChunking: 'strict',
   },
   images: {
     remotePatterns: [
