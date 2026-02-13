@@ -282,6 +282,24 @@ export default function MarketRankingCharts({ departments, activeFilter = 'all' 
     }
   }, [activeFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Ensure ECharts resize after containers become visible (display:none → grid)
+  useEffect(() => {
+    if (status !== 'ready') return;
+    // Wait one frame for the DOM layout to settle after display change
+    const raf = requestAnimationFrame(() => {
+      if (window.MarketRankingCharts && chartsInitialized.current) {
+        ['chart-expensive', 'chart-cheap', 'chart-active'].forEach(id => {
+          const el = document.getElementById(id);
+          if (el && typeof window.echarts !== 'undefined') {
+            const instance = (window.echarts as any).getInstanceByDom(el);
+            if (instance) instance.resize();
+          }
+        });
+      }
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [status]);
+
   // Retry handler
   const handleRetry = () => {
     setStatus('loading');
@@ -311,7 +329,7 @@ export default function MarketRankingCharts({ departments, activeFilter = 'all' 
           subtitle="Top de departamentos según precio mediano y nivel de oferta inmobiliaria."
         />
 
-        {/* Live indicator — simple, no timer */}
+        {/* Live indicator — aligned right, on its own row */}
         {status === 'ready' && (
           <div className="ranking-charts-live-bar">
             <span className={`ranking-charts-live-dot${pulsing ? ' ranking-charts-live-dot-pulse' : ''}`} />

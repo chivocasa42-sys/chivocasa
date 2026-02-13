@@ -4,13 +4,10 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import Navbar from '@/components/Navbar';
 import HeroSection from '@/components/HeroSection';
-import FeatureCards from '@/components/FeatureCards';
 import HomeHeader from '@/components/HomeHeader';
-import KPIStrip from '@/components/KPIStrip';
 import DepartmentCard from '@/components/DepartmentCard';
 import SectionHeader from '@/components/SectionHeader';
 import { departamentoToSlug } from '@/lib/slugify';
-import Link from 'next/link';
 
 // Dynamic imports — keep heavy components (Leaflet, ECharts) out of initial bundle
 const MapExplorer = dynamic(() => import('@/components/MapExplorer'), {
@@ -22,24 +19,7 @@ const MapExplorer = dynamic(() => import('@/components/MapExplorer'), {
   ),
 });
 
-const MarketRankingCharts = dynamic(() => import('@/components/MarketRankingCharts'), {
-  ssr: false,
-  loading: () => (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-      {[0, 1, 2].map((i) => (
-        <div key={i} className="ranking-chart-skeleton">
-          <div className="skeleton-title" />
-          <div className="skeleton-subtitle" />
-          <div className="skeleton-bars">
-            <div className="skeleton-bar" style={{ width: '90%' }} />
-            <div className="skeleton-bar" style={{ width: '65%' }} />
-            <div className="skeleton-bar" style={{ width: '45%' }} />
-          </div>
-        </div>
-      ))}
-    </div>
-  ),
-});
+
 
 interface HeroLocation {
   lat: number;
@@ -93,54 +73,9 @@ export default function Home() {
     fetchStats();
   }, []);
 
-  // Calcular KPI stats
-  const kpiStats = useMemo(() => {
-    let sumSalePrice = 0, sumRentPrice = 0;
-    let saleCount = 0, rentCount = 0;
-    let totalActive = 0;
-
-    departments.forEach(dept => {
-      if (dept.sale) {
-        sumSalePrice += dept.sale.avg * dept.sale.count;
-        saleCount += dept.sale.count;
-      }
-      if (dept.rent) {
-        sumRentPrice += dept.rent.avg * dept.rent.count;
-        rentCount += dept.rent.count;
-      }
-      totalActive += dept.total_count;
-    });
-
-    return {
-      medianSale: saleCount > 0 ? sumSalePrice / saleCount : 0,
-      medianRent: rentCount > 0 ? sumRentPrice / rentCount : 0,
-      totalActive,
-      new7d: Math.round(totalActive * 0.05), // Simulated
-      saleTrend: 2.3,
-      rentTrend: 1.8,
-    };
-  }, [departments]);
-
-  // Rankings
-  const rankings = useMemo(() => {
-    const topExpensive = departments
-      .filter(d => d.sale && d.sale.avg > 0)
-      .sort((a, b) => (b.sale?.avg || 0) - (a.sale?.avg || 0))
-      .slice(0, 3)
-      .map(d => ({ name: d.departamento, value: d.sale?.avg || 0 }));
-
-    const topCheap = departments
-      .filter(d => d.sale && d.sale.avg > 0)
-      .sort((a, b) => (a.sale?.avg || 0) - (b.sale?.avg || 0))
-      .slice(0, 3)
-      .map(d => ({ name: d.departamento, value: d.sale?.avg || 0 }));
-
-    const topActive = departments
-      .sort((a, b) => b.total_count - a.total_count)
-      .slice(0, 3)
-      .map(d => ({ name: d.departamento, value: d.total_count }));
-
-    return { topExpensive, topCheap, topActive };
+  // Calcular totalActive para el Navbar
+  const totalActive = useMemo(() => {
+    return departments.reduce((sum, dept) => sum + dept.total_count, 0);
   }, [departments]);
 
   // Filtrar y ordenar departamentos
@@ -199,7 +134,7 @@ export default function Home() {
   return (
     <>
       <Navbar
-        totalListings={kpiStats.totalActive}
+        totalListings={totalActive}
         onRefresh={() => window.location.reload()}
       />
 
@@ -225,21 +160,7 @@ export default function Home() {
           </div>
         ) : (
           <>
-            {/* Market Panorama Header */}
-            <div className="mb-4">
-              <SectionHeader
-                title={['Panorama del mercado inmobiliario', 'en El Salvador']}
-                subtitle="Precios promedio, rentas mensuales y nuevas oportunidades inmobiliarias, actualizadas para ayudarte a tomar decisiones con mayor confianza."
-              />
-            </div>
 
-            {/* KPI Strip */}
-            <KPIStrip stats={kpiStats} />
-
-            {/* Disclaimer — below KPIs, above Map Explorer */}
-            <p className="text-xs md:text-sm text-[var(--text-muted)] text-center mt-1 mb-4 max-w-4xl mx-auto italic opacity-75">
-              Los valores mostrados son promedios estimados y pueden variar según la zona y el tipo de propiedad.
-            </p>
 
             {/* Map Explorer - Interactive location search */}
             <div id="mapa" className="scroll-mt-20">
@@ -282,18 +203,7 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Rankings — CanvasJS Charts with lazy load + polling */}
-            <div id="rankings" className="scroll-mt-20">
-              <MarketRankingCharts departments={departments} activeFilter={view} />
-            </div>
 
-            {/* Duplicate filter buttons below charts for convenience */}
-            <div className="mt-6 mb-8">
-              <HomeHeader
-                view={view}
-                onViewChange={setView}
-              />
-            </div>
 
             {/* No Clasificado - solo mostrar si hay data */}
             {/* TODO: Agregar cuando tengamos el endpoint */}

@@ -43,7 +43,7 @@ export default function KPIStrip({ stats }: KPIStripProps) {
 
                 <KPICard
                     label="NUEVOS (7 DÍAS)"
-                    value={stats.new7d > 0 ? `+${stats.new7d}` : 'N/A'}
+                    value={stats.new7d > 0 ? stats.new7d.toLocaleString() : 'N/A'}
                     trendDirection={stats.new7d > 0 ? 'up' : 'neutral'}
                 />
             </div>
