@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { useFavorites } from '@/hooks/useFavorites';
 
@@ -58,7 +59,7 @@ export default function Navbar({ totalListings, onRefresh }: NavbarProps) {
                 <div className="flex items-center justify-between h-14">
                     {/* Brand */}
                     <Link href="/" className="no-underline flex items-center gap-2">
-                        <img src="/sivarcasaslogo.webp" alt="SivarCasas" className="h-8 w-8 object-contain" />
+                        <Image src="/sivarcasaslogo.webp" alt="SivarCasas" width={32} height={32} className="h-8 w-8 object-contain" priority />
                         <span className="text-lg font-extrabold tracking-tight leading-none">
                             <span className="text-[var(--primary)]">SIVAR</span>
                             <span className="text-slate-800">CASAS</span>
@@ -82,11 +83,10 @@ export default function Navbar({ totalListings, onRefresh }: NavbarProps) {
                                 </svg>
                                 {link.label}
                                 {link.href === '/favoritos' && favoriteCount > 0 && (
-                                    <span className={`ml-0.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-bold leading-none ${
-                                        isActive(link.href)
+                                    <span className={`ml-0.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-bold leading-none ${isActive(link.href)
                                             ? 'bg-white text-[var(--primary)]'
                                             : 'bg-red-500 text-white'
-                                    }`}>
+                                        }`}>
                                         {favoriteCount}
                                     </span>
                                 )}
@@ -154,11 +154,10 @@ export default function Navbar({ totalListings, onRefresh }: NavbarProps) {
                                 </svg>
                                 {link.label}
                                 {link.href === '/favoritos' && favoriteCount > 0 && (
-                                    <span className={`ml-auto min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-bold leading-none ${
-                                        isActive(link.href)
+                                    <span className={`ml-auto min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-bold leading-none ${isActive(link.href)
                                             ? 'bg-white text-[var(--primary)]'
                                             : 'bg-red-500 text-white'
-                                    }`}>
+                                        }`}>
                                         {favoriteCount}
                                     </span>
                                 )}
