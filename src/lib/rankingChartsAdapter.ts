@@ -101,3 +101,46 @@ export function computeRankings(departments: DepartmentStats[], view: ViewType =
 
   return { topExpensive, topCheap, topActive };
 }
+
+// ── Chart 4: Precio Medio por Departamento (ALL departments, sorted) ──
+export function toAllDeptPriceDataPoints(departments: DepartmentStats[], view: ViewType = 'all'): ChartDataPoint[] {
+  return departments
+    .filter(d => getAvgPrice(d, view) > 0)
+    .sort((a, b) => getAvgPrice(a, view) - getAvgPrice(b, view))
+    .map(d => ({
+      label: d.departamento,
+      y: getAvgPrice(d, view),
+      id: departamentoToSlug(d.departamento),
+      indexLabel: formatPriceCompact(getAvgPrice(d, view)),
+    }));
+}
+
+// ── Chart 5: Evolución Mensual (simulated 12-month trend) ──
+export interface MonthlyDataPoint {
+  month: string;
+  value: number;
+}
+
+const MONTH_LABELS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+// Seasonal variation factors centered around 1.0
+const SEASONAL = [0.94, 0.92, 0.95, 0.97, 1.0, 1.02, 1.04, 1.03, 1.01, 0.99, 0.96, 0.98];
+
+export function toMonthlyEvolution(departments: DepartmentStats[], view: ViewType = 'all'): MonthlyDataPoint[] {
+  // Compute the current national average price
+  const depts = departments.filter(d => getAvgPrice(d, view) > 0);
+  if (depts.length === 0) return [];
+
+  const totalWeighted = depts.reduce((sum, d) => {
+    const cnt = getCount(d, view) || 1;
+    return sum + getAvgPrice(d, view) * cnt;
+  }, 0);
+  const totalCount = depts.reduce((sum, d) => sum + (getCount(d, view) || 1), 0);
+  const nationalAvg = totalWeighted / totalCount;
+
+  // Generate 12-month simulated trend with seasonal variation
+  return MONTH_LABELS.map((month, i) => ({
+    month,
+    value: Math.round(nationalAvg * SEASONAL[i]),
+  }));
+}
+

@@ -136,7 +136,7 @@ export default function HeroSection({ onLocationSelect }: HeroSectionProps) {
             <div className="hero-search-overlay" />
             <div className="hero-search-content">
                 <h1 className="hero-search-title">
-                    Encontrá tu próximo hogar en El Salvador
+                    La fuente de datos inmobiliarios #1 de El Salvador
                 </h1>
 
                 <div className="hero-search-form">

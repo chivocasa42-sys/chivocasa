@@ -9,6 +9,8 @@ import {
   toExpensiveDataPoints,
   toCheapDataPoints,
   toActiveDataPoints,
+  toAllDeptPriceDataPoints,
+  toMonthlyEvolution,
   type DepartmentStats,
   type ViewType,
 } from '@/lib/rankingChartsAdapter';
@@ -17,7 +19,7 @@ declare global {
   interface Window {
     MarketRankingCharts: {
       initCharts: (config: Record<string, unknown>) => boolean;
-      updateAllCharts: (expensive: unknown[], cheap: unknown[], active: unknown[]) => void;
+      updateAllCharts: (expensive: unknown[], cheap: unknown[], active: unknown[], deptPrice?: unknown[], monthly?: Record<string, unknown>) => void;
       destroyCharts: () => void;
       observeSection: (id: string, onVisible: () => void, onHidden: () => void) => void;
       disconnectObserver: () => void;
@@ -30,6 +32,7 @@ declare global {
 interface MarketRankingChartsProps {
   departments: DepartmentStats[];
   activeFilter?: ViewType;
+  filterSlot?: React.ReactNode;
 }
 
 const REFRESH_INTERVAL_MS = 30_000;
@@ -69,7 +72,7 @@ const PILL_CONFIG: Record<ViewType, { label: string; pillClass: string; labelCla
   rent: { label: 'RENTA', pillClass: 'dept-card__pill--renta', labelClass: 'dept-card__pill-label--renta' },
 };
 
-export default function MarketRankingCharts({ departments, activeFilter = 'all' }: MarketRankingChartsProps) {
+export default function MarketRankingCharts({ departments, activeFilter = 'all', filterSlot }: MarketRankingChartsProps) {
   const router = useRouter();
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error' | 'empty'>('idle');
   const [pulsing, setPulsing] = useState(false);
@@ -107,6 +110,12 @@ export default function MarketRankingCharts({ departments, activeFilter = 'all' 
     const expData = toExpensiveDataPoints(topExpensive);
     const cheapData = toCheapDataPoints(topCheap);
     const activeData = toActiveDataPoints(topActive);
+    const deptPriceData = toAllDeptPriceDataPoints(depts, activeFilter);
+    const monthlyData = toMonthlyEvolution(depts, activeFilter);
+    const monthlyPayload = {
+      months: monthlyData.map(m => m.month),
+      values: monthlyData.map(m => m.value),
+    };
 
     if (!chartsInitialized.current) {
       const success = window.MarketRankingCharts.initCharts({
@@ -114,6 +123,8 @@ export default function MarketRankingCharts({ departments, activeFilter = 'all' 
         expensiveData: expData,
         cheapData: cheapData,
         activeData: activeData,
+        deptPriceData: deptPriceData,
+        monthlyData: monthlyPayload,
         onBarClick: handleBarClick,
       });
 
@@ -126,7 +137,7 @@ export default function MarketRankingCharts({ departments, activeFilter = 'all' 
       }
       return false;
     } else {
-      window.MarketRankingCharts.updateAllCharts(expData, cheapData, activeData);
+      window.MarketRankingCharts.updateAllCharts(expData, cheapData, activeData, deptPriceData, monthlyPayload);
       triggerPulse();
       if (shouldCache) writeCache(depts);
       return true;
@@ -181,19 +192,7 @@ export default function MarketRankingCharts({ departments, activeFilter = 'all' 
     if (!isVisible.current) return;
     if (initialDataRendered.current) return;
 
-    // 1) Try localStorage cache for instant render (warm-start)
-    const cached = readCache();
-    if (cached && cached.length > 0) {
-      const ok = renderCharts(cached, false);
-      if (ok) {
-        initialDataRendered.current = true;
-        fetchAndUpdate();
-        startPolling();
-        return;
-      }
-    }
-
-    // 2) Try prop data
+    // 1) Try prop data first (SSR-provided, avoids extra network request)
     if (departments.length > 0) {
       setStatus('loading');
       const ok = renderCharts(departments);
@@ -204,7 +203,18 @@ export default function MarketRankingCharts({ departments, activeFilter = 'all' 
       }
     }
 
-    // 3) Fallback: fetch from API
+    // 2) Try localStorage cache for instant render (warm-start)
+    const cached = readCache();
+    if (cached && cached.length > 0) {
+      const ok = renderCharts(cached, false);
+      if (ok) {
+        initialDataRendered.current = true;
+        startPolling();
+        return;
+      }
+    }
+
+    // 3) Fallback: fetch from API (only if no prop data and no cache)
     setStatus('loading');
     fetchAndUpdate().then(() => {
       initialDataRendered.current = true;
@@ -212,10 +222,14 @@ export default function MarketRankingCharts({ departments, activeFilter = 'all' 
     });
   }, [departments, renderCharts, fetchAndUpdate, startPolling]);
 
-  // Handle ECharts CDN load
-  const onEChartsLoad = useCallback(() => {
-    echartsLoaded.current = true;
-    tryInit();
+  // Dynamically import modular ECharts (tree-shaken, ~80 KiB vs 326 KiB CDN)
+  useEffect(() => {
+    if (echartsLoaded.current) return;
+    import('@/lib/echarts').then((mod) => {
+      window.echarts = mod.default as unknown;
+      echartsLoaded.current = true;
+      tryInit();
+    });
   }, [tryInit]);
 
   // Handle interop script load
@@ -282,6 +296,24 @@ export default function MarketRankingCharts({ departments, activeFilter = 'all' 
     }
   }, [activeFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Ensure ECharts resize after containers become visible (display:none → grid)
+  useEffect(() => {
+    if (status !== 'ready') return;
+    // Wait one frame for the DOM layout to settle after display change
+    const raf = requestAnimationFrame(() => {
+      if (window.MarketRankingCharts && chartsInitialized.current) {
+        ['chart-expensive', 'chart-cheap', 'chart-active', 'chart-dept-price', 'chart-monthly'].forEach(id => {
+          const el = document.getElementById(id);
+          if (el && typeof window.echarts !== 'undefined') {
+            const instance = (window.echarts as any).getInstanceByDom(el);
+            if (instance) instance.resize();
+          }
+        });
+      }
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [status]);
+
   // Retry handler
   const handleRetry = () => {
     setStatus('loading');
@@ -292,12 +324,6 @@ export default function MarketRankingCharts({ departments, activeFilter = 'all' 
 
   return (
     <>
-      {/* Apache ECharts CDN — afterInteractive for faster load + reliable onLoad on SPA */}
-      <Script
-        src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"
-        strategy="lazyOnload"
-        onLoad={onEChartsLoad}
-      />
       {/* Interop script */}
       <Script
         src="/js/marketRankingCharts.js"
@@ -311,11 +337,11 @@ export default function MarketRankingCharts({ departments, activeFilter = 'all' 
           subtitle="Top de departamentos según precio mediano y nivel de oferta inmobiliaria."
         />
 
-        {/* Live indicator — simple, no timer */}
-        {status === 'ready' && (
-          <div className="ranking-charts-live-bar">
-            <span className={`ranking-charts-live-dot${pulsing ? ' ranking-charts-live-dot-pulse' : ''}`} />
-            <span className="ranking-charts-live-text">LIVE</span>
+
+        {/* Optional filter slot (e.g. Total/Venta/Renta) */}
+        {filterSlot && (
+          <div className="mb-6">
+            {filterSlot}
           </div>
         )}
 
@@ -353,10 +379,13 @@ export default function MarketRankingCharts({ departments, activeFilter = 'all' 
           </div>
         )}
 
-        {/* Chart containers — always in DOM for ECharts to mount into */}
+        {/* Chart containers — always in DOM with real dimensions for ECharts */}
         <div
           className="grid grid-cols-1 md:grid-cols-3 gap-5"
-          style={{ display: status === 'ready' ? 'grid' : 'none' }}
+          style={status === 'ready'
+            ? {}
+            : { opacity: 0, position: 'absolute', pointerEvents: 'none', width: '100%' }
+          }
         >
           {['chart-expensive', 'chart-cheap', 'chart-active'].map((id) => {
             const pill = PILL_CONFIG[activeFilter];
@@ -372,6 +401,32 @@ export default function MarketRankingCharts({ departments, activeFilter = 'all' 
               </div>
             );
           })}
+        </div>
+
+        {/* Row 2: 2-column grid — Precio Medio + Evolución Mensual */}
+        <div
+          className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-5"
+          style={status === 'ready'
+            ? {}
+            : { opacity: 0, position: 'absolute', pointerEvents: 'none', width: '100%' }
+          }
+        >
+          <div className="ranking-chart-card">
+            <div className="dept-card__badge-pill">
+              <div className={`dept-card__pill ${PILL_CONFIG[activeFilter].pillClass}`}>
+                <span className={`dept-card__pill-label ${PILL_CONFIG[activeFilter].labelClass}`}>{PILL_CONFIG[activeFilter].label}</span>
+              </div>
+            </div>
+            <div id="chart-dept-price" className="ranking-chart-canvas" style={{ height: '340px' }} />
+          </div>
+          <div className="ranking-chart-card">
+            <div className="dept-card__badge-pill">
+              <div className={`dept-card__pill ${PILL_CONFIG[activeFilter].pillClass}`}>
+                <span className={`dept-card__pill-label ${PILL_CONFIG[activeFilter].labelClass}`}>{PILL_CONFIG[activeFilter].label}</span>
+              </div>
+            </div>
+            <div id="chart-monthly" className="ranking-chart-canvas" style={{ height: '340px' }} />
+          </div>
         </div>
       </div>
     </>

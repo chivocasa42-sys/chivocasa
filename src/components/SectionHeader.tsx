@@ -7,21 +7,24 @@ interface SectionHeaderProps {
     subtitle?: string;
     actionLabel?: string;
     actionHref?: string;
+    asH1?: boolean;
 }
 
 export default function SectionHeader({
     title,
     subtitle,
     actionLabel,
-    actionHref
+    actionHref,
+    asH1 = false
 }: SectionHeaderProps) {
+    const Heading = asH1 ? 'h1' : 'h2';
     return (
         <div className="text-center mb-8">
-            <h2 className="text-2xl md:text-3xl font-black text-[var(--text-primary)] tracking-tight mb-2">
+            <Heading className="text-2xl md:text-3xl font-black text-[var(--text-primary)] tracking-tight mb-2">
                 {title[0]} <span className="text-[var(--primary)]">{title[1]}</span>
-            </h2>
+            </Heading>
             {subtitle && (
-                <p className="text-base text-[var(--text-muted)] mx-auto">
+                <p className="text-base text-[var(--text-muted)] mx-auto leading-relaxed max-w-3xl mb-3">
                     {subtitle}
                 </p>
             )}
