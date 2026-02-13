@@ -192,19 +192,7 @@ export default function MarketRankingCharts({ departments, activeFilter = 'all',
     if (!isVisible.current) return;
     if (initialDataRendered.current) return;
 
-    // 1) Try localStorage cache for instant render (warm-start)
-    const cached = readCache();
-    if (cached && cached.length > 0) {
-      const ok = renderCharts(cached, false);
-      if (ok) {
-        initialDataRendered.current = true;
-        fetchAndUpdate();
-        startPolling();
-        return;
-      }
-    }
-
-    // 2) Try prop data
+    // 1) Try prop data first (SSR-provided, avoids extra network request)
     if (departments.length > 0) {
       setStatus('loading');
       const ok = renderCharts(departments);
@@ -215,7 +203,18 @@ export default function MarketRankingCharts({ departments, activeFilter = 'all',
       }
     }
 
-    // 3) Fallback: fetch from API
+    // 2) Try localStorage cache for instant render (warm-start)
+    const cached = readCache();
+    if (cached && cached.length > 0) {
+      const ok = renderCharts(cached, false);
+      if (ok) {
+        initialDataRendered.current = true;
+        startPolling();
+        return;
+      }
+    }
+
+    // 3) Fallback: fetch from API (only if no prop data and no cache)
     setStatus('loading');
     fetchAndUpdate().then(() => {
       initialDataRendered.current = true;

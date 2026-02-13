@@ -80,7 +80,10 @@ export async function GET() {
         memCache = { data: result, ts: Date.now() };
 
         return NextResponse.json(result, {
-            headers: { 'X-Cache': 'MISS', 'Cache-Control': 'public, max-age=30, stale-while-revalidate=60' },
+            headers: {
+                'X-Cache': 'MISS',
+                'Cache-Control': 'public, s-maxage=60, max-age=30, stale-while-revalidate=300',
+            },
         });
     } catch (error) {
         console.error('Error fetching department stats:', error);
