@@ -35,6 +35,41 @@ function getArea(specs: Record<string, string | number | undefined> | null | und
     return 0;
 }
 
+// Helper functions to determine the best value for comparison
+function getBestPrice(listings: FavoriteListing[]): number | null {
+    const prices = listings.map(l => l.price).filter(p => p > 0);
+    return prices.length > 0 ? Math.min(...prices) : null;
+}
+
+function getBestNumeric(specKey: keyof Record<string, any>, listings: FavoriteListing[]): number | null {
+    const values = listings
+        .map(l => {
+            const val = l.specs?.[specKey];
+            return val !== undefined && val !== null ? Number(val) : null;
+        })
+        .filter(v => v !== null && v > 0) as number[];
+    return values.length > 0 ? Math.max(...values) : null;
+}
+
+function getBestArea(listings: FavoriteListing[]): number | null {
+    const areas = listings.map(l => getArea(l.specs)).filter(a => a > 0);
+    return areas.length > 0 ? Math.max(...areas) : null;
+}
+
+// Star icon component
+function StarIcon({ className = "" }: { className?: string }) {
+    return (
+        <svg
+            className={`w-4 h-4 text-yellow-500 ${className}`}
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            xmlns="http://www.w3.org/2000/svg"
+        >
+            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+        </svg>
+    );
+}
+
 export default function FavoritosPage() {
     const { favorites, removeFavorite, clearFavorites, favoriteCount } = useFavorites();
     const [listings, setListings] = useState<FavoriteListing[]>([]);
@@ -83,17 +118,24 @@ export default function FavoritosPage() {
 
     const comparedListings = listings.filter(l => compareIds.has(String(l.external_id)));
 
+    // Calculate best values for comparison
+    const bestPrice = comparedListings.length > 0 ? getBestPrice(comparedListings) : null;
+    const bestBedrooms = comparedListings.length > 0 ? getBestNumeric('bedrooms', comparedListings) : null;
+    const bestBathrooms = comparedListings.length > 0 ? getBestNumeric('bathrooms', comparedListings) : null;
+    const bestArea = comparedListings.length > 0 ? getBestArea(comparedListings) : null;
+    const bestParking = comparedListings.length > 0 ? getBestNumeric('parking', comparedListings) : null;
+
     return (
         <>
             <Navbar />
 
-            <main className="min-h-screen" style={{ background: 'var(--bg-page)' }}>
+            <main className="min-h-screen bg-(--bg-page)">
                 <div className="container mx-auto px-4 max-w-7xl py-6">
                     {/* Sticky Header with buttons */}
-                    <div className="sticky top-14 z-30 bg-[var(--bg-page)] py-4 mb-6 border-b border-slate-100 -mx-4 px-4">
+                    <div className="sticky top-14 z-30 bg-(--bg-page) py-4 mb-6 border-b border-slate-100 -mx-4 px-4">
                         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                             <div>
-                                <Link href="/" className="text-sm text-[var(--primary)] hover:underline mb-2 inline-block no-underline">
+                                <Link href="/" className="text-sm text-(--primary) hover:underline mb-2 inline-block no-underline">
                                     &larr; Volver al inicio
                                 </Link>
                                 <h1 className="text-2xl md:text-3xl font-black text-[#272727] tracking-tight">
@@ -113,7 +155,7 @@ export default function FavoritosPage() {
                                         onClick={() => { setCompareMode(!compareMode); setCompareIds(new Set()); setShowingComparison(false); }}
                                         className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
                                             compareMode
-                                                ? 'bg-[var(--primary)] text-white'
+                                                ? 'bg-(--primary) text-white'
                                                 : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
                                         }`}
                                     >
@@ -132,7 +174,7 @@ export default function FavoritosPage() {
 
                     {/* Sticky Compare bar */}
                     {compareMode && compareIds.size > 0 && (
-                        <div className="sticky top-[88px] z-20 mb-6 bg-[var(--primary)] text-white rounded-xl p-4 flex items-center justify-between shadow-lg">
+                        <div className="mb-6 bg-(--primary) text-white rounded-xl p-4 flex items-center justify-between shadow-lg">
                             <span className="text-sm font-medium">
                                 {compareIds.size} seleccionada{compareIds.size > 1 ? 's' : ''} (máx. 4)
                             </span>
@@ -141,8 +183,8 @@ export default function FavoritosPage() {
                                     onClick={() => setShowingComparison(true)}
                                     className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${
                                         compareIds.size < 2
-                                            ? 'bg-white/50 text-[var(--primary)]/50 cursor-not-allowed'
-                                            : 'bg-white text-[var(--primary)] hover:bg-slate-100'
+                                            ? 'bg-white/50 text-(--primary)/50 cursor-not-allowed'
+                                            : 'bg-white text-(--primary) hover:bg-slate-100'
                                     }`}
                                     disabled={compareIds.size < 2}
                                 >
@@ -304,7 +346,7 @@ export default function FavoritosPage() {
                         <div className="mb-4">
                             <button
                                 onClick={() => setShowingComparison(false)}
-                                className="text-sm text-[var(--primary)] hover:underline font-medium"
+                                className="text-sm text-(--primary) hover:underline font-medium"
                             >
                                 &larr; Volver a selección
                             </button>
@@ -315,15 +357,15 @@ export default function FavoritosPage() {
                                     <tr className="border-b border-slate-200">
                                         <th className="text-left p-4 font-semibold text-slate-500 w-36">Característica</th>
                                         {comparedListings.map(l => (
-                                            <th key={String(l.external_id)} className="p-4 text-center min-w-[200px]">
-                                                <div className="w-full aspect-[4/3] rounded-lg overflow-hidden mb-2">
+                                            <th key={String(l.external_id)} className="p-4 text-center min-w-[220px]">
+                                                <div className="w-48 h-36 mx-auto rounded-lg overflow-hidden mb-2 border border-slate-200">
                                                     <img
                                                         src={l.images?.[0] || '/placeholder.webp'}
                                                         alt={l.title || 'Propiedad'}
                                                         className="w-full h-full object-cover"
                                                     />
                                                 </div>
-                                                <span className="text-xs text-slate-500 font-normal line-clamp-1">{l.title}</span>
+                                                <span className="text-xs text-slate-500 font-normal line-clamp-2 block h-8">{l.title}</span>
                                             </th>
                                         ))}
                                     </tr>
@@ -331,12 +373,18 @@ export default function FavoritosPage() {
                                 <tbody>
                                     <tr className="border-b border-slate-100">
                                         <td className="p-4 font-semibold text-slate-500">Precio</td>
-                                        {comparedListings.map(l => (
-                                            <td key={String(l.external_id)} className="p-4 text-center font-black text-lg text-[#272727]">
-                                                {formatPrice(l.price)}
-                                                {l.listing_type === 'rent' && <span className="text-xs font-normal text-slate-400">/mes</span>}
-                                            </td>
-                                        ))}
+                                        {comparedListings.map(l => {
+                                            const isBest = bestPrice !== null && l.price === bestPrice;
+                                            return (
+                                                <td key={String(l.external_id)} className={`p-4 text-center font-black text-lg ${isBest ? 'text-green-600' : 'text-[#272727]'}`}>
+                                                    <div className="flex items-center justify-center gap-1">
+                                                        {formatPrice(l.price)}
+                                                        {isBest && <StarIcon />}
+                                                    </div>
+                                                    {l.listing_type === 'rent' && <span className="text-xs font-normal text-slate-400 block">/mes</span>}
+                                                </td>
+                                            );
+                                        })}
                                     </tr>
                                     <tr className="border-b border-slate-100">
                                         <td className="p-4 font-semibold text-slate-500">Tipo</td>
@@ -352,32 +400,63 @@ export default function FavoritosPage() {
                                     </tr>
                                     <tr className="border-b border-slate-100">
                                         <td className="p-4 font-semibold text-slate-500">Habitaciones</td>
-                                        {comparedListings.map(l => (
-                                            <td key={String(l.external_id)} className="p-4 text-center font-bold">{l.specs?.bedrooms ?? '—'}</td>
-                                        ))}
+                                        {comparedListings.map(l => {
+                                            const bedrooms = l.specs?.bedrooms;
+                                            const isBest = bestBedrooms !== null && bedrooms !== undefined && Number(bedrooms) === bestBedrooms;
+                                            return (
+                                                <td key={String(l.external_id)} className={`p-4 text-center font-bold ${isBest ? 'text-green-600' : ''}`}>
+                                                    <div className="flex items-center justify-center gap-1">
+                                                        {bedrooms ?? '—'}
+                                                        {isBest && bedrooms !== undefined && <StarIcon />}
+                                                    </div>
+                                                </td>
+                                            );
+                                        })}
                                     </tr>
                                     <tr className="border-b border-slate-100">
                                         <td className="p-4 font-semibold text-slate-500">Baños</td>
-                                        {comparedListings.map(l => (
-                                            <td key={String(l.external_id)} className="p-4 text-center font-bold">{l.specs?.bathrooms ?? '—'}</td>
-                                        ))}
+                                        {comparedListings.map(l => {
+                                            const bathrooms = l.specs?.bathrooms;
+                                            const isBest = bestBathrooms !== null && bathrooms !== undefined && Number(bathrooms) === bestBathrooms;
+                                            return (
+                                                <td key={String(l.external_id)} className={`p-4 text-center font-bold ${isBest ? 'text-green-600' : ''}`}>
+                                                    <div className="flex items-center justify-center gap-1">
+                                                        {bathrooms ?? '—'}
+                                                        {isBest && bathrooms !== undefined && <StarIcon />}
+                                                    </div>
+                                                </td>
+                                            );
+                                        })}
                                     </tr>
                                     <tr className="border-b border-slate-100">
                                         <td className="p-4 font-semibold text-slate-500">Área (m²)</td>
                                         {comparedListings.map(l => {
                                             const a = getArea(l.specs);
+                                            const isBest = bestArea !== null && a > 0 && a === bestArea;
                                             return (
-                                                <td key={String(l.external_id)} className="p-4 text-center font-bold">
-                                                    {a > 0 ? a.toLocaleString() : '—'}
+                                                <td key={String(l.external_id)} className={`p-4 text-center font-bold ${isBest ? 'text-green-600' : ''}`}>
+                                                    <div className="flex items-center justify-center gap-1">
+                                                        {a > 0 ? a.toLocaleString() : '—'}
+                                                        {isBest && a > 0 && <StarIcon />}
+                                                    </div>
                                                 </td>
                                             );
                                         })}
                                     </tr>
                                     <tr className="border-b border-slate-100">
                                         <td className="p-4 font-semibold text-slate-500">Parqueo</td>
-                                        {comparedListings.map(l => (
-                                            <td key={String(l.external_id)} className="p-4 text-center font-bold">{l.specs?.parking ?? '—'}</td>
-                                        ))}
+                                        {comparedListings.map(l => {
+                                            const parking = l.specs?.parking;
+                                            const isBest = bestParking !== null && parking !== undefined && Number(parking) === bestParking;
+                                            return (
+                                                <td key={String(l.external_id)} className={`p-4 text-center font-bold ${isBest ? 'text-green-600' : ''}`}>
+                                                    <div className="flex items-center justify-center gap-1">
+                                                        {parking ?? '—'}
+                                                        {isBest && parking !== undefined && <StarIcon />}
+                                                    </div>
+                                                </td>
+                                            );
+                                        })}
                                     </tr>
                                     <tr className="border-b border-slate-100">
                                         <td className="p-4 font-semibold text-slate-500">Categoría</td>
