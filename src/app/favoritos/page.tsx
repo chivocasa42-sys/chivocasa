@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import Navbar from '@/components/Navbar';
 import LazyImage from '@/components/LazyImage';
@@ -44,7 +44,7 @@ export default function FavoritosPage() {
     const [compareIds, setCompareIds] = useState<Set<string>>(new Set());
     const [showingComparison, setShowingComparison] = useState(false);
 
-    // Fetch full data for each favorite
+    // Fetch full data for all favorites in a single batch request
     useEffect(() => {
         if (favorites.size === 0) {
             setListings([]);
@@ -53,20 +53,22 @@ export default function FavoritosPage() {
         }
 
         setIsLoading(true);
-        const ids = [...favorites];
-        Promise.all(
-            ids.map(id =>
-                fetch(`/api/listing/${id}`)
-                    .then(res => res.ok ? res.json() : null)
-                    .catch(() => null)
-            )
-        ).then(results => {
-            setListings(results.filter(Boolean));
-            setIsLoading(false);
-        });
+        const ids = [...favorites].join(',');
+
+        fetch(`/api/listings/batch?ids=${ids}`)
+            .then(res => res.ok ? res.json() : [])
+            .then(data => {
+                setListings(data || []);
+                setIsLoading(false);
+            })
+            .catch(error => {
+                console.error('Error fetching favorites:', error);
+                setListings([]);
+                setIsLoading(false);
+            });
     }, [favorites]);
 
-    const toggleCompare = (id: string | number) => {
+    const toggleCompare = useCallback((id: string | number) => {
         setCompareIds(prev => {
             const next = new Set(prev);
             const key = String(id);
@@ -77,7 +79,7 @@ export default function FavoritosPage() {
             }
             return next;
         });
-    };
+    }, []);
 
     const comparedListings = listings.filter(l => compareIds.has(String(l.external_id)));
 
@@ -150,10 +152,19 @@ export default function FavoritosPage() {
                         </div>
                     )}
 
-                    {/* Loading state */}
+                    {/* Loading state - skeleton cards */}
                     {isLoading && (
-                        <div className="flex items-center justify-center py-20">
-                            <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                            {[...Array(Math.min(favoriteCount || 4, 8))].map((_, i) => (
+                                <div key={i} className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+                                    <div className="skeleton-pulse w-full h-48 bg-slate-200"></div>
+                                    <div className="p-4">
+                                        <div className="skeleton-pulse h-4 bg-slate-200 rounded mb-2 w-3/4"></div>
+                                        <div className="skeleton-pulse h-4 bg-slate-200 rounded mb-3 w-1/2"></div>
+                                        <div className="skeleton-pulse h-3 bg-slate-200 rounded w-full"></div>
+                                    </div>
+                                </div>
+                            ))}
                         </div>
                     )}
 
@@ -206,7 +217,7 @@ export default function FavoritosPage() {
                                             <LazyImage
                                                 src={listing.images?.[0] || '/placeholder.webp'}
                                                 alt={listing.title || 'Propiedad'}
-                                                className="w-full h-full"
+                                                className="w-full h-full object-cover"
                                                 placeholderSrc="/placeholder.webp"
                                             />
 
