@@ -1,11 +1,10 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Navbar from '@/components/Navbar';
 import ListingCard from '@/components/ListingCard';
-import ListingModal from '@/components/ListingModal';
 import BestOpportunitySection from '@/components/BestOpportunitySection';
 import DepartmentFilterBar from '@/components/DepartmentFilterBar';
 import ActiveFilterChips from '@/components/ActiveFilterChips';
@@ -107,7 +106,7 @@ export default function DepartmentPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [isLoadingMore, setIsLoadingMore] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [selectedListingId, setSelectedListingId] = useState<string | number | null>(null);
+    const router = useRouter();
     const loadMoreRef = useRef<HTMLDivElement>(null);
     const [pagination, setPagination] = useState<PaginationState>({
         total: 0,
@@ -284,7 +283,7 @@ export default function DepartmentPage() {
 
     // Handle view listing from best opportunity - open in modal
     const handleViewBestListing = (topScored: TopScoredListing) => {
-        setSelectedListingId(topScored.external_id);
+        router.push(`/inmuebles/${topScored.external_id}`);
     };
 
     // Determine which best opportunities to show based on filter
@@ -435,7 +434,7 @@ export default function DepartmentPage() {
                                             <ListingCard
                                                 key={listing.external_id}
                                                 listing={listing}
-                                                onClick={() => setSelectedListingId(listing.external_id)}
+                                                onClick={() => router.push(`/inmuebles/${listing.external_id}`)}
                                                 isFeatured={featuredIds.has(String(listing.external_id))}
                                             />
                                         ))}
@@ -468,13 +467,6 @@ export default function DepartmentPage() {
                 )}
             </main>
 
-            {/* Modal */}
-            {selectedListingId && (
-                <ListingModal
-                    externalId={selectedListingId}
-                    onClose={() => setSelectedListingId(null)}
-                />
-            )}
         </>
     );
 }

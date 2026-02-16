@@ -792,7 +792,6 @@ body {
 /* Tooltip nativo mejorado */
 [title] {
   position: relative;
-  cursor: help;
 }
 
 /* =============================================

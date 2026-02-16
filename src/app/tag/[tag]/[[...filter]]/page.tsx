@@ -1,11 +1,10 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Navbar from '@/components/Navbar';
 import ListingCard from '@/components/ListingCard';
-import ListingModal from '@/components/ListingModal';
 import BestOpportunitySection from '@/components/BestOpportunitySection';
 import TagFilterChips from '@/components/TagFilterChips';
 
@@ -76,7 +75,7 @@ export default function TagPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [isLoadingMore, setIsLoadingMore] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [selectedListingId, setSelectedListingId] = useState<string | number | null>(null);
+    const router = useRouter();
     const loadMoreRef = useRef<HTMLDivElement>(null);
     const [pagination, setPagination] = useState<PaginationState>({
         total: 0,
@@ -326,7 +325,7 @@ export default function TagPage() {
                                         <ListingCard
                                             key={listing.external_id}
                                             listing={listing}
-                                            onClick={() => setSelectedListingId(listing.external_id)}
+                                            onClick={() => router.push(`/inmuebles/${listing.external_id}`)}
                                         />
                                     ))}
                                 </div>
@@ -357,13 +356,6 @@ export default function TagPage() {
                 )}
             </main>
 
-            {/* Modal */}
-            {selectedListingId && (
-                <ListingModal
-                    externalId={selectedListingId}
-                    onClose={() => setSelectedListingId(null)}
-                />
-            )}
         </>
     );
 }

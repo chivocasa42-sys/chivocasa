@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 import LazyImage from '@/components/LazyImage';
-import ListingModal from '@/components/ListingModal';
 import { useFavorites } from '@/hooks/useFavorites';
 
 interface FavoriteListing {
@@ -15,7 +16,15 @@ interface FavoriteListing {
     listing_type: 'sale' | 'rent';
     images: string[];
     specs: Record<string, string | number | undefined>;
-    location: any;
+    location: {
+        municipio_detectado?: string;
+        departamento?: string;
+        city?: string;
+        state?: string;
+        latitude?: number;
+        longitude?: number;
+        [key: string]: string | number | undefined;
+    } | string | null;
     tags?: string[] | null;
     url: string;
     published_date: string;
@@ -41,7 +50,7 @@ function getBestPrice(listings: FavoriteListing[]): number | null {
     return prices.length > 0 ? Math.min(...prices) : null;
 }
 
-function getBestNumeric(specKey: keyof Record<string, any>, listings: FavoriteListing[]): number | null {
+function getBestNumeric(specKey: keyof Record<string, string | number | undefined>, listings: FavoriteListing[]): number | null {
     const values = listings
         .map(l => {
             const val = l.specs?.[specKey];
@@ -74,47 +83,73 @@ export default function FavoritosPage() {
     const { favorites, removeFavorite, clearFavorites, favoriteCount } = useFavorites();
     const [listings, setListings] = useState<FavoriteListing[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const [selectedId, setSelectedId] = useState<string | number | null>(null);
+    const router = useRouter();
     const [compareMode, setCompareMode] = useState(false);
     const [compareIds, setCompareIds] = useState<Set<string>>(new Set());
     const [showingComparison, setShowingComparison] = useState(false);
+    const [compareTypeWarning, setCompareTypeWarning] = useState<string | null>(null);
 
     // Fetch full data for all favorites in a single batch request
     useEffect(() => {
-        if (favorites.size === 0) {
-            setListings([]);
-            setIsLoading(false);
-            return;
-        }
-
-        setIsLoading(true);
-        const ids = [...favorites].join(',');
-
-        fetch(`/api/listings/batch?ids=${ids}`)
-            .then(res => res.ok ? res.json() : [])
-            .then(data => {
-                setListings(data || []);
-                setIsLoading(false);
-            })
-            .catch(error => {
-                console.error('Error fetching favorites:', error);
+        const fetchFavorites = async () => {
+            if (favorites.size === 0) {
                 setListings([]);
                 setIsLoading(false);
-            });
+                return;
+            }
+
+            setIsLoading(true);
+            const ids = [...favorites].join(',');
+
+            try {
+                const res = await fetch(`/api/listings/batch?ids=${ids}`);
+                const data = res.ok ? await res.json() : [];
+                setListings(data || []);
+            } catch (error) {
+                console.error('Error fetching favorites:', error);
+                setListings([]);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        fetchFavorites();
     }, [favorites]);
 
     const toggleCompare = useCallback((id: string | number) => {
+        const key = String(id);
+        const clickedListing = listings.find(l => String(l.external_id) === key);
+        if (!clickedListing) return;
+
         setCompareIds(prev => {
             const next = new Set(prev);
-            const key = String(id);
+
+            // If already selected, allow deselection
             if (next.has(key)) {
                 next.delete(key);
-            } else if (next.size < 4) {
+                setCompareTypeWarning(null);
+                return next;
+            }
+
+            // Check listing type matches existing selections
+            if (next.size > 0) {
+                const firstSelectedId = [...next][0];
+                const firstListing = listings.find(l => String(l.external_id) === firstSelectedId);
+                if (firstListing && firstListing.listing_type !== clickedListing.listing_type) {
+                    setCompareTypeWarning(
+                        'Solo puedes comparar propiedades del mismo tipo (todas en Venta o todas en Renta).'
+                    );
+                    return prev;
+                }
+            }
+
+            if (next.size < 4) {
                 next.add(key);
+                setCompareTypeWarning(null);
             }
             return next;
         });
-    }, []);
+    }, [listings]);
 
     const comparedListings = listings.filter(l => compareIds.has(String(l.external_id)));
 
@@ -152,7 +187,7 @@ export default function FavoritosPage() {
                             {favoriteCount > 0 && (
                                 <div className="flex items-center gap-2">
                                     <button
-                                        onClick={() => { setCompareMode(!compareMode); setCompareIds(new Set()); setShowingComparison(false); }}
+                                        onClick={() => { setCompareMode(!compareMode); setCompareIds(new Set()); setShowingComparison(false); setCompareTypeWarning(null); }}
                                         className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
                                             compareMode
                                                 ? 'bg-(--primary) text-white'
@@ -171,6 +206,19 @@ export default function FavoritosPage() {
                             )}
                         </div>
                     </div>
+
+                    {/* Type mismatch warning */}
+                    {compareTypeWarning && (
+                        <div className="mb-4 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-4 py-3 flex items-center gap-2 text-sm">
+                            <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                            <span>{compareTypeWarning}</span>
+                            <button onClick={() => setCompareTypeWarning(null)} className="ml-auto text-amber-600 hover:text-amber-800">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                        </div>
+                    )}
 
                     {/* Sticky Compare bar */}
                     {compareMode && compareIds.size > 0 && (
@@ -250,7 +298,7 @@ export default function FavoritosPage() {
                                             if (compareMode) {
                                                 toggleCompare(listing.external_id);
                                             } else {
-                                                setSelectedId(listing.external_id);
+                                                router.push(`/inmuebles/${listing.external_id}`);
                                             }
                                         }}
                                     >
@@ -354,18 +402,27 @@ export default function FavoritosPage() {
                         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
                             <table className="w-full text-sm">
                                 <thead>
+                                    <tr className={`border-b-2 ${comparedListings[0]?.listing_type === 'sale' ? 'border-blue-200 bg-blue-50' : 'border-red-200 bg-red-50'}`}>
+                                        <th colSpan={comparedListings.length + 1} className="p-3 text-center">
+                                            <span className={`text-lg font-bold uppercase tracking-wide ${comparedListings[0]?.listing_type === 'sale' ? 'text-blue-600' : 'text-red-500'}`}>
+                                                {comparedListings[0]?.listing_type === 'sale' ? 'Venta' : 'Renta'}
+                                            </span>
+                                        </th>
+                                    </tr>
                                     <tr className="border-b border-slate-200">
                                         <th className="text-left p-4 font-semibold text-slate-500 w-36">Característica</th>
                                         {comparedListings.map(l => (
                                             <th key={String(l.external_id)} className="p-4 text-center min-w-[220px]">
-                                                <div className="w-48 h-36 mx-auto rounded-lg overflow-hidden mb-2 border border-slate-200">
-                                                    <img
+                                                <div className="w-48 h-36 mx-auto rounded-lg overflow-hidden border border-slate-200">
+                                                    <Image
                                                         src={l.images?.[0] || '/placeholder.webp'}
                                                         alt={l.title || 'Propiedad'}
+                                                        width={192}
+                                                        height={144}
                                                         className="w-full h-full object-cover"
+                                                        priority={comparedListings.length <= 2}
                                                     />
                                                 </div>
-                                                <span className="text-xs text-slate-500 font-normal line-clamp-2 block h-8">{l.title}</span>
                                             </th>
                                         ))}
                                     </tr>
@@ -385,18 +442,6 @@ export default function FavoritosPage() {
                                                 </td>
                                             );
                                         })}
-                                    </tr>
-                                    <tr className="border-b border-slate-100">
-                                        <td className="p-4 font-semibold text-slate-500">Tipo</td>
-                                        {comparedListings.map(l => (
-                                            <td key={String(l.external_id)} className="p-4 text-center">
-                                                <span className={`inline-block px-2 py-0.5 rounded text-xs font-bold uppercase ${
-                                                    l.listing_type === 'sale' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
-                                                }`}>
-                                                    {l.listing_type === 'sale' ? 'Venta' : 'Renta'}
-                                                </span>
-                                            </td>
-                                        ))}
                                     </tr>
                                     <tr className="border-b border-slate-100">
                                         <td className="p-4 font-semibold text-slate-500">Habitaciones</td>
@@ -489,10 +534,6 @@ export default function FavoritosPage() {
                 </div>
             </main>
 
-            {/* Listing Modal */}
-            {selectedId && (
-                <ListingModal externalId={selectedId} onClose={() => setSelectedId(null)} />
-            )}
         </>
     );
 }

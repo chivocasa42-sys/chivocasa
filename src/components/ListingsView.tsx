@@ -1,9 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Listing, LocationStats } from '@/types/listing';
 import ListingCard from './ListingCard';
-import ListingModal from './ListingModal';
 
 interface ListingsViewProps {
     location: string;
@@ -37,8 +37,8 @@ function getArea(listing: Listing): number {
 type SortOption = 'price-asc' | 'price-desc' | 'rooms-desc' | 'rooms-asc' | 'ppm2-asc' | 'ppm2-desc';
 
 export default function ListingsView({ location, stats, allListings, onBack }: ListingsViewProps) {
+    const router = useRouter();
     const [sortBy, setSortBy] = useState<SortOption>('price-asc');
-    const [selectedListingId, setSelectedListingId] = useState<string | number | null>(null);
 
     const sortedListings = [...stats.listings].sort((a, b) => {
         switch (sortBy) {
@@ -105,18 +105,11 @@ export default function ListingsView({ location, stats, allListings, onBack }: L
                     <ListingCard
                         key={listing.external_id}
                         listing={listing}
-                        onClick={() => setSelectedListingId(listing.external_id)}
+                        onClick={() => router.push(`/inmuebles/${listing.external_id}`)}
                     />
                 ))}
             </div>
 
-            {/* Modal */}
-            {selectedListingId && (
-                <ListingModal
-                    externalId={selectedListingId}
-                    onClose={() => setSelectedListingId(null)}
-                />
-            )}
         </>
     );
 }
