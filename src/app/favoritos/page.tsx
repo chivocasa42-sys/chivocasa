@@ -336,27 +336,54 @@ export default function FavoritosPage() {
                                                 </span>
                                             </div>
 
-                                            {/* Remove button */}
-                                            {!compareMode && (
-                                                <button
-                                                    onClick={(e) => { e.stopPropagation(); removeFavorite(listing.external_id); }}
-                                                    className="absolute top-3 right-3 p-1.5 rounded-full bg-red-500 text-white hover:bg-red-600 transition-all shadow-sm z-10"
-                                                    aria-label="Quitar de favoritos"
-                                                    title="Quitar de favoritos"
-                                                >
-                                                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                                                    </svg>
-                                                </button>
-                                            )}
                                         </div>
 
                                         {/* Content */}
                                         <div className="p-4">
-                                            <div className="text-xl font-black text-[#272727] tracking-tight mb-1">
-                                                {formatPrice(listing.price)}
-                                                {listing.listing_type === 'rent' && (
-                                                    <span className="text-sm font-normal text-slate-500 ml-1">/mes</span>
+                                            {/* Price + Action Icons */}
+                                            <div className="flex items-center justify-between mb-1">
+                                                <div className="text-xl font-black text-[#272727] tracking-tight">
+                                                    {formatPrice(listing.price)}
+                                                    {listing.listing_type === 'rent' && (
+                                                        <span className="text-sm font-normal text-slate-500 ml-1">/mes</span>
+                                                    )}
+                                                </div>
+                                                {!compareMode && (
+                                                    <div className="flex items-center gap-1 shrink-0">
+                                                        {/* Share Button */}
+                                                        <button
+                                                            onClick={async (e) => {
+                                                                e.stopPropagation();
+                                                                const shareUrl = `${window.location.origin}/inmuebles/${listing.external_id}`;
+                                                                if (navigator.share) {
+                                                                    try {
+                                                                        await navigator.share({ title: listing.title || 'Propiedad en SivarCasas', url: shareUrl });
+                                                                    } catch { /* user cancelled */ }
+                                                                } else {
+                                                                    await navigator.clipboard.writeText(shareUrl);
+                                                                    alert('Enlace copiado al portapapeles');
+                                                                }
+                                                            }}
+                                                            className="p-1 transition-colors"
+                                                            aria-label="Compartir"
+                                                            title="Compartir"
+                                                        >
+                                                            <svg className="w-5 h-5 text-slate-400 hover:text-blue-500 transition-colors" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                                                            </svg>
+                                                        </button>
+                                                        {/* Favorite Button (filled red, removes from favorites) */}
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); removeFavorite(listing.external_id); }}
+                                                            className="p-1 transition-colors"
+                                                            aria-label="Quitar de favoritos"
+                                                            title="Quitar de favoritos"
+                                                        >
+                                                            <svg className="w-6 h-6" viewBox="0 0 24 24" fill="#ef4444" stroke="#ef4444" strokeWidth="2">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                                                            </svg>
+                                                        </button>
+                                                    </div>
                                                 )}
                                             </div>
                                             <div className="flex items-center gap-1.5 text-[13px] text-slate-700 font-medium mb-2">
