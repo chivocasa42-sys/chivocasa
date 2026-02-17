@@ -437,14 +437,14 @@ export default function FavoritosPage() {
                                         </th>
                                     </tr>
                                     <tr className="border-b border-slate-200">
-                                        <th className="text-left p-4 font-semibold text-slate-500 w-36">Característica</th>
+                                        <th className="text-left p-4 font-semibold text-slate-500 w-36"></th>
                                         {comparedListings.map(l => (
                                             <th key={String(l.external_id)} className="p-4 text-center min-w-[220px]">
-                                                <div className="w-48 h-36 mx-auto rounded-lg overflow-hidden border border-slate-200">
+                                                <div className="w-64 h-36 mx-auto rounded-lg overflow-hidden border border-slate-200">
                                                     <Image
                                                         src={l.images?.[0] || '/placeholder.webp'}
                                                         alt={l.title || 'Propiedad'}
-                                                        width={192}
+                                                        width={256}
                                                         height={144}
                                                         className="w-full h-full object-cover"
                                                         priority={comparedListings.length <= 2}
