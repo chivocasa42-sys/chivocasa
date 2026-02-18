@@ -126,7 +126,7 @@ export default function TendenciasClient({ initialData }: TendenciasClientProps)
                         {/* ══════════════════════════════════════════════
                             SECTION 1 — Panorama (KPI cards)
                            ══════════════════════════════════════════════ */}
-                        <section className="pt-10 pb-10">
+                        <section className="pt-10 pb-4">
                             <SectionHeader
                                 title={['Panorama del mercado inmobiliario', 'en El Salvador']}
                                 subtitle="Precios promedio, rentas mensuales y nuevas oportunidades inmobiliarias, actualizadas para ayudarte a tomar decisiones con mayor confianza."
@@ -159,10 +159,7 @@ export default function TendenciasClient({ initialData }: TendenciasClientProps)
                             </div>
                         </section>
 
-                        {/* Disclaimer */}
-                        <p className="text-xs md:text-sm text-[var(--text-muted)] text-center mt-1 mb-10 max-w-4xl mx-auto italic opacity-75">
-                            Los valores mostrados son promedios estimados y pueden variar según la zona y el tipo de propiedad.
-                        </p>
+
                     </>
                 )}
             </main>

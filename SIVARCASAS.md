@@ -1,982 +1,851 @@
-# SIVAR CASAS — DOCUMENTACIÓN TÉCNICA COMPLETA
+# SIVARCASAS — Comprehensive Repository Architecture
 
-> **Producto:** Sivar Casas (alias histórico: ChivoCasa)
-> **Dominio:** sivarcasas.com
-> **Versión del documento:** 2.0
-> **Última actualización:** 2026-02-14
+> **Documento vivo** que describe la arquitectura, flujos de datos y dependencias del proyecto **SivarCasas** (alias *chivocasa*).  
+> Última actualización manual: **2026-02-18**
 
 ---
 
-## CHANGELOG DE DOCUMENTACIÓN
+## Table of Contents
 
-| Fecha       | Versión | Cambios                                                       |
-|-------------|---------|---------------------------------------------------------------|
-| 2026-02-14  | 2.0     | Reescritura completa alineada al código actual del repositorio |
-| 2025-06-15  | 1.0     | Documento inicial                                              |
-
----
-
-## 1. RESUMEN EJECUTIVO
-
-Sivar Casas es una plataforma de inteligencia inmobiliaria para El Salvador. Agrega listados de múltiples fuentes (Encuentra24, MiCasaSV, Realtor.com, Vivo Latam), los normaliza, deduplica y almacena en Supabase. El frontend Next.js presenta estadísticas de mercado, rankings por departamento, un mapa interactivo, páginas de detalle, un valuador automatizado (AVM), favoritos persistidos en cookie, y tendencias nacionales.
-
-**Stack tecnológico:**
-
-| Capa         | Tecnología                                   |
-|-------------|----------------------------------------------|
-| Frontend    | Next.js 16, React 19, TypeScript 5, TailwindCSS 4 |
-| Gráficas    | ECharts 6 (tree-shaken: Bar, Line, Canvas)   |
-| Mapas       | Leaflet 1.9 + react-leaflet 5               |
-| Backend     | Next.js API Routes (Node.js + Edge runtime)  |
-| Base de datos | Supabase (PostgreSQL + PostGIS)            |
-| Scraper     | Python 3.11 (requests, BeautifulSoup4, supabase-py) |
-| CI/CD       | GitHub Actions (cron), Vercel (deploy)       |
-| Observabilidad | Vercel Analytics + Speed Insights         |
-| Imágenes    | sharp 0.34 (optimización server-side)        |
-| CSS inlining | critters 0.0.23                             |
+1. [Executive Summary](#1-executive-summary)
+2. [Technology Stack](#2-technology-stack)
+3. [Repository File Map](#3-repository-file-map)
+4. [Architecture Overview](#4-architecture-overview)
+5. [Frontend — Pages & Routing](#5-frontend--pages--routing)
+6. [Frontend — Components](#6-frontend--components)
+7. [Frontend — Hooks & Context](#7-frontend--hooks--context)
+8. [Frontend — Lib Utilities](#8-frontend--lib-utilities)
+9. [Frontend — Types](#9-frontend--types)
+10. [API Layer (Next.js Route Handlers)](#10-api-layer-nextjs-route-handlers)
+11. [Database — Supabase / PostgreSQL](#11-database--supabase--postgresql)
+12. [AVM (Automated Valuation Model)](#12-avm-automated-valuation-model)
+13. [Data Pipeline — Scrapers](#13-data-pipeline--scrapers)
+14. [CI/CD — GitHub Actions](#14-cicd--github-actions)
+15. [SEO & Structured Data](#15-seo--structured-data)
+16. [Deployment & Infrastructure](#16-deployment--infrastructure)
+17. [End-to-End Critical Flows](#17-end-to-end-critical-flows)
+18. [Environment Variables](#18-environment-variables)
 
 ---
 
-## 2. ESTRUCTURA DE CARPETAS
+## 1. Executive Summary
+
+**SivarCasas** is a real-estate intelligence platform for El Salvador.  It aggregates public property listings from multiple sources (Encuentra24, MiCasaSV, Realtor, VivoLatam), normalizes the data, and presents it through a modern Next.js web application with:
+
+- **Browsing by department** (14 departments, filterable by sale/rent, municipio, price, category)
+- **Interactive map** (Leaflet) with nearby-listing search and price-per-m² stats
+- **Automated property valuation** (AVM) using weighted comparable-sales analysis
+- **Market trends** dashboard with department-level rankings
+- **Favorites** system (cookie-based, max 25, side-by-side compare up to 4)
+- **Individual property detail pages** with image gallery, specs, and external-source links
+
+The backend is entirely **Supabase** (PostgreSQL + PostGIS + PostgREST). There is no custom server beyond Next.js API routes that proxy requests to Supabase RPCs.
+
+---
+
+## 2. Technology Stack
+
+| Layer | Technology | Version/Notes |
+|---|---|---|
+| **Framework** | Next.js (App Router) | 16.1.6 |
+| **UI** | React | 19 |
+| **Styling** | Tailwind CSS | v4 |
+| **Maps** | Leaflet + react-leaflet | OSM tiles |
+| **Charts** | ECharts | Market trends visualizations |
+| **Database** | Supabase (PostgreSQL + PostGIS) | PostgREST API, RPC functions |
+| **Scraping** | Python 3 | `requests`, `beautifulsoup4`, `supabase-py` |
+| **Image Optimization** | `sharp`, `next/image` | WebP/AVIF auto-conversion |
+| **Analytics** | Vercel Analytics + Speed Insights | `@vercel/analytics`, `@vercel/speed-insights` |
+| **CI/CD** | GitHub Actions | 2 workflows (scrape-new, scrape-update) |
+| **Hosting** | Vercel | `sivarcasas.com` |
+| **CSS Optimization** | critters | Critical CSS inlining |
+
+---
+
+## 3. Repository File Map
 
 ```
-SivarCasas2/
-├── .github/workflows/          # CI/CD pipelines
-│   ├── scrape-new.yml          # Scraping de nuevos listados (cron cada hora)
-│   └── scrape-update.yml       # Re-scraping de activos (cron cada 12h)
-├── public/                     # Assets estáticos
-│   ├── logo.png                # Logo del sitio
-│   ├── favicon.ico             # Favicon
-│   └── el-salvador.geojson     # GeoJSON para el mapa interactivo
-├── sql/                        # Scripts SQL para Supabase
-│   ├── avm_functions.sql       # AVM: avm_nearest_matches, avm_value_point
-│   ├── fn_search_colonias.sql  # Búsqueda fuzzy de colonias
-│   ├── fn_valuador_comps.sql   # Comparables para valuador (v2)
-│   ├── get_price_estimate.sql  # Estimación de precio (legacy)
-│   ├── get_listings_for_cards_v2_location.sql
+chivocasa/
+├── .env.example                 # Template for environment variables
+├── .env.local                   # Local Supabase credentials (gitignored)
+├── .github/workflows/
+│   ├── scrape-new.yml           # Hourly: scrape new listings
+│   └── scrape-update.yml        # Every 12h: update existing listings
+├── next.config.ts               # Next.js configuration
+├── package.json                 # Dependencies and scripts
+├── requirements.txt             # Python scraper dependencies
+├── tsconfig.json                # TypeScript configuration
+│
+├── scraper_encuentra24.py       # 3,706 LOC — Multi-source scraper
+├── area_normalizer.py           # Normalize area units to m²
+├── match_locations.py           # Match listings to sv_loc_group hierarchy
+├── scraper_el_salvador_locations.py  # Location data scraper
+│
+├── sql/                         # 23 SQL files — Database functions & migrations
+│   ├── avm_functions.sql        # AVM: avm_nearest_matches + avm_value_point
+│   ├── get_price_estimate.sql   # Dual-mode price estimation (coord / hierarchy)
+│   ├── get_listings_for_cards_v2_location.sql  # Department listing cards
+│   ├── fn_search_colonias.sql   # Colonia autocomplete
+│   ├── fn_valuador_comps.sql    # Valuador comparables
+│   ├── supabase_tag_functions.sql    # Tag-based listing queries
 │   ├── get_municipalities_for_department.sql
 │   ├── get_categories_for_department.sql
-│   ├── supabase_tag_functions.sql
 │   ├── create_sv_locations_table.sql
-│   ├── insert_sv_locations.sql
-│   ├── insert_sv_locations_residential.sql
-│   ├── recreate_mv_with_location_match.sql
-│   ├── recreate_mv_with_median.sql
-│   ├── update_fn_nearby_candidates.sql
-│   ├── update_get_listings_by_tag_sort.sql
-│   ├── update_get_listings_by_tag_with_tags.sql
-│   ├── update_get_listings_for_cards_sort.sql
-│   ├── update_get_listings_for_cards_with_tags.sql
-│   ├── update_best_opportunity_images.sql
-│   ├── cleanup_specs.sql
-│   ├── fix_area_m2_values.sql
-│   ├── migrate_area_to_area_m2.sql
-│   └── unmatched_locations.sql
-├── src/
-│   ├── app/                    # Next.js App Router
-│   │   ├── layout.tsx          # Root layout (Inter font, Analytics, Providers)
-│   │   ├── template.tsx        # Homepage JSON-LD injection
-│   │   ├── page.tsx            # Home: KPIs, mapa, tarjetas departamento
-│   │   ├── Providers.tsx       # Context providers (FavoritesProvider)
-│   │   ├── robots.ts           # robots.txt dinámico
-│   │   ├── sitemap.ts          # sitemap.xml dinámico
-│   │   ├── opengraph-image.tsx # OG image dinámico (@vercel/og)
-│   │   ├── twitter-image.tsx   # Twitter card dinámico
-│   │   ├── globals.css         # CSS core (variables, reset, temas)
-│   │   ├── pages.css           # CSS específico de páginas
-│   │   ├── tendencias/
-│   │   │   └── page.tsx        # Tendencias nacionales
-│   │   ├── valuador-de-inmuebles/
-│   │   │   ├── layout.tsx      # Metadata del valuador
-│   │   │   └── page.tsx        # Valuador AVM interactivo
-│   │   ├── favoritos/
-│   │   │   └── page.tsx        # Página de favoritos
-│   │   ├── inmuebles/[id]/
-│   │   │   └── page.tsx        # Detalle de inmueble
-│   │   ├── [departamento]/[[...filter]]/
-│   │   │   └── page.tsx        # Listings por departamento
-│   │   ├── tag/[tag]/[[...filter]]/
-│   │   │   └── page.tsx        # Listings por tag
-│   │   └── api/                # 13 API routes
-│   │       ├── colonias/route.ts
-│   │       ├── department-stats/route.ts
-│   │       ├── department/[slug]/route.ts
-│   │       ├── department/[slug]/top-scored/route.ts
-│   │       ├── geocode/route.ts
-│   │       ├── listing/[id]/route.ts
-│   │       ├── listings/route.ts
-│   │       ├── listings/batch/route.ts
-│   │       ├── nearby-listings/route.ts
-│   │       ├── reverse-geocode/route.ts
-│   │       ├── tag/[tag]/route.ts
-│   │       ├── tags/route.ts
-│   │       └── valuador/route.ts
-│   ├── components/             # 32 componentes React
-│   ├── hooks/                  # Custom hooks
-│   │   ├── useFavorites.tsx    # Context + cookie, max 25
-│   │   └── useDepartmentFilters.ts # Filtros URL-synced
-│   ├── lib/                    # Utilidades
-│   │   ├── biCalculations.ts   # Cálculos BI (percentil, stats)
-│   │   ├── echarts.ts          # ECharts tree-shaken
-│   │   ├── imageCache.ts       # Cache de imágenes client-side
-│   │   ├── rankingChartsAdapter.ts # Adaptador datos → ECharts
-│   │   ├── seo.ts              # Generadores JSON-LD
-│   │   └── slugify.ts          # Slug ↔ departamento
-│   ├── types/                  # Interfaces TypeScript
-│   │   ├── listing.ts          # Listing, ListingSpecs, ListingLocation
-│   │   └── biStats.ts          # NationalStats, DepartmentBIStats, etc.
-│   ├── data/
-│   │   └── departamentos.ts    # 14 departamentos + municipios + aliases
-│   └── empty-polyfills.js      # Stub para eliminar polyfills legacy
-├── scraper_encuentra24.py      # Scraper principal multi-fuente (3706 líneas)
-├── match_locations.py          # Matching listados → jerarquía sv_loc_group
-├── area_normalizer.py          # Normalización área → m²
-├── deduplication.py            # Deduplicación de listados
-├── listing_validator.py        # Validación de listados activos
-├── enrich_locations.py         # Enriquecimiento de ubicaciones
-├── export_to_supabase.py       # Export directo a Supabase
-├── fetch_residential_areas.py  # Fetch áreas residenciales
-├── find_unmatched.py           # Listados sin match de ubicación
-├── generate_sql_from_json.py   # Generador SQL desde JSON
-├── import_locations_to_supabase.py
-├── scraper_el_salvador_locations.py
-├── scraper_with_dedup.py
-├── validate_encuentra24.py
-├── validate_listings.py
-├── localization_plugin.py
-├── requirements.txt            # Deps Python
-├── package.json                # Deps Node.js
-├── next.config.ts              # Config Next.js
-├── tsconfig.json               # Config TypeScript
-├── eslint.config.mjs           # ESLint flat config
-├── postcss.config.mjs          # PostCSS (TailwindCSS v4)
-├── run_dev.bat                 # Script Windows para dev server
-└── .env.example                # Variables de entorno requeridas
+│   ├── insert_sv_locations*.sql # El Salvador location hierarchy seed data
+│   ├── recreate_mv_*.sql        # Materialized view management
+│   ├── update_*.sql             # Migration / function update scripts
+│   └── ...                      # Cleanup, fix, migrate scripts
+│
+├── public/                      # Static assets (icons, placeholder images)
+│
+└── src/
+    ├── app/
+    │   ├── layout.tsx           # Root layout (fonts, metadata, Providers)
+    │   ├── page.tsx             # Homepage (SSR)
+    │   ├── sitemap.ts           # Dynamic sitemap (46 URLs)
+    │   ├── about/page.tsx       # About page (398 LOC, FAQ, JSON-LD)
+    │   ├── tendencias/page.tsx  # Market trends (SSR + client hydration)
+    │   ├── valuador-de-inmuebles/page.tsx  # AVM tool (643 LOC)
+    │   ├── favoritos/page.tsx   # Favorites + comparison (567 LOC)
+    │   ├── inmuebles/[id]/page.tsx  # Individual listing detail (423 LOC)
+    │   ├── [departamento]/
+    │   │   └── [[...filter]]/page.tsx  # Department listings (473 LOC)
+    │   └── api/                 # 13 API route handlers
+    │       ├── colonias/route.ts
+    │       ├── department-stats/route.ts
+    │       ├── department/[slug]/
+    │       │   ├── listings/route.ts
+    │       │   ├── municipalities/route.ts
+    │       │   └── top-scored/route.ts
+    │       ├── geocode/route.ts
+    │       ├── listing/[id]/route.ts
+    │       ├── listings/
+    │       │   ├── route.ts
+    │       │   └── batch/route.ts
+    │       ├── nearby-listings/route.ts
+    │       ├── reverse-geocode/route.ts
+    │       ├── tag/[tag]/route.ts
+    │       └── valuador/route.ts
+    │
+    ├── components/              # 32 React components
+    │   ├── MapExplorer.tsx       # 707 LOC — Interactive Leaflet map
+    │   ├── ListingModal.tsx      # 397 LOC — Property detail modal
+    │   ├── TendenciasClient.tsx  # Market trends client component
+    │   ├── Navbar.tsx            # Global navigation bar
+    │   ├── HeroSection.tsx       # Homepage hero
+    │   ├── DepartmentCard.tsx    # Department summary card
+    │   ├── ListingCard.tsx       # Property listing card
+    │   ├── LazyImage.tsx         # Lazy-loading image component
+    │   ├── BestOpportunitySection.tsx  # Top-scored listings
+    │   ├── FiltersPanel.tsx      # Filter controls panel
+    │   ├── DepartmentFilterBar.tsx    # Department-level filter bar
+    │   ├── MarketRankingCharts.tsx    # ECharts-based ranking charts
+    │   ├── RankingsSection.tsx   # Rankings section container
+    │   ├── RankingCard.tsx       # Individual ranking card
+    │   ├── TrendsSection.tsx     # Trends section container
+    │   ├── TrendsInsights.tsx    # Trend insight cards
+    │   ├── KPIStrip.tsx          # Key performance indicator strip
+    │   ├── KPICard.tsx           # Individual KPI card
+    │   ├── LocationCard.tsx      # Location info card
+    │   ├── SectionHeader.tsx     # Reusable section header
+    │   ├── JsonLd.tsx            # JSON-LD structured data injector
+    │   ├── ActiveFilterChips.tsx # Active filter chip display
+    │   ├── MunicipalityFilterChips.tsx # Municipality filter chips
+    │   ├── TagFilterChips.tsx    # Tag-based filter chips
+    │   ├── PriceRangePopover.tsx # Price range selector popover
+    │   ├── FeatureCards.tsx      # Feature highlight cards
+    │   ├── HomeHeader.tsx        # Homepage header
+    │   ├── DashboardHeader.tsx   # Dashboard header
+    │   ├── DepartmentCardBI.tsx  # BI-enhanced department card
+    │   ├── InsightsPanel.tsx     # Insights display panel
+    │   ├── ListingsView.tsx      # Listings grid/list view
+    │   └── UnclassifiedCard.tsx  # Unclassified listing card
+    │
+    ├── hooks/
+    │   ├── useFavorites.tsx      # 163 LOC — Cookie-based favorites (max 25)
+    │   └── useDepartmentFilters.ts  # 160 LOC — Filter state management
+    │
+    ├── lib/
+    │   ├── slugify.ts            # 62 LOC — Department ↔ slug conversion (14 departments)
+    │   ├── seo.ts                # 248 LOC — Schema.org JSON-LD generators
+    │   ├── biCalculations.ts     # 267 LOC — BI metrics (percentile, stats, insights)
+    │   ├── Providers.tsx         # React context providers wrapper
+    │   └── polyfillStub.js       # Empty module to stub legacy polyfills
+    │
+    ├── data/
+    │   └── departamentos.ts     # El Salvador location hierarchy & detection
+    │
+    └── types/
+        ├── listing.ts           # 72 LOC — Listing, ListingLocation, ListingContactInfo, LocationStats
+        └── biStats.ts           # BI statistics type definitions
 ```
 
 ---
 
-## 3. FLUJO DE DATOS
+## 4. Architecture Overview
 
 ```
-┌─────────────────┐     ┌────────────────┐     ┌─────────────┐
-│  Encuentra24    │     │   MiCasaSV     │     │ Realtor.com │
-│  (HTML + JSON)  │     │  (XML sitemap) │     │ (__NEXT_DATA)|
-└────────┬────────┘     └───────┬────────┘     └──────┬──────┘
-         │                      │                      │
-         └──────────┬───────────┘──────────────────────┘
-                    ▼
-         scraper_encuentra24.py
-         ├── ThreadPoolExecutor (concurrente)
-         ├── parse_price() + correct_listing_type()
-         ├── generate_location_tags()
-         ├── area_normalizer.normalize_listing_specs()
-         └── match_locations.match_scraped_listings()
-                    │
-                    ▼
-         ┌─────────────────┐
-         │   Supabase      │
-         │  PostgreSQL +   │
-         │    PostGIS      │
-         ├─────────────────┤
-         │ scrappeddata_   │
-         │   ingest        │ ← tabla principal
-         │ sv_loc_group2-5 │ ← jerarquía ubicaciones
-         │ listing_location│
-         │   _match        │ ← matching listado↔ubicación
-         │ mv_sd_depto_    │
-         │   stats         │ ← vista materializada
-         └────────┬────────┘
-                  │
-                  ▼
-         ┌─────────────────┐
-         │  Next.js API    │
-         │   Routes (13)   │
-         │  Node.js/Edge   │
-         └────────┬────────┘
-                  │
-                  ▼
-         ┌─────────────────┐
-         │  React Frontend │
-         │  SSR + CSR      │
-         │  (Vercel)       │
-         └─────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                         USER  (Browser)                              │
+│  ┌─────────┐  ┌──────────┐  ┌───────────┐  ┌───────────────────┐   │
+│  │ Homepage │  │  Dept.   │  │ Tendencias│  │  Valuador (AVM)   │   │
+│  │ + Hero   │  │ Listings │  │ (Trends)  │  │  Property Valuer  │   │
+│  └────┬─────┘  └────┬─────┘  └─────┬─────┘  └────────┬──────────┘   │
+│       │              │              │                  │              │
+│  ┌────┤──── MapExplorer (Leaflet) ──┤──── ListingModal ┤            │
+│  │    │              │              │                  │              │
+└──┼────┼──────────────┼──────────────┼──────────────────┼──────────────┘
+   │    │              │              │                  │
+   ▼    ▼              ▼              ▼                  ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│               Next.js API Routes  (13 handlers)                      │
+│  /api/department-stats  /api/nearby-listings  /api/valuador          │
+│  /api/listings          /api/colonias         /api/geocode           │
+│  /api/listing/[id]      /api/tag/[tag]        /api/reverse-geocode   │
+│  /api/listings/batch    /api/department/[slug]/top-scored             │
+│  /api/department/[slug]/listings  /api/department/[slug]/municipalities│
+└──────────────────────────┬───────────────────────────────────────────┘
+                           │  HTTP (fetch + headers)
+                           ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                    Supabase (PostgreSQL + PostGIS)                    │
+│                                                                      │
+│  TABLES:                                                             │
+│    scrappeddata_ingest (alias: scrapped_data)                        │
+│    listing_location_match                                            │
+│    sv_loc_group2 (colonias)                                          │
+│    sv_loc_group3 (municipios)                                        │
+│    sv_loc_group4 (distritos)                                         │
+│    sv_loc_group5 (departamentos)                                     │
+│                                                                      │
+│  MATERIALIZED VIEWS:                                                 │
+│    mv_sd_depto_stats (department statistics)                         │
+│                                                                      │
+│  RPC FUNCTIONS (20+):                                                │
+│    get_listings_for_cards()     get_top_scored_listings()             │
+│    get_listings_by_tag()        get_municipalities_for_department()   │
+│    fn_listings_nearby_page()    fn_listing_price_stats_nearby()       │
+│    avm_nearest_matches()        avm_value_point()                    │
+│    search_colonias()            get_price_estimate()                 │
+│    get_available_tags()         get_categories_for_department()       │
+│    ... (additional utility functions)                                │
+└──────────────────────────────────────────────────────────────────────┘
+                           ▲
+                           │  Python (Supabase REST API)
+                           │
+┌──────────────────────────────────────────────────────────────────────┐
+│                    DATA PIPELINE (Python Scrapers)                    │
+│                                                                      │
+│  scraper_encuentra24.py  (3,706 LOC — Multi-source scraper)          │
+│  ├── Sources: Encuentra24, MiCasaSV, Realtor, VivoLatam             │
+│  ├── Modes: NEW (scrape new) | UPDATE (re-scrape existing)          │
+│  ├── Validation: deactivate 404/sold listings                       │
+│  ├── Listing-type correction heuristics                             │
+│  └── Concurrent scraping (ThreadPoolExecutor)                       │
+│                                                                      │
+│  area_normalizer.py     → Normalize all area units to m²            │
+│  match_locations.py     → Match listings to sv_loc_group hierarchy   │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 4. PÁGINAS Y RUTAS
+## 5. Frontend — Pages & Routing
 
-### 4.1 HOME — src/app/page.tsx
+### 5.1 Homepage (`src/app/page.tsx`)
 
-- **Ruta:** /
-- **Rendering:** SSR con `unstable_cache` (tag: `department-stats`, revalidate: 300s)
-- **Filtro global:** Total | Venta | Alquiler (state: `activeView`)
-- **Secciones renderizadas:**
-  1. `Navbar` — total de listados activos, botón refresh
-  2. `HeroSection` — búsqueda de ubicación, llama a `handleHeroLocationSelect`
-  3. `HomeHeader` — KPIs globales
-  4. `MapExplorer` — mapa Leaflet (dynamic import, SSR: false)
-  5. Grid de `DepartmentCard` — 14 departamentos con stats
-  6. `MarketRankingCharts` — gráficas ECharts de rankings
-- **Cálculos:** `getDisplayStats()` computa promedios ponderados para vista "all"
+Server-rendered landing page with:
+- `HeroSection` with property counts
+- `DepartmentCard` grid for all 14 El Salvador departments
+- `MapExplorer` for interactive property discovery
+- Fetches initial data via `/api/department-stats`
 
-### 4.2 LAYOUT RAÍZ — src/app/layout.tsx
+### 5.2 Department Page (`src/app/[departamento]/[[...filter]]/page.tsx`)
 
-- **Font:** Inter (Google Fonts, `next/font/google`)
-- **Idioma:** `lang="es"`
-- **Providers:** `FavoritesProvider` vía `Providers.tsx`
-- **Observabilidad:** `<SpeedInsights />` + `<Analytics />` (Vercel)
-- **Metadata:** title template `%s | sivarcasas`, metadataBase `https://sivarcasas.com`, OpenGraph, Twitter cards, keywords
+**473 LOC** — Client-side rendered with dynamic routing.
 
-### 4.3 TEMPLATE HOME — src/app/template.tsx
+| URL Pattern | Filter |
+|---|---|
+| `/san-salvador` | All listings |
+| `/san-salvador/venta` | Sale only |
+| `/san-salvador/renta` | Rent only |
 
-- Server component que inyecta JSON-LD (Organization + WebSite schemas) via `<JsonLd />`
+Features:
+- Paginated listing grid (24 per page) via `get_listings_for_cards` RPC
+- "Best Opportunities" section via `get_top_scored_listings` RPC
+- Municipality filter chips from `get_municipalities_for_department` RPC
+- Category filter chips from `get_categories_for_department` RPC
+- Price range filtering, sort options (price_asc, price_desc, recent)
+- `ListingModal` for inline detail view
+- URL syncing via `window.history.replaceState` (no full-page navigation)
 
-### 4.4 TENDENCIAS — src/app/tendencias/page.tsx
+### 5.3 Tendencias Page (`src/app/tendencias/page.tsx`)
 
-- **Ruta:** /tendencias
-- **Rendering:** SSR con `unstable_cache` (tag: `department-stats`, revalidate: 300s)
-- **Componente principal:** `TendenciasClient` (client component)
-- Muestra rankings nacionales, gráficas comparativas, evolución mensual simulada
+**113 LOC** — Server-rendered page with client hydration via `TendenciasClient`.
+- Fetches `mv_sd_depto_stats` materialized view
+- Uses `unstable_cache` with 5-minute revalidation
+- Groups data by department, computes sale/rent stats
+- Renders market ranking charts (ECharts), trends, insights
 
-### 4.5 VALUADOR DE INMUEBLES — src/app/valuador-de-inmuebles/
+### 5.4 Valuador Page (`src/app/valuador-de-inmuebles/page.tsx`)
 
-- **Ruta:** /valuador-de-inmuebles
-- **Rendering:** Client-side (use client)
-- **layout.tsx:** Metadata específica (title, description, canonical)
-- **page.tsx (642 líneas):**
-  - Autocomplete de ubicación via `/api/geocode` y `/api/colonias`
-  - Selección de tipo de propiedad (casa, apartamento, lote, local)
-  - Inputs: área m², recámaras, baños, parking
-  - Llama a `POST /api/valuador` para obtener estimación
-  - Muestra: valor estimado, rango bajo/alto, confianza, precio/m², renta estimada, proyección 12m, top comparables
+**643 LOC** — Client-side AVM tool.
+- `LocationAutocomplete` using Nominatim via `/api/geocode`
+- Property type selector (Casa, Apartamento, Local, Lote)
+- Calls `/api/valuador` → `avm_value_point` RPC
+- Displays: estimated value, range (low/high), confidence %, price/m², comparable properties
+- Rent estimation and 12-month projection
 
-### 4.6 FAVORITOS — src/app/favoritos/page.tsx
+### 5.5 Favoritos Page (`src/app/favoritos/page.tsx`)
 
-- **Ruta:** /favoritos
-- **Rendering:** Client-side
-- **Persistencia:** Cookie via `useFavorites` hook (máximo 25 favoritos)
-- **Funcionalidad:** Grid de listados favoritos, comparación de precio/área, botón eliminar
+**567 LOC** — Client-side favorites management.
+- Reads favorites from `useFavorites` context (cookie-based, max 25)
+- Batch-fetches full listing data via `/api/listings/batch`
+- **Compare mode**: select up to 4 same-type listings, renders side-by-side comparison table
+- Best-value highlighting (⭐) for price, bedrooms, bathrooms, area, parking
+- Share and remove-from-favorites actions
 
-### 4.7 DETALLE DE INMUEBLE — src/app/inmuebles/[id]/page.tsx
+### 5.6 Inmuebles Detail Page (`src/app/inmuebles/[id]/page.tsx`)
 
-- **Ruta:** /inmuebles/:id
-- **Rendering:** Client-side
-- **Interface:** `FullListing` con todos los campos (specs, details, images, contact_info, tags)
-- **Features:** Galería de imágenes con navegación teclado (←→), botón favorito, tags de ubicación, enlace a fuente original
+**423 LOC** — Individual property detail view.
+- Fetches single listing via `/api/listing/[id]`
+- Image gallery with prev/next navigation (keyboard support)
+- Full specs display: bedrooms, bathrooms, area, parking, description
+- Tags, location info, contact info
+- Favorite toggle, share button, external source link
+- Price formatting, area-unit normalization
 
-### 4.8 DEPARTAMENTO — src/app/[departamento]/[[...filter]]/page.tsx
+### 5.7 About Page (`src/app/about/page.tsx`)
 
-- **Rutas:**
-  - `/:departamento` — todos los listados
-  - `/:departamento/venta` — solo ventas
-  - `/:departamento/alquiler` — solo alquileres
-- **Rendering:** SSR + Client-side filters
-- **Filtros:** tipo (venta/alquiler), municipio, precio, categoría, ordenamiento
-- **Paginación:** Offset-based, 24 items por página
-- **Hook:** `useDepartmentFilters` — sincroniza filtros con URL
+**398 LOC** — Static informational page.
+- FAQ sections (Real Estate + SivarCasas-specific) with `<details>` accordions
+- Schema.org FAQPage JSON-LD structured data
+- Benefits, tools, "how it works" pipeline, data sources, team description
+- Disclaimer section
 
-### 4.9 TAG — src/app/tag/[tag]/[[...filter]]/page.tsx
+### 5.8 Sitemap (`src/app/sitemap.ts`)
 
-- **Rutas:** `/tag/:tag`, `/tag/:tag/venta`, `/tag/:tag/alquiler`
-- **Redirects:** `/tag/:departamento` → `/:departamento` (301 permanente, via next.config.ts)
-
-### 4.10 SEO DINÁMICO
-
-| Archivo                  | Genera        | Detalles                                |
-|--------------------------|---------------|-----------------------------------------|
-| src/app/robots.ts        | robots.txt    | Allow: /, Disallow: /api/               |
-| src/app/sitemap.ts       | sitemap.xml   | Home + tendencias + valuador + 14 deptos × 3 variantes |
-| src/app/opengraph-image.tsx | OG image   | 1200×630, @vercel/og runtime            |
-| src/app/twitter-image.tsx   | Twitter card | 1200×600, @vercel/og runtime          |
+Generates 46 URLs:
+- 4 static pages (home, tendencias, valuador, about)
+- 42 department pages (14 departments × 3 variants: all, venta, alquiler)
 
 ---
 
-## 5. API ROUTES (13 ENDPOINTS)
+## 6. Frontend — Components
 
-### 5.1 GET /api/department-stats
+### Core Components (32 total)
 
-- **Runtime:** Node.js
-- **Cache:** In-memory (30s TTL) + Cache-Control headers + Next.js revalidate 300s
-- **Fuente:** Vista materializada `mv_sd_depto_stats`
-- **Respuesta:** Array de objetos agrupados por departamento con stats de venta/renta
-- **Headers:** `X-Cache: HIT|MISS`
+| Component | LOC | Purpose |
+|---|---|---|
+| **MapExplorer** | 707 | Interactive Leaflet map with marker clustering, nearby search, price/m² stats |
+| **ListingModal** | 397 | Full-screen property detail modal with image carousel, specs, AVM data |
+| **TendenciasClient** | ~500 | Client-side trends dashboard (charts, rankings, insights) |
+| **Navbar** | ~100 | Global navigation with links to all pages + favoritos count badge |
+| **HeroSection** | ~120 | Homepage hero with property count display |
+| **ListingCard** | ~150 | Reusable property card (image, price, specs, tags, favorite toggle) |
+| **LazyImage** | ~50 | Image component with lazy-loading + placeholder fallback |
+| **BestOpportunitySection** | ~200 | Top-scored listings carousel for department pages |
+| **FiltersPanel** | ~180 | Slide-out filter panel (price, municipio, category) |
+| **DepartmentFilterBar** | ~100 | Horizontal filter bar (listing type, sort, price range) |
+| **MarketRankingCharts** | ~300 | ECharts bar/line charts for department rankings |
+| **KPIStrip** / **KPICard** | ~80 | National-level KPI display (median prices, active count, new 7d) |
+| **SectionHeader** | ~30 | Reusable two-tone section header (bold + colored) |
 
-### 5.2 GET /api/department/[slug]
+### Filter & UI Components
 
-- **Runtime:** Node.js
-- **Params URL:** slug (departamento)
-- **Query:** type, sort, limit (default 24), offset, municipalities, min_price, max_price, category
-- **Fuente:** RPC `get_listings_for_cards` + `get_municipalities_for_department` + `get_categories_for_department`
-- **Respuesta:** `{ listings: CardListing[], municipalities: Municipality[], categories: string[], pagination: {...} }`
-- **Nota:** Extrae property types de tags con set `PROPERTY_TYPES`
-
-### 5.3 GET /api/department/[slug]/top-scored
-
-- **Runtime:** Node.js
-- **Query:** type (sale|rent|all), limit (default 10)
-- **Fuente:** RPC `get_top_scored_listings`
-- **Respuesta:** `{ departamento, sale: [...], rent: [...], all: [...] }`
-- **Cache:** revalidate 300s
-
-### 5.4 GET /api/listing/[id]
-
-- **Runtime:** Edge
-- **Fuente:** REST query directa a `scrappeddata_ingest` por `external_id`
-- **Cache:** revalidate 60s
-- **Nota:** Regex fix para `external_id` > 15 dígitos (previene pérdida de precisión JS)
-
-### 5.5 GET /api/listings
-
-- **Runtime:** Node.js
-- **Fuente:** REST query a `scrappeddata_ingest` (select=*, order=last_updated.desc)
-- **Cache:** revalidate 300s
-- **Nota:** Endpoint legacy, sin paginación
-
-### 5.6 GET /api/listings/batch
-
-- **Runtime:** Node.js
-- **Query:** ids (comma-separated external_ids)
-- **Fuente:** REST query con `external_id=in.(...)`
-- **Cache:** revalidate 60s
-- **Uso:** Página de favoritos fetch batch por IDs de cookie
-
-### 5.7 GET /api/nearby-listings
-
-- **Runtime:** Node.js
-- **Query:** lat, lng (required), radius (km, default 2, clamped 0.5-10), sort_by, limit (1-20), offset, listing_type
-- **Fuente:** RPCs `fn_listing_price_stats_nearby` + `fn_listings_nearby_page` (paralelo)
-- **Respuesta:** `{ stats: PriceStats[], listings: NearbyListing[], pagination, meta }`
-
-### 5.8 GET /api/geocode
-
-- **Runtime:** Node.js
-- **Query:** q (min 2 chars)
-- **Proxy:** Nominatim OSM (`countrycodes=sv`)
-- **Cache:** revalidate 3600s (1h)
-- **Nota:** Strip diacríticos para búsqueda sin acentos
-
-### 5.9 GET /api/reverse-geocode
-
-- **Runtime:** Node.js
-- **Query:** lat, lng
-- **Proxy:** Nominatim reverse geocoding (zoom=18)
-- **Cache:** revalidate 86400s (24h)
-- **Respuesta:** `{ name: string | null }` — nombre compuesto de lugar
-
-### 5.10 GET /api/colonias
-
-- **Runtime:** Node.js
-- **Query:** q (min 2 chars)
-- **Fuente:** RPC `search_colonias`
-- **Cache:** revalidate 3600s
-- **Respuesta:** Array `ColoniaResult[]` con id, name, lat, lng, municipio, departamento
-
-### 5.11 GET /api/tags
-
-- **Runtime:** Edge
-- **Fuente:** RPC `get_available_tags` con fallback a query directa
-- **Cache:** revalidate 300s
-- **Respuesta:** `{ tags: [{tag}], count }`
-
-### 5.12 GET /api/tag/[tag]
-
-- **Runtime:** Edge
-- **Query:** limit, offset, type, sort
-- **Fuente:** RPC `get_listings_by_tag`
-- **Cache:** revalidate 60s
-- **Filtro post-query:** Excluye "Casa" ventas < $15,000 (probable misclasificación)
-- **Respuesta:** `{ tag, slug, listings, pagination }`
-
-### 5.13 POST /api/valuador
-
-- **Runtime:** Node.js
-- **Body JSON:** `{ lat, lng, area_m2, property_type, bedrooms?, bathrooms?, parking? }`
-- **Fuente:** RPCs `avm_value_point` (sale + rent en paralelo) + `avm_nearest_matches` (top 5 comps)
-- **Respuesta:** `{ estimated_value, range_low, range_high, confidence, price_per_m2, estimated_rent, rent_percentage, projection_12m, top_comps[], ... }`
-- **Fallback renta:** Si `insufficient_data`, usa 0.6% del valor de venta
-- **Proyección:** 5% apreciación anual hardcoded
+| Component | Purpose |
+|---|---|
+| **ActiveFilterChips** | Display/dismiss active filter chips |
+| **MunicipalityFilterChips** | Clickable municipality filter chips |
+| **TagFilterChips** | Property-type tag filter chips |
+| **PriceRangePopover** | Min/max price slider popover |
+| **LocationCard** | Location info display card |
+| **RankingCard** | Department ranking card with stats |
+| **DepartmentCardBI** | BI-enhanced department card with percentiles |
+| **InsightsPanel** | Market insights (top activity, trends) |
+| **JsonLd** | Schema.org JSON-LD script injector |
 
 ---
 
-## 6. COMPONENTES (32)
+## 7. Frontend — Hooks & Context
 
-| Componente                | Archivo                         | Tipo    | Descripción |
-|---------------------------|--------------------------------|---------|-------------|
-| Navbar                    | Navbar.tsx                     | Client  | Barra superior con logo, total listados, navegación |
-| HeroSection               | HeroSection.tsx                | Client  | Hero con búsqueda de ubicación |
-| HomeHeader                | HomeHeader.tsx                 | Client  | KPIs globales del home |
-| DepartmentCard            | DepartmentCard.tsx             | Client  | Tarjeta de departamento con stats |
-| DepartmentCardBI          | DepartmentCardBI.tsx           | Client  | Versión BI de la tarjeta |
-| MapExplorer               | MapExplorer.tsx                | Client  | Mapa Leaflet interactivo (dynamic import) |
-| MarketRankingCharts       | MarketRankingCharts.tsx        | Client  | Gráficas ECharts de rankings |
-| ListingCard               | ListingCard.tsx                | Client  | Tarjeta individual de listado |
-| ListingModal              | ListingModal.tsx               | Client  | Modal detalle de listado |
-| ListingsView              | ListingsView.tsx               | Client  | Vista de grid de listados |
-| BestOpportunitySection    | BestOpportunitySection.tsx     | Client  | Sección de mejores oportunidades |
-| TendenciasClient          | TendenciasClient.tsx           | Client  | Dashboard de tendencias |
-| TrendsSection             | TrendsSection.tsx              | Client  | Sección de tendencias |
-| TrendsInsights            | TrendsInsights.tsx             | Client  | Insights de tendencias |
-| DepartmentFilterBar       | DepartmentFilterBar.tsx        | Client  | Barra de filtros por departamento |
-| FiltersPanel              | FiltersPanel.tsx               | Client  | Panel expandible de filtros |
-| ActiveFilterChips         | ActiveFilterChips.tsx          | Client  | Chips de filtros activos |
-| MunicipalityFilterChips   | MunicipalityFilterChips.tsx    | Client  | Chips de filtro por municipio |
-| TagFilterChips            | TagFilterChips.tsx             | Client  | Chips de filtro por tag |
-| PriceRangePopover         | PriceRangePopover.tsx          | Client  | Popover para rango de precios |
-| KPICard                   | KPICard.tsx                    | Client  | Tarjeta individual de KPI |
-| KPIStrip                  | KPIStrip.tsx                   | Client  | Strip horizontal de KPIs |
-| RankingCard               | RankingCard.tsx                | Client  | Tarjeta de ranking individual |
-| RankingsSection           | RankingsSection.tsx            | Client  | Sección contenedora de rankings |
-| DashboardHeader           | DashboardHeader.tsx            | Client  | Header del dashboard |
-| SectionHeader             | SectionHeader.tsx              | Client  | Header reutilizable de secciones |
-| FeatureCards              | FeatureCards.tsx               | Client  | Tarjetas de features del sitio |
-| InsightsPanel             | InsightsPanel.tsx              | Client  | Panel de insights BI |
-| LocationCard              | LocationCard.tsx               | Client  | Tarjeta de ubicación |
-| LazyImage                 | LazyImage.tsx                  | Client  | Imagen lazy con imageCache |
-| JsonLd                    | JsonLd.tsx                     | Server  | Inyector de JSON-LD |
-| UnclassifiedCard          | UnclassifiedCard.tsx           | Client  | Tarjeta para listados sin clasificar |
+### `useFavorites` (163 LOC)
 
----
+Cookie-based favorites system with React Context.
 
-## 7. HOOKS PERSONALIZADOS
+```
+Cookie: sivarcasas_favorites = JSON array of external_id strings
+Max-Age: 1 year
+Max Favorites: 25
+```
 
-### 7.1 useFavorites — src/hooks/useFavorites.tsx
+**API:**
+- `isFavorite(id)` — check if listing is favorited
+- `toggleFavorite(id)` — add/remove (returns `boolean` indicating if added)
+- `addFavorite(id)` / `removeFavorite(id)` — explicit add/remove
+- `clearFavorites()` — remove all
+- `isAtLimit` — boolean, true when at 25
+- `limitMessage` — auto-dismissing toast message when limit reached
 
-- **Tipo:** Context + Provider (`FavoritesProvider`)
-- **Persistencia:** Cookie `sivarcasas_favorites`
-- **Límite:** 25 favoritos máximo
-- **API:** `addFavorite(id)`, `removeFavorite(id)`, `toggleFavorite(id)`, `isFavorite(id)`, `favorites: string[]`
-- **Almacena:** Array de `external_id` como strings
+**Provider:** `<FavoritesProvider>` wraps the app in `layout.tsx` via `Providers.tsx`.
 
-### 7.2 useDepartmentFilters — src/hooks/useDepartmentFilters.ts
+### `useDepartmentFilters` (160 LOC)
 
-- **Tipo:** Hook con estado local sincronizado a URL
-- **Filtros:** listingType (all|sale|rent), priceRange [min,max], municipalities[], categories[]
-- **Sorting:** recent, price_asc, price_desc
-- **Derivados:** `activeFiltersCount`, `filterChips[]`
-- **Sincronización:** Lee/escribe `searchParams` via `useRouter`
+Client-side filter state management for department listing pages.
+
+**State:**
+- `listingType: 'all' | 'sale' | 'rent'`
+- `sort: 'price_asc' | 'price_desc' | 'recent'`
+- `priceMin / priceMax: number | null`
+- `municipios: string[]`
+- `categories: string[]`
+
+**Derived:**
+- `activeChips: FilterChip[]` — computed active filter chips
+- `hasActiveFilters` — boolean
+- `priceLabel` — formatted price range string
+
+**URL Sync:** Uses `window.history.replaceState` to update URL without Next.js navigation when switching listing type.
 
 ---
 
-## 8. UTILIDADES (src/lib/)
+## 8. Frontend — Lib Utilities
 
-### 8.1 biCalculations.ts (267 líneas)
+### `slugify.ts` (62 LOC)
 
-Funciones de cálculo para métricas BI del home. Importa `Listing` y tipos de `biStats.ts`.
+Bidirectional mapping between department names and URL slugs for all 14 El Salvador departments.
 
-| Función                     | Descripción                                      |
-|-----------------------------|--------------------------------------------------|
-| `calculatePercentile(values, percentile)` | Percentil de array numérico            |
-| `isWithinDays(dateStr, days)` | Verifica si fecha está dentro de N días         |
-| `getLocationString(listing)` | Extrae string de ubicación de un listing         |
-| `calculateNationalStats(listings)` | Stats nacionales (median sale/rent, total, new 7d) |
-| `calculateDepartmentBIStats(listings, filterType)` | Stats por departamento con municipios |
-| `calculateInsights(departments)` | Top 3 subidas, bajadas, actividad 7d           |
-| `calculateHomeBIData(listings, filterType)` | Función principal que calcula todo     |
-| `formatPrice(price)` | Formato: $125,000                                     |
-| `formatTrend(pct)` | Formato con flecha: ▲ 5.2% / ▼ -3.1%                   |
-| `formatTime(isoString)` | Formato hora local                                 |
+| Function | Purpose |
+|---|---|
+| `departamentoToSlug("San Salvador")` | → `"san-salvador"` |
+| `slugToDepartamento("san-salvador")` | → `"San Salvador"` |
+| `getAllDepartamentoSlugs()` | Returns all 14 valid slugs |
+| `isValidDepartamentoSlug(slug)` | Validation check |
 
-### 8.2 echarts.ts (22 líneas)
+### `seo.ts` (248 LOC)
 
-Importación modular de ECharts para reducir bundle (~326 KiB → ~80-100 KiB):
+Schema.org JSON-LD structured data generators:
 
-- Componentes: `BarChart`, `LineChart`, `TitleComponent`, `TooltipComponent`, `GridComponent`
-- Renderer: `CanvasRenderer`
+| Function | Schema Type |
+|---|---|
+| `generateOrganizationSchema()` | `RealEstateAgent` |
+| `generateWebSiteSchema()` | `WebSite` with `SearchAction` |
+| `generateListingSchema(input)` | `RealEstateListing` with `Offer` |
+| `generateItemListSchema(items, url, name)` | `ItemList` (max 10 items) |
+| `generateBreadcrumbSchema(items)` | `BreadcrumbList` |
+| `generateDepartmentPageSchema(name, stats)` | `CollectionPage` |
+| `generateFaqSchema(items)` | `FAQPage` |
 
-### 8.3 imageCache.ts (219 líneas)
+### `biCalculations.ts` (267 LOC)
 
-Singleton `ImageCacheManager` para cache client-side de imágenes:
+Business-intelligence computation utilities:
 
-- Max concurrent requests: 4
-- Cache TTL: 5 minutos
-- Max cache size: 100 imágenes
-- Usa `URL.createObjectURL()` con blob
-- Evicción LRU automática
-- API: `getImage(url)`, `preloadImages(urls)`, `isCached(url)`, `getCachedUrl(url)`, `clearCache()`
+| Function | Purpose |
+|---|---|
+| `calculatePercentile(values, p)` | Statistical percentile (P25, P50, P75) |
+| `calculateNationalStats(listings)` | Median sale/rent, active count, 7d new |
+| `calculateDepartmentBIStats(listings, filter)` | Per-department stats with municipio breakdown |
+| `calculateInsights(departments)` | Top 3 active municipios (7d) |
+| `calculateHomeBIData(listings, filter)` | Main aggregation function |
+| `formatPrice(price)` / `formatTrend(pct)` | Display formatters |
 
-### 8.4 rankingChartsAdapter.ts (147 líneas)
+### `Providers.tsx`
 
-Adaptador datos → ECharts. No recalcula, solo mapea estructuras existentes.
-
-| Función                    | Descripción                                    |
-|----------------------------|------------------------------------------------|
-| `formatPriceCompact(price)` | $125K, $1.2M                                 |
-| `toExpensiveDataPoints(items)` | Top 5 más caros (reversed)                 |
-| `toCheapDataPoints(items)` | Top 5 más baratos (reversed)                   |
-| `toActiveDataPoints(items)` | Top 5 más activos                             |
-| `computeRankings(departments, view)` | Computa rankings desde datos raw       |
-| `toAllDeptPriceDataPoints(...)` | Precio medio todos los deptos, sorted     |
-| `toMonthlyEvolution(...)` | Evolución mensual simulada (12 meses, variación estacional) |
-
-### 8.5 seo.ts (224 líneas)
-
-Generadores de Schema.org JSON-LD para SEO:
-
-| Función                          | Schema generado          |
-|----------------------------------|--------------------------|
-| `generateOrganizationSchema()`   | RealEstateAgent          |
-| `generateWebSiteSchema()`        | WebSite con SearchAction |
-| `generateListingSchema(listing)` | RealEstateListing        |
-| `generateItemListSchema(items, url, name)` | ItemList       |
-| `generateBreadcrumbSchema(items)` | BreadcrumbList          |
-| `generateDepartmentPageSchema(name, stats)` | CollectionPage |
-
-### 8.6 slugify.ts (62 líneas)
-
-Conversión bidireccional departamento ↔ slug URL:
-
-- `departamentoToSlug("San Salvador")` → `"san-salvador"`
-- `slugToDepartamento("san-salvador")` → `"San Salvador"`
-- `getAllDepartamentoSlugs()` → array de 14 slugs
-- `isValidDepartamentoSlug(slug)` → boolean
+Wraps all global React context providers. Currently wraps `<FavoritesProvider>`.
 
 ---
 
-## 9. TIPOS TYPESCRIPT (src/types/)
+## 9. Frontend — Types
 
-### 9.1 listing.ts
+### `listing.ts` (72 LOC) — Single Source of Truth
 
 ```typescript
-type ListingSpecs = Record<string, string | number | undefined>;
-
-type ListingLocation = string | {
-    municipio_detectado?: string;
-    city?: string; state?: string; country?: string;
-    departamento?: string;
-    latitude?: number; longitude?: number;
-    [key: string]: string | number | undefined;
-} | null;
-
 interface Listing {
-    external_id: string | number;  // String para prevenir pérdida de precisión
-    title: string;
-    price: number;
-    listing_type: 'sale' | 'rent';
-    id?: number;
-    url?: string; source?: string; currency?: string;
-    tags?: string[] | null;
-    location?: ListingLocation;
-    description?: string;
-    specs?: ListingSpecs | null;
-    details?: Record<string, string>;
-    images?: string[] | null;
-    contact_info?: ListingContactInfo;
-    published_date?: string;
-    scraped_at?: string;
-    last_updated?: string;
-}
-
-interface LocationStats {
-    count: number; listings: Listing[];
-    avg: number; min: number; max: number;
+  external_id: string | number;  // string to avoid precision loss for large IDs
+  title: string;
+  price: number;
+  listing_type: 'sale' | 'rent';
+  // Optional fields
+  id?: number;
+  url?: string;
+  source?: string;
+  currency?: string;
+  tags?: string[] | null;
+  location?: ListingLocation;
+  description?: string;
+  specs?: ListingSpecs | null;
+  details?: Record<string, string>;
+  images?: string[] | null;
+  contact_info?: ListingContactInfo;
+  published_date?: string;
+  scraped_at?: string;
+  last_updated?: string;
 }
 ```
 
-### 9.2 biStats.ts
+### `biStats.ts`
+
+Types for BI calculations: `NationalStats`, `DepartmentBIStats`, `MunicipioStats`, `Insights`, `InsightItem`, `HomeBIData`.
+
+---
+
+## 10. API Layer (Next.js Route Handlers)
+
+All API routes act as **proxies** to Supabase REST/RPC endpoints. No ORM — direct HTTP `fetch` to Supabase with `apikey` / `Authorization` headers.
+
+### Common Pattern
 
 ```typescript
-interface NationalStats {
-    median_sale: number; median_rent: number;
-    total_active: number;
-    new_7d: number; new_prev_7d: number;
-    updated_at: string; sources: string[];
-}
+const url = `${process.env.SUPABASE_URL}/rest/v1/rpc/<function_name>`;
+const res = await fetch(url, {
+  method: 'POST',
+  headers: {
+    'apikey': process.env.SUPABASE_SERVICE_KEY!,
+    'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_KEY!}`,
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({ ...params }),
+  next: { revalidate: <seconds> }
+});
+```
 
-interface DepartmentBIStats {
-    departamento: string; count_active: number;
-    municipios_con_actividad: number;
-    median_price: number; p25_price: number; p75_price: number;
-    new_7d: number; trend_30d_pct: number;
-    municipios: Record<string, MunicipioStats>;
-}
+**BigInt Safety:** All routes fetching listings apply regex to convert large `external_id` values (15+ digits) to strings before `JSON.parse` to avoid JavaScript precision loss:
+```typescript
+rawText.replace(/"external_id":(\d{15,})/g, '"external_id":"$1"')
+```
 
-interface MunicipioStats {
-    count: number; median_price: number;
-    p25_price: number; p75_price: number;
-    new_7d: number; listings: Listing[];
-}
+### Route Inventory
 
-interface InsightItem { municipio: string; departamento: string; value: number; }
-interface Insights { top3_up_30d: InsightItem[]; top3_down_30d: InsightItem[]; top3_active_7d: InsightItem[]; }
-interface HomeBIData { national: NationalStats; departments: DepartmentBIStats[]; insights: Insights; unclassified: {...}; }
+| Route | Method | Supabase Target | Cache | Purpose |
+|---|---|---|---|---|
+| `/api/department-stats` | GET | `mv_sd_depto_stats` (view) | 5 min + in-memory | Department statistics grouped by sale/rent |
+| `/api/listings` | GET | `scrappeddata_ingest` (table) | 5 min | All listings ordered by `last_updated` |
+| `/api/listing/[id]` | GET | `scrappeddata_ingest` (table) | 1 min | Single listing by `external_id` |
+| `/api/listings/batch` | GET | `scrappeddata_ingest` (table, IN) | 1 min | Multiple listings by comma-separated IDs |
+| `/api/nearby-listings` | GET | `fn_listing_price_stats_nearby` + `fn_listings_nearby_page` (RPCs) | 60 sec | Nearby listings + price stats by lat/lng/radius |
+| `/api/department/[slug]/listings` | GET | `get_listings_for_cards` (RPC) | — | Paginated department listings with filters |
+| `/api/department/[slug]/top-scored` | GET | `get_top_scored_listings` (RPC) | 5 min | Top-scored listings for department |
+| `/api/department/[slug]/municipalities` | GET | `get_municipalities_for_department` (RPC) | — | Municipality list for department |
+| `/api/tag/[tag]` | GET | `get_listings_by_tag` (RPC) | 1 min | Listings by tag with type/sort filtering |
+| `/api/colonias` | GET | `search_colonias` (RPC) | 1 hour | Colonia autocomplete search |
+| `/api/geocode` | GET | Nominatim API (external) | 1 hour | Forward geocoding proxy |
+| `/api/reverse-geocode` | GET | Nominatim API (external) | 24 hours | Reverse geocoding proxy |
+| `/api/valuador` | POST | `avm_value_point` + `avm_nearest_matches` (RPCs) | — | AVM property valuation |
+
+### Special Behaviors
+
+- **`/api/tag/[tag]`**: Applies a post-fetch filter to exclude "Casa" sales under $15,000 (likely misclassified lot/land listings)
+- **`/api/nearby-listings`**: Calls two RPCs in parallel (`Promise.all`), supports pagination and sorting
+- **`/api/geocode`**: Strips accents from queries for better OSM matching; uses custom User-Agent `ChivocasaBot/1.0`
+- **`/api/reverse-geocode`**: Constructs human-readable place names from Nominatim address components
+
+---
+
+## 11. Database — Supabase / PostgreSQL
+
+### Core Tables
+
+| Table | Purpose | Key Columns |
+|---|---|---|
+| `scrappeddata_ingest` (alias `scrapped_data`) | All scraped listings | `external_id`, `title`, `price`, `listing_type`, `location` (JSONB), `specs` (JSONB), `images` (JSONB), `tags` (JSONB), `active`, `source`, `url`, `published_date`, `last_updated` |
+| `listing_location_match` | Links listings to location hierarchy | `external_id`, `loc_group2_id`, `loc_group3_id`, `loc_group4_id`, `loc_group5_id` |
+
+### Location Hierarchy (5 levels)
+
+```
+sv_loc_group5  — Departamento (14)   e.g. "San Salvador"
+  └── sv_loc_group4  — Distrito       e.g. "Centro"
+        └── sv_loc_group3  — Municipio  e.g. "San Salvador" (city)
+              └── sv_loc_group2  — Colonia   e.g. "Escalón"
+                    └── (listings via listing_location_match)
+```
+
+Each level has: `id`, `loc_name`, `parent_loc_group`, `cords` (JSONB with lat/lng centroid).
+
+### Materialized Views
+
+| View | Purpose | Refresh |
+|---|---|---|
+| `mv_sd_depto_stats` | Department-level stats (count, min/max/avg price) by listing_type | Periodic (via SQL refresh) |
+
+### Key RPC Functions (20+)
+
+| Function | Parameters | Returns | Used By |
+|---|---|---|---|
+| `get_listings_for_cards` | departamento, listing_type, limit, offset, sort_by, municipio | Paginated lean listing cards | Department page |
+| `get_top_scored_listings` | departamento, listing_type, top_per_type | Best-value listings | Department page |
+| `get_listings_by_tag` | tag, listing_type, limit, offset, sort_by | Tag-filtered listings | Tag pages |
+| `get_municipalities_for_department` | departamento | Municipality list with counts | Department filter |
+| `get_categories_for_department` | departamento | Category list | Department filter |
+| `fn_listings_nearby_page` | lat, lng, radius, etc. | Paginated nearby listings | Map explorer |
+| `fn_listing_price_stats_nearby` | lat, lng, radius | Price stats (median, min, max) | Map explorer |
+| `search_colonias` | query | Matching colonias with coords | Valuador autocomplete |
+| `avm_nearest_matches` | lat, lng, area_m2, type, class, etc. | Weighted comparable listings | AVM engine |
+| `avm_value_point` | lat, lng, area_m2, type, class, etc. | Estimated value + confidence | AVM engine |
+| `get_price_estimate` | lat, lng, bedrooms, bathrooms, etc. | Median price stats | Price estimation |
+| `get_available_tags` | — | Distinct tags | UI filters |
+
+---
+
+## 12. AVM (Automated Valuation Model)
+
+The AVM is implemented as two PostgreSQL/PostGIS functions:
+
+### `avm_nearest_matches` (453 LOC SQL)
+
+**Purpose:** Find and rank comparable properties using a multi-factor weighted scoring system.
+
+**Radius Ladder:** Tries expanding radii `[1km, 2km, 3km, 5km, 8km, 12km, 20km]` until `min_comps` (default 8) are found. Falls back to national mode if insufficient.
+
+**Filters:**
+- Same `listing_type` (sale/rent)
+- Same `property_class` (matched via tags or details)
+- Area within 60%–180% of subject
+- Max age: 180 days
+- Coordinates (PostGIS `ST_DWithin`)
+
+**Weighting (multiplicative):**
+
+| Weight | Formula | Decay |
+|---|---|---|
+| Distance | `exp(-dist / (radius/2))` | Exponential, radius-normalized |
+| Freshness | `exp(-days / 60)` | 60-day half-life |
+| Status | Active=1.0, Recent inactive=0.7, Old inactive=0.45 | Step function |
+| Size | `exp(-|ln(area_comp/area_subject)| / 0.35)` | Log-ratio decay |
+| Features | `exp(-|bed_diff|/1.5) × exp(-|bath_diff|/1.0) × exp(-|park_diff|/1.0)` | Per-feature decay |
+
+**Outlier Removal:** IQR-based trimming on price/m² (1.5× IQR fence).
+
+**Output:** Ranked list of comparables with all weights, distances, and price metrics.
+
+### `avm_value_point`
+
+**Purpose:** Produce a single valuation estimate from `avm_nearest_matches`.
+
+- Calls `avm_nearest_matches` with `limit = max(min_comps×4, 30)`
+- Computes weighted average price/m² and P25/P75
+- **Confidence score:** `min(0.95, min(1, count/15) × exp(-dispersion))`
+- **Insufficient data:** Returns error when `count < max(4, min_comps/2)`
+- **Estimate:** `area_m2 × weighted_avg_ppm2`
+- **Range:** `area_m2 × P25` to `area_m2 × P75`
+
+### Frontend Integration
+
+The `/api/valuador` route calls both `avm_value_point` and `avm_nearest_matches` in parallel, then enriches the response with:
+- Rent estimation (via separate `avm_value_point` call with `listing_type='rent'`)
+- 12-month price projection (3% appreciation rate)
+- Top comparable properties formatted for display
+
+---
+
+## 13. Data Pipeline — Scrapers
+
+### `scraper_encuentra24.py` (3,706 LOC)
+
+**Multi-source concurrent scraper** with the following capabilities:
+
+| Mode | Trigger | Behavior |
+|---|---|---|
+| **NEW** | `scrape-new.yml` (hourly) | Scrape new listings from all sources |
+| **UPDATE** | `scrape-update.yml` (every 12h) | Re-scrape existing active listings, detect sold/removed |
+
+**Data Sources:**
+
+| Source | Method | Content |
+|---|---|---|
+| Encuentra24 | HTML scraping (BeautifulSoup) | Houses, apartments, lots, commercial |
+| MiCasaSV | HTML scraping | Similar property types |
+| Realtor | HTML scraping | International listings in SV |
+| VivoLatam | HTML scraping | Latin American property platform |
+
+**Key Functions (63 total):**
+
+| Function | Purpose |
+|---|---|
+| `insert_listing()` / `insert_listings_batch()` | Upsert listings to Supabase |
+| `get_active_listings_from_db()` | Paginated fetch of active listings (bypasses 1000-row limit) |
+| `update_listings_batch()` | PATCH existing records |
+| `run_update_mode()` | Re-scrape + mark inactive |
+| `validate_and_deactivate_listings()` | HTTP-check stale listings, deactivate 404/sold |
+| `validate_all_active_listings()` | Lightweight URL validation of all active listings |
+| `correct_listing_type()` | Heuristic correction of misclassified sale/rent |
+| `generate_location_tags()` | Property type tag generation |
+| `parse_price()` | Price string → float parsing |
+
+**Post-Processing Pipeline:**
+
+```
+Scrape → insert_listings_batch()
+       → area_normalizer.normalize_listing_specs()  (standardize m²)
+       → match_locations.match_scraped_listings()    (link to sv_loc_group)
+```
+
+**Listing Type Correction Heuristics:**
+- URL path analysis (`/venta/`, `/alquiler/`)
+- Title keyword matching (VENDO, SE VENDE, ALQUILO, SE ALQUILA)
+- Price anomaly detection (rentals priced > $200K likely sales; sales < $200/month likely rentals)
+- Description keyword scanning
+
+---
+
+## 14. CI/CD — GitHub Actions
+
+### `scrape-new.yml`
+
+| Setting | Value |
+|---|---|
+| **Trigger** | Cron: hourly (`0 * * * *`) + manual dispatch |
+| **Runner** | `ubuntu-latest` |
+| **Steps** | Checkout → Python 3.11 → install `requirements.txt` → run scraper |
+| **Secrets** | `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` |
+
+### `scrape-update.yml`
+
+| Setting | Value |
+|---|---|
+| **Trigger** | Cron: every 12 hours (`0 */12 * * *`) + manual dispatch |
+| **Runner** | `ubuntu-latest` |
+| **Steps** | Same as above but runs scraper in **update mode** |
+
+---
+
+## 15. SEO & Structured Data
+
+### Meta Tags
+
+Every page includes:
+- `<title>` with descriptive, keyword-rich text
+- `<meta name="description">` with compelling summaries
+- OpenGraph tags (`og:title`, `og:description`, `og:url`, `og:type`)
+- Twitter Card tags (`twitter:card`, `twitter:title`, `twitter:description`)
+- Canonical URLs (`alternates.canonical`)
+- `robots: { index: true, follow: true }`
+
+### JSON-LD Structured Data
+
+| Page | Schema Type |
+|---|---|
+| Homepage | `WebSite` + `Organization` (RealEstateAgent) |
+| Department pages | `CollectionPage` + `ItemList` + `BreadcrumbList` |
+| About page | `FAQPage` |
+| Individual listings | `RealEstateListing` with `Offer` |
+
+### Dynamic Sitemap
+
+`src/app/sitemap.ts` generates 46 entries with:
+- Daily change frequency for listing pages
+- Weekly/monthly for static pages
+- Priority weighting (home=1.0, departments=0.8, about=0.6)
+
+---
+
+## 16. Deployment & Infrastructure
+
+| Aspect | Detail |
+|---|---|
+| **Hosting** | Vercel |
+| **Domain** | `sivarcasas.com` |
+| **Framework** | Next.js with App Router (RSC + Client Components) |
+| **Image CDN** | Vercel Image Optimization (`sharp`) |
+| **Analytics** | Vercel Analytics + Vercel Speed Insights |
+| **Database** | Supabase hosted PostgreSQL (`zvamupbxzuxdgvzgbssn.supabase.co`) |
+| **CSS** | Tailwind CSS v4 + `critters` for critical CSS inlining |
+| **Polyfills** | Stubbed out (`polyfillStub.js`) to eliminate legacy JS |
+| **Caching** | `next: { revalidate }` on fetch calls, `unstable_cache` for server-side |
+| **Redirects** | `next.config.ts` redirects old department URLs (e.g. `/la-libertad` → correct slug) |
+
+---
+
+## 17. End-to-End Critical Flows
+
+### Flow 1: User Browses Department Listings
+
+```
+1. User clicks "San Salvador" on homepage
+2. → /san-salvador (DepartmentPage component mounts)
+3. → URL parsed: slug="san-salvador", filter=undefined → type="all"
+4. → Parallel fetches:
+     a. GET /api/department/san-salvador/listings
+        → Supabase RPC: get_listings_for_cards('San Salvador', null, 24, 0, 'recent', null)
+     b. GET /api/department/san-salvador/top-scored
+        → Supabase RPC: get_top_scored_listings('San Salvador', null, 5)
+     c. GET /api/department/san-salvador/municipalities
+        → Supabase RPC: get_municipalities_for_department('San Salvador')
+5. → Listings rendered in 4-column grid
+6. User clicks listing card → ListingModal opens
+7. → GET /api/listing/{external_id}
+     → Supabase table: scrappeddata_ingest WHERE external_id = {id}
+8. → Modal displays full image gallery, specs, description, external link
+```
+
+### Flow 2: AVM Property Valuation
+
+```
+1. User navigates to /valuador-de-inmuebles
+2. User types location → LocationAutocomplete
+3. → GET /api/geocode?q={query}
+     → Nominatim: nominatim.openstreetmap.org/search
+4. User selects location, enters area_m2, property type, bedrooms, bathrooms
+5. User clicks "Valuar"
+6. → POST /api/valuador
+     → Parallel Supabase RPCs:
+       a. avm_value_point(lat, lng, area_m2, 'sale', 'casa', ...)
+       b. avm_nearest_matches(lat, lng, area_m2, 'sale', 'casa', ...)
+       c. avm_value_point(lat, lng, area_m2, 'rent', 'casa', ...) [rent estimate]
+7. → AVM engine:
+     a. Expand radius ladder: 1km → 2km → ... → 20km until ≥8 comps
+     b. Filter: same type, same class, area ±60-180%, max 180 days old
+     c. Weight each comp: distance × freshness × status × size × features
+     d. IQR outlier removal on price/m²
+     e. Weighted average price/m² → estimated_value = area × wppm2
+     f. Confidence = min(0.95, min(1, count/15) × exp(-dispersion))
+8. → Display: estimated value, range, confidence bar, top comparables table
+```
+
+### Flow 3: Map Explorer Nearby Search
+
+```
+1. User drags/zooms map on homepage or department page
+2. → MapExplorer detects center change (debounced)
+3. → GET /api/nearby-listings?lat={lat}&lng={lng}&radius={radius}
+     → Parallel Supabase RPCs:
+       a. fn_listing_price_stats_nearby(lat, lng, radius)
+       b. fn_listings_nearby_page(lat, lng, radius, page, limit, sort)
+4. → Map renders markers for nearby listings
+5. → Stats panel shows median price, price/m², count
+6. User clicks marker → ListingModal opens with full details
+```
+
+### Flow 4: Scraper Data Pipeline
+
+```
+1. GitHub Actions cron triggers scrape-new.yml (hourly)
+2. → Python scraper launches concurrent workers per source
+3. → Each source: parse HTML → extract listing data → correct listing type
+4. → insert_listings_batch(): upsert to scrappeddata_ingest (batch of 50)
+5. → area_normalizer.normalize_listing_specs(): standardize all areas to m²
+6. → match_locations.match_scraped_listings(): link to sv_loc_group hierarchy
+7.
+   Every 12 hours:
+   → scrape-update.yml triggers update mode
+   → get_active_listings_from_db(): fetch all active listings
+   → Re-scrape each listing URL, update prices/details
+   → validate_and_deactivate_listings(): HTTP check stale listings
+   → deactivate_listings(): mark 404/sold as inactive
 ```
 
 ---
 
-## 10. DATOS ESTÁTICOS (src/data/)
+## 18. Environment Variables
 
-### departamentos.ts (191 líneas)
+| Variable | Source | Used By |
+|---|---|---|
+| `SUPABASE_URL` | `.env.local` | All API routes, Tendencias SSR |
+| `SUPABASE_SERVICE_KEY` | `.env.local` | All API routes (apikey + Bearer token) |
+| `NEXT_PUBLIC_*` | — | None currently (all API calls server-side) |
 
-- `DEPARTAMENTOS`: Record de 14 departamentos → array de municipios
-- `LOCATION_ALIASES`: Mapeo de nombres coloquiales → {municipio, departamento}
-  - Ejemplo: `"escalón"` → `{ municipio: "San Salvador", departamento: "San Salvador" }`
-  - Ejemplo: `"merliot"` → `{ municipio: "Antiguo Cuscatlán", departamento: "La Libertad" }`
-- `normalizeText(text)`: Quita acentos y convierte a minúsculas
-- `detectDepartamento(location)`: Detecta departamento/municipio de un string
-- `getDepartamentoNames()`, `getMunicipios(departamento)`
+**Note:** The scraper (`scraper_encuentra24.py`) has hardcoded Supabase credentials (not recommended for production). GitHub Actions workflows use repository secrets for the same values.
 
 ---
 
-## 11. BASE DE DATOS (SUPABASE + POSTGRESQL + POSTGIS)
-
-### 11.1 TABLAS PRINCIPALES
-
-| Tabla                    | Descripción                                          |
-|--------------------------|------------------------------------------------------|
-| `scrappeddata_ingest`    | Tabla principal de listados scrapeados                |
-| `sv_loc_group2`          | Colonias/barrios (nivel 2, con coordenadas)          |
-| `sv_loc_group3`          | Municipios (nivel 3)                                 |
-| `sv_loc_group4`          | Distritos (nivel 4)                                  |
-| `sv_loc_group5`          | Departamentos (nivel 5)                              |
-| `listing_location_match` | Matching listado ↔ colonia (external_id → loc_group2_id) |
-
-### 11.2 VISTAS MATERIALIZADAS
-
-| Vista                | Descripción                                                 |
-|----------------------|-------------------------------------------------------------|
-| `mv_sd_depto_stats`  | Stats por departamento + listing_type (count, min, max, avg) |
-
-### 11.3 FUNCIONES RPC (SUPABASE)
-
-| Función RPC                      | Archivo SQL                              | Descripción |
-|----------------------------------|-----------------------------------------|-------------|
-| `get_listings_for_cards`         | get_listings_for_cards_v2_location.sql   | Listados paginados para tarjetas, con filtros y sorting |
-| `get_municipalities_for_department` | get_municipalities_for_department.sql | Municipios con conteo de listados |
-| `get_categories_for_department`  | get_categories_for_department.sql        | Categorías (tipos propiedad) disponibles |
-| `get_listings_by_tag`            | supabase_tag_functions.sql              | Listados por tag con paginación |
-| `get_available_tags`             | supabase_tag_functions.sql              | Tags únicos disponibles |
-| `get_top_scored_listings`        | (inline en la tabla)                    | Top listados por score/departamento |
-| `get_price_estimate`             | get_price_estimate.sql                  | Estimación de precio (legacy) |
-| `search_colonias`                | fn_search_colonias.sql                  | Búsqueda fuzzy en sv_loc_group2 |
-| `fn_valuador_comps`              | fn_valuador_comps.sql                   | Comparables para valuador (con PostGIS) |
-| `fn_listing_price_stats_nearby`  | update_fn_nearby_candidates.sql         | Stats de precio en radio |
-| `fn_listings_nearby_page`        | update_fn_nearby_candidates.sql         | Listados cercanos paginados |
-| `avm_nearest_matches`           | avm_functions.sql                       | Comparables AVM con pesos multi-factor |
-| `avm_value_point`               | avm_functions.sql                       | Valuación punto con IQR + confianza |
-
-### 11.4 FUNCIONES AVM (DETALLE)
-
-**avm_nearest_matches** — Nearest comparable listings:
-- Parámetros: lat, lon, area_m2, listing_type, property_class, bedrooms, bathrooms, parking
-- Radius ladder: [1km, 2km, 3km, 5km, 8km, 12km, 20km] — escoge el más pequeño con ≥ min_comps
-- Filtro área: 0.60x — 1.80x del subject
-- Pesos: distance (exponencial), freshness (exp decay 60d), status (active=1, <90d=0.7, else=0.45), size (log-normal), features (bedrooms × bathrooms × parking)
-- IQR outlier removal
-- Fallback nacional si no hay suficientes comps locales
-
-**avm_value_point** — Point valuation:
-- Llama a `avm_nearest_matches` internamente
-- Calcula: weighted PPM2, percentil 25/75 para rango
-- Confianza: `min(0.95, min(1, count/15) × exp(-IQR_dispersion))`
-- Retorna: est_price, est_low, est_high, confidence, method (radius_weighted_ppm2 | national_fallback | insufficient_data)
-
-### 11.5 SCRIPTS SQL AUXILIARES
-
-| Script                                  | Propósito                                    |
-|-----------------------------------------|----------------------------------------------|
-| create_sv_locations_table.sql           | Crear tablas sv_loc_group                    |
-| insert_sv_locations.sql                 | Insertar datos de ubicaciones                |
-| insert_sv_locations_residential.sql     | Insertar áreas residenciales                 |
-| recreate_mv_with_location_match.sql     | Recrear MV con join a location_match         |
-| recreate_mv_with_median.sql             | Recrear MV con mediana                       |
-| cleanup_specs.sql                       | Limpiar campo specs                          |
-| fix_area_m2_values.sql                  | Corregir valores de área                     |
-| migrate_area_to_area_m2.sql            | Migrar campo area → area_m2                  |
-| unmatched_locations.sql                 | Query para listados sin match de ubicación   |
-| update_best_opportunity_images.sql      | Actualizar imágenes de mejores oportunidades |
-
----
-
-## 12. SCRAPER Y PIPELINE
-
-### 12.1 SCRAPER PRINCIPAL — scraper_encuentra24.py (3706 líneas)
-
-**Fuentes soportadas:**
-
-| Fuente       | Método de parseo                     | Tipo              |
-|-------------|--------------------------------------|-------------------|
-| Encuentra24  | HTML + CSS selectors                 | Venta + Alquiler  |
-| MiCasaSV     | XML sitemap → HTML detail pages      | Venta + Alquiler  |
-| Realtor.com  | `__NEXT_DATA__` JSON embedded        | Venta + Alquiler  |
-| Vivo Latam   | HTML                                 | Venta + Alquiler  |
-
-**Pipeline de procesamiento por listado:**
-1. `parse_price()` → extrae precio numérico
-2. `correct_listing_type()` → corrige misclasificaciones (heurísticas: precio, keywords, URL path)
-3. `generate_location_tags()` → genera tags de tipo de propiedad
-4. `area_normalizer.normalize_listing_specs()` → normaliza a m²
-5. `match_locations.match_scraped_listings()` → match a jerarquía sv_loc_group
-6. `insert_listings_batch()` → upsert a Supabase (batch de 50)
-
-**Modo update (`--update`):**
-1. `get_active_listings_from_db()` → fetch activos con paginación
-2. Re-scrape cada URL activa
-3. `update_listings_batch()` → PATCH en Supabase
-4. `validate_and_deactivate_listings()` → marca inactivos los que ya no existen (404/sold)
-
-**CLI:**
-
-```bash
-# Scrape nuevos (últimos 7 días, todas las fuentes)
-python scraper_encuentra24.py --max-days 7
-
-# Scrape con límite
-python scraper_encuentra24.py --max-days 7 --limit 100
-
-# Modo update (re-verificar activos)
-python scraper_encuentra24.py --update
-
-# Update con límite
-python scraper_encuentra24.py --update --limit 50
-```
-
-### 12.2 SCRIPTS DE SOPORTE
-
-| Script                  | Función                                              |
-|------------------------|------------------------------------------------------|
-| match_locations.py      | Matching listados → jerarquía sv_loc_group          |
-| area_normalizer.py      | Normalización de unidades de área a m²              |
-| deduplication.py        | Deduplicación de listados por external_id/URL       |
-| listing_validator.py    | Validación HTTP de URLs activas                     |
-| enrich_locations.py     | Enriquecimiento de datos de ubicación               |
-| export_to_supabase.py   | Export manual a Supabase                            |
-| fetch_residential_areas.py | Fetch de áreas residenciales                     |
-| find_unmatched.py       | Identificar listados sin match de ubicación         |
-| generate_sql_from_json.py | Generar SQL INSERT desde JSON                     |
-| import_locations_to_supabase.py | Import bulk de ubicaciones               |
-| validate_encuentra24.py | Validación específica de Encuentra24                |
-| validate_listings.py    | Validación general de listados                      |
-| scraper_with_dedup.py   | Scraper con deduplicación integrada                 |
-| scraper_el_salvador_locations.py | Scraper de datos geográficos de ES         |
-| localization_plugin.py  | Plugin de localización                              |
-
-### 12.3 DEPENDENCIAS PYTHON — requirements.txt
-
-```
-requests>=2.31.0
-beautifulsoup4>=4.12.0
-supabase>=2.0.0
-python-dotenv>=1.0.0
-```
-
----
-
-## 13. CI/CD (GITHUB ACTIONS)
-
-### 13.1 scrape-new.yml — Scrape New Listings
-
-- **Trigger:** Cron cada hora (`0 * * * *`) + workflow_dispatch manual
-- **Runner:** ubuntu-latest, timeout 60 min
-- **Python:** 3.11 con cache pip
-- **Inputs manuales:** max_days (default 7), limit (optional)
-- **Secrets:** `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`
-- **Comando:** `python scraper_encuentra24.py --max-days {max_days} [--limit {limit}]`
-
-### 13.2 scrape-update.yml — Update Active Listings
-
-- **Trigger:** Cron cada 12 horas (`0 0,12 * * *`) + workflow_dispatch manual
-- **Runner:** ubuntu-latest, timeout 60 min
-- **Python:** 3.11 con cache pip
-- **Inputs manuales:** limit (optional)
-- **Secrets:** `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`
-- **Comando:** `python scraper_encuentra24.py --update [--limit {limit}]`
-
----
-
-## 14. CONFIGURACIÓN
-
-### 14.1 VARIABLES DE ENTORNO
-
-| Variable              | Ubicación              | Descripción                        |
-|-----------------------|-----------------------|------------------------------------|
-| `SUPABASE_URL`        | .env.local + GH Secrets | URL del proyecto Supabase         |
-| `SUPABASE_SERVICE_KEY` | .env.local + GH Secrets | Service role key de Supabase     |
-
-Archivo `.env.example`:
-```
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_KEY=your-service-role-key
-```
-
-### 14.2 next.config.ts
-
-- **experimental:** `optimizePackageImports` (react-leaflet, leaflet, echarts), `cssChunking: 'strict'`, `optimizeCss: true`
-- **images:** `remotePatterns: [{ protocol: 'https', hostname: '**' }]` (permite cualquier dominio HTTPS)
-- **redirects:** `/tag/:departamento` → `/:departamento` (301 permanente, 14 departamentos)
-- **webpack:** Stub `polyfill-nomodule` con `src/empty-polyfills.js`
-- **turbopack:** Stub polyfill via `resolveAlias`
-
-### 14.3 tsconfig.json
-
-- Target: ES2017, Module: esnext, Module Resolution: bundler
-- Strict mode habilitado
-- Path alias: `@/*` → `./src/*`
-- Plugin: `next`
-
-### 14.4 eslint.config.mjs
-
-- Flat config con `eslint-config-next/core-web-vitals` + `typescript`
-- Ignores: `.next/`, `out/`, `build/`, `next-env.d.ts`
-
-### 14.5 postcss.config.mjs
-
-- Plugin: `@tailwindcss/postcss` (TailwindCSS v4)
-
-### 14.6 package.json
-
-- **name:** sivarcasas-dashboard v0.1.0
-- **scripts:** dev, build, start, lint
-- **browserslist:** last 2 versions de Chrome, Firefox, Safari, Edge
-
-### 14.7 empty-polyfills.js
-
-Stub vacío que reemplaza el chunk de polyfills legacy de Next.js. El browserslist ya apunta a navegadores modernos que soportan todas las APIs polyfilled.
-
-### 14.8 run_dev.bat
-
-Script Windows para iniciar dev server:
-```bat
-@echo off
-echo Starting SivarCasas Development Server...
-SET PATH=%PATH%;C:\Program Files\nodejs
-npm run dev
-pause
-```
-
----
-
-## 15. DESPLIEGUE Y EJECUCIÓN
-
-### 15.1 DESARROLLO LOCAL
-
-```bash
-# 1. Clonar repositorio
-git clone https://github.com/chivocasa42-sys/chivocasa.git
-cd chivocasa
-
-# 2. Instalar dependencias
-npm install
-pip install -r requirements.txt
-
-# 3. Configurar variables de entorno
-cp .env.example .env.local
-# Editar .env.local con credenciales de Supabase
-
-# 4. Iniciar dev server
-npm run dev
-# O en Windows:
-run_dev.bat
-```
-
-### 15.2 PRODUCCIÓN
-
-```bash
-npm run build    # Build de producción
-npm run start    # Iniciar servidor de producción
-```
-
-El deploy principal es via **Vercel** con deploy automático en push a main.
-
-### 15.3 EJECUCIÓN DEL SCRAPER (LOCAL)
-
-```bash
-# Scrape nuevos listados
-python scraper_encuentra24.py --max-days 7
-
-# Actualizar listados activos
-python scraper_encuentra24.py --update
-```
-
----
-
-## 16. PRIVACIDAD Y DATOS
-
-- Los listados son datos públicos scrapeados de portales inmobiliarios
-- No se almacenan datos personales de usuarios
-- Los favoritos se almacenan en cookie del navegador (no server-side)
-- Las credenciales de Supabase usan service role key (no expuesta al cliente)
-- El User-Agent del scraper se identifica como `ChivocasaBot/1.0`
-- Las APIs de geocodificación (Nominatim) se usan como proxy server-side
-
----
-
-## 17. OBSERVABILIDAD
-
-| Herramienta            | Propósito                              |
-|------------------------|----------------------------------------|
-| Vercel Analytics       | Page views, visitantes, referrers      |
-| Vercel Speed Insights  | Core Web Vitals, LCP, FID, CLS        |
-| console.time/timeEnd   | Perf logging en API routes (server-side) |
-| X-Cache header         | Hit/Miss en department-stats cache     |
-
----
-
-## 18. LISTA DE LOS 14 DEPARTAMENTOS
-
-| # | Departamento    | Slug URL         |
-|---|----------------|------------------|
-| 1 | Ahuachapán     | ahuachapan       |
-| 2 | Cabañas        | cabanas          |
-| 3 | Chalatenango   | chalatenango     |
-| 4 | Cuscatlán      | cuscatlan        |
-| 5 | La Libertad    | la-libertad      |
-| 6 | La Paz         | la-paz           |
-| 7 | La Unión       | la-union         |
-| 8 | Morazán        | morazan          |
-| 9 | San Miguel     | san-miguel       |
-| 10| San Salvador   | san-salvador     |
-| 11| San Vicente    | san-vicente      |
-| 12| Santa Ana      | santa-ana        |
-| 13| Sonsonate      | sonsonate        |
-| 14| Usulután       | usulutan         |
-
----
-
-## 19. MEJORAS PENDIENTES
-
-- [ ] Implementar cálculo real de tendencias 30 días (actualmente trend_30d_pct está en 0)
-- [ ] Agregar búsqueda global de propiedades
-- [ ] Incluir gráficas de tendencia temporal en tarjetas de departamento
-- [ ] Exportación CSV/Excel de datos
-- [ ] Tests unitarios para funciones BI (biCalculations.ts)
-- [ ] Desarrollo PWA para móvil
-- [ ] Implementar dark mode (variables CSS ya preparadas)
-- [ ] Evolución mensual real (actualmente simulada con variación estacional)
-- [ ] Agregar más fuentes de scraping
-
----
-
-## 20. CHECKLIST DE VERIFICACIÓN
-
-| #  | Verificación                                           | Estado |
-|----|--------------------------------------------------------|--------|
-| 1  | Nombre del producto: "Sivar Casas"                     | ✅     |
-| 2  | Árbol de carpetas completo y preciso                   | ✅     |
-| 3  | Todas las 10 páginas/rutas documentadas                | ✅     |
-| 4  | Todos los 13 endpoints API documentados                | ✅     |
-| 5  | Los 32 componentes listados                            | ✅     |
-| 6  | Ambos hooks documentados                               | ✅     |
-| 7  | Las 6 utilidades de lib/ documentadas                  | ✅     |
-| 8  | Ambos archivos de tipos documentados                   | ✅     |
-| 9  | Archivo de datos departamentos.ts documentado          | ✅     |
-| 10 | Esquema de base de datos (tablas, MVs, RPCs)           | ✅     |
-| 11 | Funciones AVM documentadas en detalle                  | ✅     |
-| 12 | 23 scripts SQL listados                                | ✅     |
-| 13 | Scraper principal documentado (fuentes, pipeline, CLI) | ✅     |
-| 14 | 15 scripts Python de soporte listados                  | ✅     |
-| 15 | Dependencias Python documentadas                       | ✅     |
-| 16 | 2 workflows GitHub Actions documentados                | ✅     |
-| 17 | Todas las variables de entorno documentadas             | ✅     |
-| 18 | Configuración Next.js (polyfills, images, redirects)   | ✅     |
-| 19 | browserslist y CSS performance documentados            | ✅     |
-| 20 | SEO dinámico (robots, sitemap, OG, Twitter, JSON-LD)   | ✅     |
-| 21 | Comandos de ejecución documentados                     | ✅     |
-| 22 | Privacidad y datos documentados                        | ✅     |
-| 23 | Observabilidad documentada                             | ✅     |
-| 24 | Lista de 14 departamentos con slugs                    | ✅     |
-| 25 | Mejoras pendientes actualizadas                        | ✅     |
-| 26 | Changelog de documentación presente                    | ✅     |
-| 27 | Sin enlaces visibles (solo rutas de archivo)           | ✅     |
-| 28 | Títulos en mayúsculas                                  | ✅     |
+> **End of document.** This file should be updated whenever significant architectural changes are made to the repository.

@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import Navbar from '@/components/Navbar';
+import SectionHeader from '@/components/SectionHeader';
 
 // --- Types ---
 
@@ -280,13 +281,12 @@ export default function ValuadorPage() {
 
             {/* Header */}
             <div className="container mx-auto px-4 max-w-5xl pt-8 pb-4">
-                <h1 className="text-3xl md:text-4xl font-black text-[#272727] tracking-tight">
-                    Valuador de Inmuebles
-                </h1>
-                <p className="text-slate-500 mt-1 text-sm md:text-base">
-                    Estimá el valor de tu propiedad basado en datos reales del mercado salvadoreño
-                </p>
-                <p className="text-slate-500 mt-1 text-sm md:text-base">
+                <SectionHeader
+                    title={['Valuador de', 'Inmuebles']}
+                    subtitle="Estimá el valor de tu propiedad basado en datos reales del mercado salvadoreño"
+                    asH1
+                />
+                <p className="text-slate-500 mt-1 text-sm md:text-base text-center">
                     <b>NOTA:</b> Los valores son aproximados, calculados a partir de comparaciones de anuncios disponibles. <b>Esto no sustituye una valoración profesional.</b> Consulte con un experto para una valuación oficial.
                 </p>
             </div>
