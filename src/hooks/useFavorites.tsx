@@ -1,24 +1,27 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef, createContext, useContext, ReactNode } from 'react';
+import { useState, useCallback, useEffect, useRef, createContext, useContext, ReactNode, startTransition } from 'react';
 
 const COOKIE_NAME = 'sivarcasas_favorites';
-const COOKIE_MAX_AGE = 60 * 60 * 24 * 365; // 1 year
+const COOKIE_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
 const MAX_FAVORITES = 25;
+
+const EMPTY_SET = new Set<string>();
 
 /** Read the favorites cookie and return the set of external_id strings. */
 function readCookie(): Set<string> {
-    if (typeof document === 'undefined') return new Set();
+    if (typeof document === 'undefined') return EMPTY_SET;
     const match = document.cookie
         .split('; ')
         .find(row => row.startsWith(`${COOKIE_NAME}=`));
-    if (!match) return new Set();
+    if (!match) return EMPTY_SET;
     try {
         const decoded = decodeURIComponent(match.split('=')[1]);
         const ids: string[] = JSON.parse(decoded);
+        if (!Array.isArray(ids) || ids.length === 0) return EMPTY_SET;
         return new Set(ids);
     } catch {
-        return new Set();
+        return EMPTY_SET;
     }
 }
 
@@ -57,10 +60,26 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
         limitTimer.current = setTimeout(() => setLimitMessage(null), 4000);
     }, []);
 
-    // Hydrate from cookie on mount
+    // 1. Initial hydration from cookie (Client-side only)
     useEffect(() => {
-        setFavorites(readCookie());
+        const initial = readCookie();
+        if (initial.size > 0) {
+            // Wrap in startTransition to avoid the "cascading renders" warning.
+            // This signals to React that this is a non-urgent update that can
+            // happen after the initial mount is committed and visible.
+            startTransition(() => {
+                setFavorites(initial);
+            });
+        }
     }, []);
+
+    // 2. Persist to cookie whenever favorites change
+    // This avoids side-effects inside state updaters and follows React 19 best practices.
+    useEffect(() => {
+        // Skip writing the empty set if it's the very first render and we haven't hydrated yet
+        // However, we want to refresh the cookie expiration if we HAVE favorites.
+        writeCookie(favorites);
+    }, [favorites]);
 
     const isFavorite = useCallback(
         (externalId: string | number) => favorites.has(String(externalId)),
@@ -69,9 +88,10 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
 
     const toggleFavorite = useCallback((externalId: string | number): boolean => {
         let added = false;
+        const key = String(externalId);
+
         setFavorites(prev => {
             const next = new Set(prev);
-            const key = String(externalId);
             if (next.has(key)) {
                 next.delete(key);
             } else {
@@ -82,9 +102,9 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
                 next.add(key);
                 added = true;
             }
-            writeCookie(next);
             return next;
         });
+
         return added;
     }, [showLimitWarning]);
 
@@ -95,9 +115,10 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
                 showLimitWarning();
                 return prev;
             }
+            if (prev.has(String(externalId))) return prev;
+
             const next = new Set(prev);
             next.add(String(externalId));
-            writeCookie(next);
             added = true;
             return next;
         });
@@ -106,17 +127,16 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
 
     const removeFavorite = useCallback((externalId: string | number) => {
         setFavorites(prev => {
+            const key = String(externalId);
+            if (!prev.has(key)) return prev;
             const next = new Set(prev);
-            next.delete(String(externalId));
-            writeCookie(next);
+            next.delete(key);
             return next;
         });
     }, []);
 
     const clearFavorites = useCallback(() => {
-        const empty = new Set<string>();
-        writeCookie(empty);
-        setFavorites(empty);
+        setFavorites(EMPTY_SET);
     }, []);
 
     const value: FavoritesContextValue = {

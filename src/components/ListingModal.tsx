@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import LazyImage from './LazyImage';
 import { useFavorites } from '@/hooks/useFavorites';
 
 interface ListingModalProps {
@@ -328,21 +327,54 @@ export default function ListingModal({ externalId, onClose }: ListingModalProps)
                                 </div>
                             )}
 
-                            {/* Favorite Button */}
-                            <button
-                                onClick={() => toggleFavorite(externalId)}
-                                className="flex items-center gap-2 py-1 transition-colors group/fav"
-                                aria-label={liked ? 'Quitar de favoritos' : 'Agregar a favoritos'}
-                            >
-                                <svg className="w-5 h-5" viewBox="0 0 24 24" fill={liked ? '#ef4444' : 'none'} stroke={liked ? '#ef4444' : '#94a3b8'} strokeWidth="2">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                                </svg>
-                                <span className={`text-sm font-medium ${
-                                    liked ? 'text-red-500' : 'text-slate-500 group-hover/fav:text-red-500'
-                                }`}>
-                                    {liked ? 'Guardado en favoritos' : 'Agregar a favoritos'}
-                                </span>
-                            </button>
+                            {/* Favorite & Share Row */}
+                            <div className="flex items-center gap-3 pt-1">
+                                {/* Favorite Button */}
+                                <button
+                                    onClick={() => toggleFavorite(externalId)}
+                                    className="flex items-center gap-2 py-1.5 px-3 rounded-lg border border-slate-200 hover:border-red-300 transition-all group/fav"
+                                    aria-label={liked ? 'Quitar de favoritos' : 'Agregar a favoritos'}
+                                >
+                                    <svg className="w-5 h-5" viewBox="0 0 24 24" fill={liked ? '#ef4444' : 'none'} stroke={liked ? '#ef4444' : '#94a3b8'} strokeWidth="2">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                                    </svg>
+                                    <span className={`text-sm font-medium ${
+                                        liked ? 'text-red-500' : 'text-slate-500 group-hover/fav:text-red-500'
+                                    }`}>
+                                        {liked ? 'En Favoritos' : 'Agregar a Favoritos'}
+                                    </span>
+                                </button>
+
+                                {/* Share Button */}
+                                <button
+                                    onClick={async (e) => {
+                                        e.stopPropagation();
+                                        const shareUrl = `${window.location.origin}/inmuebles/${externalId}`;
+                                        if (navigator.share) {
+                                            try {
+                                                await navigator.share({ title: listing.title || 'Propiedad en SivarCasas', url: shareUrl });
+                                            } catch { /* user cancelled */ }
+                                        } else {
+                                            await navigator.clipboard.writeText(shareUrl);
+                                            // Show a brief "copied" toast
+                                            const btn = e.currentTarget;
+                                            const original = btn.getAttribute('title');
+                                            btn.setAttribute('title', '¡Enlace copiado!');
+                                            setTimeout(() => btn.setAttribute('title', original || 'Compartir'), 2000);
+                                        }
+                                    }}
+                                    className="flex items-center gap-2 py-1.5 px-3 rounded-lg border border-slate-200 hover:border-blue-300 transition-all group/share"
+                                    aria-label="Compartir"
+                                    title="Compartir"
+                                >
+                                    <svg className="w-5 h-5 text-slate-400 group-hover/share:text-blue-500 transition-colors" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                                    </svg>
+                                    <span className="text-sm font-medium text-slate-500 group-hover/share:text-blue-500 transition-colors">
+                                        Compartir
+                                    </span>
+                                </button>
+                            </div>
                         </div>
 
                         {/* Right column: Map + CTA */}

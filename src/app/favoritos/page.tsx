@@ -3,10 +3,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { useRouter } from 'next/navigation';
+
 import Navbar from '@/components/Navbar';
 import LazyImage from '@/components/LazyImage';
 import { useFavorites } from '@/hooks/useFavorites';
+import ListingModal from '@/components/ListingModal';
 
 interface FavoriteListing {
     external_id: string | number;
@@ -83,7 +84,7 @@ export default function FavoritosPage() {
     const { favorites, removeFavorite, clearFavorites, favoriteCount } = useFavorites();
     const [listings, setListings] = useState<FavoriteListing[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const router = useRouter();
+    const [selectedListingId, setSelectedListingId] = useState<string | number | null>(null);
     const [compareMode, setCompareMode] = useState(false);
     const [compareIds, setCompareIds] = useState<Set<string>>(new Set());
     const [showingComparison, setShowingComparison] = useState(false);
@@ -298,7 +299,7 @@ export default function FavoritosPage() {
                                             if (compareMode) {
                                                 toggleCompare(listing.external_id);
                                             } else {
-                                                router.push(`/inmuebles/${listing.external_id}`);
+                                                setSelectedListingId(listing.external_id);
                                             }
                                         }}
                                     >
@@ -561,6 +562,13 @@ export default function FavoritosPage() {
                 </div>
             </main>
 
+            {/* Listing Modal Popup */}
+            {selectedListingId !== null && (
+                <ListingModal
+                    externalId={selectedListingId}
+                    onClose={() => setSelectedListingId(null)}
+                />
+            )}
         </>
     );
 }

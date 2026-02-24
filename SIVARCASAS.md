@@ -375,7 +375,7 @@ Cookie-based favorites system with React Context.
 
 ```
 Cookie: sivarcasas_favorites = JSON array of external_id strings
-Max-Age: 1 year
+Max-Age: 7 days
 Max Favorites: 25
 ```
 

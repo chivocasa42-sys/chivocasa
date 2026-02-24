@@ -4,7 +4,7 @@ import 'leaflet/dist/leaflet.css';
 import { useState, useCallback, useRef, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import SectionHeader from './SectionHeader';
-import { useRouter } from 'next/navigation';
+import ListingModal from './ListingModal';
 
 // Dynamically import Leaflet components to avoid SSR issues
 const MapContainer = dynamic(
@@ -139,6 +139,7 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
 
 export default function MapExplorer({ externalLocation }: MapExplorerProps) {
     const [selectedLocation, setSelectedLocation] = useState<{ lat: number; lng: number } | null>(DEFAULT_LOCATION);
+    const [selectedListingId, setSelectedListingId] = useState<string | number | null>(null);
     const [radius, setRadius] = useState(1.5);
     const [searchQuery, setSearchQuery] = useState(DEFAULT_LOCATION_NAME);
     const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
@@ -155,7 +156,7 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
     const [isPaginating, setIsPaginating] = useState(false);
     const [activeTab, setActiveTab] = useState<ListingTypeFilter>('sale');
 
-    const router = useRouter();
+
 
     // Auto-fetch trigger: starts at 1 to fetch default location on mount
     const [autoFetchTrigger, setAutoFetchTrigger] = useState(1);
@@ -595,7 +596,7 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
                                         {nearbyData.listings.map((listing) => (
                                             <div
                                                 key={listing.external_id}
-                                                onClick={() => router.push(`/inmuebles/${listing.external_id}`)}
+                                                onClick={() => setSelectedListingId(listing.external_id)}
                                                 className="group flex gap-3 p-2 rounded-lg bg-[var(--bg-subtle)] hover:bg-white hover:shadow-md transition-all cursor-pointer border border-[var(--border-color)] hover:border-[var(--primary)]"
                                             >
                                                 {/* Thumbnail */}
@@ -701,6 +702,13 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
                 </div>
             </div>
 
+            {/* Listing Modal Popup */}
+            {selectedListingId !== null && (
+                <ListingModal
+                    externalId={selectedListingId}
+                    onClose={() => setSelectedListingId(null)}
+                />
+            )}
         </>
     );
 }
