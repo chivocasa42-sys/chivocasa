@@ -3,7 +3,9 @@
 import { useState, useCallback, useEffect, useRef, createContext, useContext, ReactNode, startTransition } from 'react';
 
 const COOKIE_NAME = 'sivarcasas_favorites';
-const COOKIE_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
+const COOKIE_TIMESTAMP_NAME = 'sivarcasas_favorites_ts';
+const COOKIE_MAX_AGE = 60 * 60 * 24 * 7; // 7 days in seconds
+const COOKIE_MAX_AGE_MS = COOKIE_MAX_AGE * 1000; // 7 days in milliseconds
 const MAX_FAVORITES = 25;
 
 const EMPTY_SET = new Set<string>();
@@ -25,10 +27,33 @@ function readCookie(): Set<string> {
     }
 }
 
-/** Write the favorites set back to the cookie. */
+/** Read the timestamp cookie that tracks when favorites were last saved. */
+function readTimestampCookie(): number | null {
+    if (typeof document === 'undefined') return null;
+    const match = document.cookie
+        .split('; ')
+        .find(row => row.startsWith(`${COOKIE_TIMESTAMP_NAME}=`));
+    if (!match) return null;
+    try {
+        const ts = parseInt(match.split('=')[1], 10);
+        return isNaN(ts) ? null : ts;
+    } catch {
+        return null;
+    }
+}
+
+/** Write the favorites set back to the cookie, along with a timestamp cookie. */
 function writeCookie(ids: Set<string>): void {
     const value = encodeURIComponent(JSON.stringify([...ids]));
+    const now = Date.now();
     document.cookie = `${COOKIE_NAME}=${value}; path=/; max-age=${COOKIE_MAX_AGE}; SameSite=Lax`;
+    document.cookie = `${COOKIE_TIMESTAMP_NAME}=${now}; path=/; max-age=${COOKIE_MAX_AGE}; SameSite=Lax`;
+}
+
+/** Delete both favorites cookies immediately. */
+function deleteCookies(): void {
+    document.cookie = `${COOKIE_NAME}=; path=/; max-age=0; SameSite=Lax`;
+    document.cookie = `${COOKIE_TIMESTAMP_NAME}=; path=/; max-age=0; SameSite=Lax`;
 }
 
 interface FavoritesContextValue {
@@ -53,6 +78,7 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
     const [favorites, setFavorites] = useState<Set<string>>(new Set());
     const [limitMessage, setLimitMessage] = useState<string | null>(null);
     const limitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const hydrated = useRef(false);
 
     const showLimitWarning = useCallback(() => {
         setLimitMessage('Has alcanzado el máximo de 25 favoritos. Elimina alguno para agregar más.');
@@ -61,23 +87,37 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
     }, []);
 
     // 1. Initial hydration from cookie (Client-side only)
+    //    Also checks the timestamp — if favorites are older than 7 days, delete them.
     useEffect(() => {
         const initial = readCookie();
+        const savedAt = readTimestampCookie();
+        const now = Date.now();
+
+        // If the timestamp exists and is older than 7 days, purge all favorites
+        if (savedAt !== null && (now - savedAt) >= COOKIE_MAX_AGE_MS) {
+            deleteCookies();
+            hydrated.current = true;
+            return; // favorites stay as empty Set
+        }
+
         if (initial.size > 0) {
-            // Wrap in startTransition to avoid the "cascading renders" warning.
-            // This signals to React that this is a non-urgent update that can
-            // happen after the initial mount is committed and visible.
             startTransition(() => {
                 setFavorites(initial);
             });
+            // Refresh the cookie max-age so the 7-day timer resets from NOW
+            // This ensures old favorites get a fresh 7-day window on each visit
+            writeCookie(initial);
         }
+
+        hydrated.current = true;
     }, []);
 
-    // 2. Persist to cookie whenever favorites change
-    // This avoids side-effects inside state updaters and follows React 19 best practices.
+    // 2. Persist to cookie whenever favorites change (after hydration)
     useEffect(() => {
-        // Skip writing the empty set if it's the very first render and we haven't hydrated yet
-        // However, we want to refresh the cookie expiration if we HAVE favorites.
+        // Skip writing the empty set on the initial render before hydration completes.
+        // This prevents overwriting the real cookie with an empty set.
+        if (!hydrated.current) return;
+
         writeCookie(favorites);
     }, [favorites]);
 
@@ -136,6 +176,7 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
     }, []);
 
     const clearFavorites = useCallback(() => {
+        deleteCookies();
         setFavorites(EMPTY_SET);
     }, []);
 
