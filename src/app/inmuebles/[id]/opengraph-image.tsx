@@ -7,58 +7,12 @@
 import { ImageResponse } from 'next/og';
 import { Listing } from '@/types/listing';
 import { formatPrice, formatLocation, formatSpecsForDisplay } from '@/lib/listingFormatter';
+import { LOGO_BASE64 } from '@/lib/logo-constant';
 
 export const runtime = 'edge';
 export const alt = 'Propiedad en SivarCasas';
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
-
-/**
- * Convert ArrayBuffer to base64 string (Edge Runtime compatible)
- * Using native browser APIs instead of Node.js Buffer
- * @param buffer - ArrayBuffer from fetch response
- * @returns Base64 encoded string
- */
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-    const bytes = new Uint8Array(buffer);
-    const chunkSize = 0x8000; // 32KB chunks to avoid call stack size issues
-    const chunks: string[] = [];
-
-    for (let i = 0; i < bytes.length; i += chunkSize) {
-        const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
-        chunks.push(String.fromCharCode(...chunk));
-    }
-
-    return btoa(chunks.join(''));
-}
-
-/**
- * Fetch logo image and convert to base64 for @vercel/og Edge Runtime
- * @returns Base64 data URI or null if fetch fails
- */
-async function getLogoData(): Promise<string | null> {
-    try {
-        // Hard-coded production URL for reliability
-        // Falls back to localhost in development
-        const logoUrl = process.env.VERCEL_URL
-            ? 'https://sivarcasas.vercel.app/sivarcasaslogo.webp'
-            : 'http://localhost:3000/sivarcasaslogo.webp';
-
-        const response = await fetch(logoUrl);
-        if (!response.ok) {
-            console.error('[OG Image] Logo fetch failed:', response.status);
-            return null;
-        }
-
-        const arrayBuffer = await response.arrayBuffer();
-        const base64 = arrayBufferToBase64(arrayBuffer); // ✅ Edge-compatible
-
-        return `data:image/webp;base64,${base64}`;
-    } catch (error) {
-        console.error('[OG Image] Error loading logo:', error);
-        return null;
-    }
-}
 
 /**
  * Fetch listing data from Supabase
@@ -99,10 +53,9 @@ export default async function Image({ params }: { params: Promise<{ id: string }
     console.log('[OG Image] Generating for listing ID:', id);
 
     const listing = await getListing(id);
-    const logoData = await getLogoData();
+    const logoData = LOGO_BASE64;
 
     console.log('[OG Image] Listing found:', !!listing);
-    console.log('[OG Image] Logo loaded:', !!logoData);
 
     // Fallback if listing not found
     if (!listing) {
