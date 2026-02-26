@@ -19,11 +19,11 @@ export const contentType = 'image/png';
  */
 async function getLogoData(): Promise<string | null> {
     try {
-        const baseUrl = process.env.VERCEL_URL
-            ? `https://${process.env.VERCEL_URL}`
-            : process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
-
-        const logoUrl = `${baseUrl}/sivarcasaslogo.webp`;
+        // Hard-coded production URL for reliability
+        // Falls back to localhost in development
+        const logoUrl = process.env.VERCEL_URL
+            ? 'https://sivarcasas.vercel.app/sivarcasaslogo.webp'
+            : 'http://localhost:3000/sivarcasaslogo.webp';
 
         const response = await fetch(logoUrl);
         if (!response.ok) return null;
@@ -169,8 +169,7 @@ export default async function Image({ params }: { params: Promise<{ id: string }
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            backgroundColor: '#3b82f6',
-                            opacity: 0.9,
+                            backgroundColor: 'rgba(59, 130, 246, 0.9)',
                             border: '3px solid #ffffff',
                             borderRadius: '12px',
                             padding: '16px 32px',
@@ -181,8 +180,7 @@ export default async function Image({ params }: { params: Promise<{ id: string }
                         }}
                     >
                         Ver propiedad
-                    </div>
-                </div>
+                    </div>                </div>
 
                 {/* Right Column - 400px */}
                 <div
@@ -202,8 +200,7 @@ export default async function Image({ params }: { params: Promise<{ id: string }
                                     display: 'flex',
                                     alignItems: 'center',
                                     gap: '8px',
-                                    backgroundColor: '#ffffff',
-                                    opacity: 0.2,
+                                    backgroundColor: 'rgba(255, 255, 255, 0.2)',
                                     padding: '12px 20px',
                                     borderRadius: '8px',
                                     color: '#ffffff',
@@ -220,8 +217,7 @@ export default async function Image({ params }: { params: Promise<{ id: string }
                             <div
                                 style={{
                                     height: '2px',
-                                    backgroundColor: '#ffffff',
-                                    opacity: 0.3,
+                                    backgroundColor: 'rgba(255, 255, 255, 0.3)',
                                 }}
                             />
                         )}
@@ -265,7 +261,7 @@ export default async function Image({ params }: { params: Promise<{ id: string }
                             paddingTop: '20px',
                         }}
                     >
-                        {/* Simplified decorative element - Edge Runtime compatible */}
+                        {/* Simplified decorative element */}
                         <div
                             style={{
                                 position: 'absolute',
@@ -274,9 +270,8 @@ export default async function Image({ params }: { params: Promise<{ id: string }
                                 width: '300px',
                                 height: '60px',
                                 marginLeft: '-150px',
-                                background: 'linear-gradient(to bottom, #3b82f6, #60a5fa)',
+                                backgroundColor: 'rgba(59, 130, 246, 0.2)',
                                 borderRadius: '50%',
-                                opacity: 0.2,
                             }}
                         />
 
