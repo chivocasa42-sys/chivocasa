@@ -687,20 +687,31 @@ def check_listing_still_active(url, source):
             if "/bienes-raices" in final_url and len(final_url) < 100:
                 return False, "Redirected to listing index"
         
-        # Check page content for inactive indicators
-        page_text = resp.text.lower()
+        # Check page content for inactive indicators.
+        # Important: Encuentra24 embeds a generic Next.js notFound template in script data
+        # even on active listings. Scanning raw HTML causes false positives (e.g. "ya no
+        # está disponible" appears inside that embedded template). Restrict checks to
+        # visible page text and prominent headings.
+        raw_html = resp.text
+        soup = BeautifulSoup(raw_html, "html.parser")
+        for tag in soup(["script", "style", "template"]):
+            tag.decompose()
         
-        # Check for exact inactive phrases first (most reliable)
+        page_text = soup.get_text(" ", strip=True).lower()
+        title_text = (soup.title.get_text(" ", strip=True).lower() if soup.title else "")
+        h1_el = soup.select_one("h1")
+        h1_text = h1_el.get_text(" ", strip=True).lower() if h1_el else ""
+        
+        # Check for exact inactive phrases in visible content
         for phrase in INACTIVE_PHRASES:
             if phrase in page_text:
                 return False, f"Page contains '{phrase}'"
         
-        # Check for keywords in title or h1
+        # Check for keywords only in prominent page text (title/H1) to avoid matching
+        # related listings or embedded metadata.
         for keyword in INACTIVE_KEYWORDS:
-            if keyword in page_text[:5000]:  # Check first 5KB for performance
-                # Make sure it's prominent (in title or main content)
-                if f'<title>{keyword}' in page_text or f'<h1>{keyword}' in page_text:
-                    return False, f"Page contains '{keyword}'"
+            if (title_text and keyword in title_text) or (h1_text and keyword in h1_text):
+                return False, f"Page contains '{keyword}'"
         
         # Listing appears active
         return True, "Active"
