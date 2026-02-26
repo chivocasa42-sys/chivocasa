@@ -59,6 +59,48 @@ const SB_HEADERS = {
     'Authorization': `Bearer ${SB_KEY}`
 };
 
+// Small in-memory cache for repeated valuation requests (same coords/specs)
+let memCache = new Map<string, { ts: number; status: number; payload: unknown }>();
+const MEM_CACHE_TTL = 120_000; // 2 minutes
+
+function buildCacheKey(body: ValuationInput): string {
+    const round = (n: number) => Math.round(n * 100000) / 100000;
+    return JSON.stringify({
+        lat: round(body.lat),
+        lng: round(body.lng),
+        area_m2: Math.round(body.area_m2 * 100) / 100,
+        bedrooms: body.bedrooms ?? null,
+        bathrooms: body.bathrooms ?? null,
+        parking: body.parking ?? null,
+        property_type: body.property_type,
+    });
+}
+
+function cacheSet(key: string, status: number, payload: unknown) {
+    memCache.set(key, { ts: Date.now(), status, payload });
+
+    if (memCache.size > 500) {
+        const now = Date.now();
+        for (const [k, v] of memCache.entries()) {
+            if (now - v.ts > MEM_CACHE_TTL) memCache.delete(k);
+        }
+        if (memCache.size > 500) {
+            const oldestKey = memCache.keys().next().value;
+            if (oldestKey) memCache.delete(oldestKey);
+        }
+    }
+}
+
+function jsonResponse(payload: unknown, status = 200, cacheHeader: 'HIT' | 'MISS' | 'SKIP' = 'SKIP') {
+    return NextResponse.json(payload, {
+        status,
+        headers: {
+            'X-Cache': cacheHeader,
+            'Cache-Control': 'private, max-age=0',
+        },
+    });
+}
+
 async function callRpc<T>(fn: string, params: Record<string, unknown>): Promise<T> {
     const res = await fetch(`${SB_URL}/rest/v1/rpc/${fn}`, {
         method: 'POST',
@@ -81,16 +123,24 @@ export async function POST(request: NextRequest) {
 
         // Validate required fields
         if (!body.lat || !body.lng || !body.area_m2 || body.area_m2 <= 0) {
-            return NextResponse.json(
+            return jsonResponse(
                 { error: 'lat, lng, and area_m2 (> 0) are required' },
-                { status: 400 }
+                400,
+                'SKIP'
             );
         }
         if (!body.property_type) {
-            return NextResponse.json(
+            return jsonResponse(
                 { error: 'property_type is required' },
-                { status: 400 }
+                400,
+                'SKIP'
             );
+        }
+
+        const cacheKey = buildCacheKey(body);
+        const cached = memCache.get(cacheKey);
+        if (cached && Date.now() - cached.ts < MEM_CACHE_TTL) {
+            return jsonResponse(cached.payload, cached.status, 'HIT');
         }
 
         const commonParams = {
@@ -124,12 +174,14 @@ export async function POST(request: NextRequest) {
 
         // Insufficient data check
         if (!sale || sale.method === 'insufficient_data' || sale.est_price == null) {
-            return NextResponse.json({
+            const payload = {
                 error: 'insufficient_data',
                 message: 'No hay suficientes propiedades comparables en esta zona para generar una estimación.',
                 sample_count: sale?.comps_used ?? 0,
                 radius_used: sale?.radius_used_m ? sale.radius_used_m / 1000 : 0
-            }, { status: 200 });
+            };
+            cacheSet(cacheKey, 200, payload);
+            return jsonResponse(payload, 200, 'MISS');
         }
 
         const estimatedValue = sale.est_price;
@@ -189,12 +241,14 @@ export async function POST(request: NextRequest) {
             top_comps: topComps
         };
 
-        return NextResponse.json(result);
+        cacheSet(cacheKey, 200, result);
+        return jsonResponse(result, 200, 'MISS');
     } catch (error) {
         console.error('Valuador error:', error);
-        return NextResponse.json(
+        return jsonResponse(
             { error: 'Error al calcular la estimación' },
-            { status: 500 }
+            500,
+            'SKIP'
         );
     }
 }

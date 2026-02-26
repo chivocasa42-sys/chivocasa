@@ -1,6 +1,8 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import 'leaflet/dist/leaflet.css';
+import { memo, useState, useEffect, useRef, useCallback } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import Navbar from '@/components/Navbar';
 import SectionHeader from '@/components/SectionHeader';
@@ -52,6 +54,104 @@ interface InsufficientData {
     radius_used: number;
 }
 
+const MapContainer = dynamic(
+    () => import('react-leaflet').then((mod) => mod.MapContainer),
+    { ssr: false }
+);
+const TileLayer = dynamic(
+    () => import('react-leaflet').then((mod) => mod.TileLayer),
+    { ssr: false }
+);
+const Marker = dynamic(
+    () => import('react-leaflet').then((mod) => mod.Marker),
+    { ssr: false }
+);
+
+const DEFAULT_MAP_CENTER: [number, number] = [13.6929, -89.2182];
+const DEFAULT_MAP_ZOOM = 12;
+
+function ValuadorMapClickHandler({
+    onMapClick
+}: {
+    onMapClick: (lat: number, lng: number) => void;
+}) {
+    const useMapEvents = require('react-leaflet').useMapEvents;
+    useMapEvents({
+        click(e: any) {
+            onMapClick(e.latlng.lat, e.latlng.lng);
+        },
+    });
+    return null;
+}
+
+function ValuadorMapCenterUpdater({ center }: { center: [number, number] }) {
+    const useMap = require('react-leaflet').useMap;
+    const map = useMap();
+    useEffect(() => {
+        map.flyTo(center, Math.max(map.getZoom(), 14), { duration: 0.8 });
+    }, [center, map]);
+    return null;
+}
+
+const ValuadorLocationMap = memo(function ValuadorLocationMap({
+    mapReady,
+    mapCenter,
+    markerPosition,
+    isReverseGeocoding,
+    onMapClick,
+}: {
+    mapReady: boolean;
+    mapCenter: [number, number];
+    markerPosition: { lat: number; lng: number } | null;
+    isReverseGeocoding: boolean;
+    onMapClick: (lat: number, lng: number) => void;
+}) {
+    return (
+        <div className="mt-3 rounded-xl border border-slate-200 overflow-hidden bg-slate-50">
+            <div className="px-3 py-2 border-b border-slate-200 bg-white/70 flex items-center justify-between gap-3">
+                <p className="text-xs text-slate-500">
+                    Haga clic en el mapa para afinar la ubicacion exacta de la propiedad.
+                </p>
+                {isReverseGeocoding && (
+                    <div className="flex items-center gap-1.5 text-[11px] text-slate-500 whitespace-nowrap">
+                        <div className="w-3 h-3 border-2 border-slate-300 border-t-blue-500 rounded-full animate-spin"></div>
+                        Ubicando...
+                    </div>
+                )}
+            </div>
+
+            <div className="h-56 md:h-64 relative" style={{ zIndex: 0 }}>
+                {mapReady ? (
+                    <MapContainer
+                        center={mapCenter}
+                        zoom={markerPosition ? 14 : DEFAULT_MAP_ZOOM}
+                        style={{ height: '100%', width: '100%' }}
+                        scrollWheelZoom={true}
+                    >
+                        <TileLayer
+                            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                        />
+                        <ValuadorMapClickHandler onMapClick={onMapClick} />
+                        <ValuadorMapCenterUpdater center={mapCenter} />
+                        {markerPosition && <Marker position={[markerPosition.lat, markerPosition.lng]} />}
+                    </MapContainer>
+                ) : (
+                    <div className="h-full w-full flex items-center justify-center text-xs text-slate-400 bg-slate-100">
+                        Cargando mapa...
+                    </div>
+                )}
+            </div>
+
+            <div className="px-3 py-2 bg-white/80 border-t border-slate-200 text-xs text-slate-600">
+                {markerPosition
+                    ? `Punto seleccionado: ${markerPosition.lat.toFixed(5)}, ${markerPosition.lng.toFixed(5)}`
+                    : 'Seleccione una zona en el mapa o mediante la busqueda para continuar.'}
+            </div>
+        </div>
+    );
+});
+
 const PROPERTY_TYPES = [
     { value: 'casa', label: 'Casa' },
     { value: 'apartamento', label: 'Apartamento' },
@@ -83,50 +183,181 @@ function LocationAutocomplete({
     const [options, setOptions] = useState<LocationOption[]>([]);
     const [isOpen, setIsOpen] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [isReverseGeocoding, setIsReverseGeocoding] = useState(false);
+    const [mapReady, setMapReady] = useState(false);
+    const [mapCenter, setMapCenter] = useState<[number, number]>(DEFAULT_MAP_CENTER);
+    const [markerPosition, setMarkerPosition] = useState<{ lat: number; lng: number } | null>(null);
     const inputRef = useRef<HTMLInputElement>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const debounceRef = useRef<NodeJS.Timeout | null>(null);
+    const reverseRequestIdRef = useRef(0);
+    const selectionInvalidatedRef = useRef(false);
+    const geocodeAbortRef = useRef<AbortController | null>(null);
+    const reverseAbortRef = useRef<AbortController | null>(null);
+    const geocodeCacheRef = useRef<Map<string, LocationOption[]>>(new Map());
+    const reverseCacheRef = useRef<Map<string, string | null>>(new Map());
 
     useEffect(() => {
         if (value) {
+            selectionInvalidatedRef.current = false;
             setQuery(value.display_name.split(',')[0]);
+            const lat = parseFloat(value.lat);
+            const lng = parseFloat(value.lon);
+            if (Number.isFinite(lat) && Number.isFinite(lng)) {
+                setMarkerPosition({ lat, lng });
+                setMapCenter([lat, lng]);
+            }
         }
     }, [value]);
 
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const L = require('leaflet');
+            delete (L.Icon.Default.prototype as any)._getIconUrl;
+            L.Icon.Default.mergeOptions({
+                iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+                iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+                shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+            });
+            setMapReady(true);
+        }
+    }, []);
+
     const search = useCallback(async (q: string) => {
         if (q.trim().length < 3) {
+            geocodeAbortRef.current?.abort();
             setOptions([]);
             setIsOpen(false);
             return;
         }
+
+        geocodeAbortRef.current?.abort();
+
+        const cacheKey = q.trim().toLowerCase();
+        const cached = geocodeCacheRef.current.get(cacheKey);
+        if (cached) {
+            setLoading(false);
+            setOptions(cached);
+            setIsOpen(cached.length > 0);
+            return;
+        }
+        const controller = new AbortController();
+        geocodeAbortRef.current = controller;
+
         setLoading(true);
         try {
-            const res = await fetch(`/api/geocode?q=${encodeURIComponent(q)}`);
+            const res = await fetch(`/api/geocode?q=${encodeURIComponent(q)}`, {
+                signal: controller.signal,
+            });
             if (res.ok) {
                 const data: LocationOption[] = await res.json();
+                geocodeCacheRef.current.set(cacheKey, data);
                 setOptions(data);
                 setIsOpen(data.length > 0);
             }
-        } catch {
+        } catch (err) {
+            if ((err as Error).name === 'AbortError') {
+                return;
+            }
             setOptions([]);
         } finally {
-            setLoading(false);
+            if (geocodeAbortRef.current === controller) {
+                geocodeAbortRef.current = null;
+                setLoading(false);
+            }
+        }
+    }, []);
+
+    const applyLocationSelection = useCallback((lat: number, lng: number, displayName?: string | null) => {
+        const fallbackLabel = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+        const label = (displayName && displayName.trim()) || fallbackLabel;
+        const nextLocation: LocationOption = {
+            display_name: label,
+            lat: String(lat),
+            lon: String(lng)
+        };
+
+        setMarkerPosition({ lat, lng });
+        setMapCenter([lat, lng]);
+        setQuery(label.split(',')[0]?.trim() || label);
+        setIsOpen(false);
+        setOptions([]);
+        selectionInvalidatedRef.current = false;
+        onChange(nextLocation);
+    }, [onChange]);
+
+    const reverseGeocode = useCallback(async (lat: number, lng: number): Promise<string | null> => {
+        reverseAbortRef.current?.abort();
+
+        const cacheKey = `${lat.toFixed(5)},${lng.toFixed(5)}`;
+        if (reverseCacheRef.current.has(cacheKey)) {
+            return reverseCacheRef.current.get(cacheKey) ?? null;
+        }
+        const controller = new AbortController();
+        reverseAbortRef.current = controller;
+
+        try {
+            const res = await fetch(`/api/reverse-geocode?lat=${lat}&lng=${lng}`, {
+                signal: controller.signal,
+            });
+            if (!res.ok) return null;
+            const data = await res.json() as { name?: string | null };
+            const name = data.name || null;
+            reverseCacheRef.current.set(cacheKey, name);
+            return name;
+        } catch (err) {
+            if ((err as Error).name === 'AbortError') {
+                return null;
+            }
+            return null;
+        } finally {
+            if (reverseAbortRef.current === controller) {
+                reverseAbortRef.current = null;
+            }
         }
     }, []);
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const val = e.target.value;
         setQuery(val);
-        onChange(null);
+        reverseRequestIdRef.current += 1;
+        setIsReverseGeocoding(false);
+        if (value && !selectionInvalidatedRef.current) {
+            selectionInvalidatedRef.current = true;
+            onChange(null);
+        }
         if (debounceRef.current) clearTimeout(debounceRef.current);
-        debounceRef.current = setTimeout(() => search(val), 300);
+        debounceRef.current = setTimeout(() => search(val), 250);
     };
 
     const handleSelect = (loc: LocationOption) => {
+        const lat = parseFloat(loc.lat);
+        const lng = parseFloat(loc.lon);
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+            applyLocationSelection(lat, lng, loc.display_name);
+            return;
+        }
+
         onChange(loc);
         setQuery(loc.display_name.split(',')[0]);
         setIsOpen(false);
     };
+
+    const handleMapClick = useCallback(async (lat: number, lng: number) => {
+        applyLocationSelection(lat, lng, null);
+        setIsReverseGeocoding(true);
+
+        const requestId = ++reverseRequestIdRef.current;
+        const resolvedName = await reverseGeocode(lat, lng);
+
+        if (reverseRequestIdRef.current === requestId && resolvedName) {
+            applyLocationSelection(lat, lng, resolvedName);
+        }
+
+        if (reverseRequestIdRef.current === requestId) {
+            setIsReverseGeocoding(false);
+        }
+    }, [applyLocationSelection, reverseGeocode]);
 
     useEffect(() => {
         const handleClick = (e: MouseEvent) => {
@@ -137,6 +368,16 @@ function LocationAutocomplete({
         };
         document.addEventListener('mousedown', handleClick);
         return () => document.removeEventListener('mousedown', handleClick);
+    }, []);
+
+    useEffect(() => {
+        return () => {
+            if (debounceRef.current) {
+                clearTimeout(debounceRef.current);
+            }
+            geocodeAbortRef.current?.abort();
+            reverseAbortRef.current?.abort();
+        };
     }, []);
 
     return (
@@ -192,6 +433,14 @@ function LocationAutocomplete({
                     })}
                 </div>
             )}
+
+            <ValuadorLocationMap
+                mapReady={mapReady}
+                mapCenter={mapCenter}
+                markerPosition={markerPosition}
+                isReverseGeocoding={isReverseGeocoding}
+                onMapClick={handleMapClick}
+            />
         </div>
     );
 }

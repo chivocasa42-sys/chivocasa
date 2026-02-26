@@ -16,6 +16,10 @@ on:
         required: false
         default: ''
 
+concurrency:
+  group: scraper-encuentra24-shared
+  cancel-in-progress: false
+
 jobs:
   scrape:
     runs-on: ubuntu-latest

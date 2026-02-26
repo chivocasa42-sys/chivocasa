@@ -396,18 +396,21 @@ def update_listings_batch(listings, batch_size=50):
     return success, errors
 
 
-def run_update_mode(sources=None, limit=None):
+def run_update_mode(sources=None, limit=None, skip_validation=False):
     """
     Update mode: re-scrape existing active listings from DB and update them.
-    Also marks listings as inactive if they fail to scrape (404, sold, expired).
+    Uses the same post-run validation/deactivation flow as regular mode.
     
     Args:
         sources: List of sources to update (None = all sources)
         limit: Optional limit per source
+        skip_validation: If True, skip the validation phase
     """
     print("\n" + "="*60)
     print("UPDATE MODE: Re-scraping and updating existing listings")
     print("="*60)
+    run_start_time = datetime.now().isoformat()
+    print(f"Update run started at: {run_start_time}")
     
     # Determine which sources to update
     all_sources = ["Encuentra24", "MiCasaSV", "Realtor", "VivoLatam"]
@@ -481,10 +484,9 @@ def run_update_mode(sources=None, limit=None):
                 print(f"  Fetched {len(rent_listings)} rent listings")
                 scraped_listings.extend(rent_listings)
             
-            # For Realtor, check which active listings from DB are no longer on the site
-            # SAFEGUARD: Only deactivate if we successfully scraped at least 50% of expected listings
-            # This prevents mass deactivation if scraping fails completely
-            if len(scraped_listings) >= len(active_listings) * 0.5:
+            # Disabled: update mode now uses the same stale-listing validation pass as regular mode
+            # after all upserts complete (see validate_and_deactivate_listings below).
+            if False and len(scraped_listings) >= len(active_listings) * 0.5:
                 scraped_external_ids = {str(l.get('external_id')) for l in scraped_listings if l.get('external_id')}
                 db_external_ids = {str(l['external_id']) for l in active_listings}
                 missing_ids = db_external_ids - scraped_external_ids
@@ -494,7 +496,7 @@ def run_update_mode(sources=None, limit=None):
                     deactivated = deactivate_listings([int(eid) for eid in missing_ids])
                     total_deactivated += deactivated
                     print(f"  Deactivated {deactivated} Realtor listings")
-            else:
+            elif False:
                 print(f"  ⚠️ Scrape returned too few results ({len(scraped_listings)}/{len(active_listings)}), skipping deactivation to prevent data loss")
             
         elif source == "VivoLatam":
@@ -508,7 +510,8 @@ def run_update_mode(sources=None, limit=None):
         scraped_urls = {l.get('url') for l in scraped_listings if l.get('url')}
         failed_urls = original_urls - scraped_urls
         
-        if failed_urls:
+        # Disabled: per-source deactivation is handled by the shared validation phase below.
+        if False and failed_urls:
             print(f"  ⚠️ {len(failed_urls)} listings failed to scrape, verifying if truly inactive...")
             # Verify each failed URL to confirm it's actually 404/sold (not just rate limited)
             confirmed_inactive_ids = []
@@ -534,6 +537,18 @@ def run_update_mode(sources=None, limit=None):
             print(f"  {source}: {success} upserted, {errors} errors")
         else:
             print(f"  No listings scraped for {source}")
+
+    # Match regular mode deactivation behavior: validate stale listings after upserts
+    validated_count = 0
+    if not skip_validation and limit is None:
+        validated_count, deactivated_count = validate_and_deactivate_listings(
+            run_start_time,
+            sources=sources_to_update
+        )
+        total_deactivated += deactivated_count
+    else:
+        skip_reason = "--limit flag" if limit is not None else "--skip-validation flag"
+        print(f"\n=== Skipping validation phase ({skip_reason}) ===")
     
     # Refresh materialized view after updates
     print("\n=== Refreshing Materialized View ===")
@@ -557,6 +572,8 @@ def run_update_mode(sources=None, limit=None):
     
     print(f"\n=== UPDATE MODE COMPLETE ===")
     print(f"Total updated: {total_updated}")
+    if not skip_validation:
+        print(f"Validation: {validated_count} checked, {total_deactivated} deactivated")
     print(f"Total deactivated: {total_deactivated}")
     print(f"Total errors: {total_errors}")
     
@@ -3683,7 +3700,7 @@ if __name__ == "__main__":
         validate_all_active_listings(sources=sources, max_workers=10)
     elif args.update:
         # Update mode: re-scrape and update existing active listings
-        run_update_mode(sources=sources, limit=args.limit)
+        run_update_mode(sources=sources, limit=args.limit, skip_validation=args.skip_validation)
     else:
         # Normal scrape mode
         # Default behavior: scrape from ALL sources if no source is specified
