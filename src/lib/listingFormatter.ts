@@ -71,16 +71,35 @@ export function formatArea(specs: ListingSpecs | null | undefined): string | nul
 /**
  * Get location tags array (max 3)
  * Priority: tags > location.municipio_detectado > location.departamento
+ *
+ * Updated: Less aggressive filtering - keeps 'El Salvador' as fallback
+ * instead of returning empty array
  */
 export function getLocationTags(listing: Pick<Listing, 'tags' | 'location'>): string[] {
-    // Tags to exclude from display (all listings are in El Salvador, so redundant)
-    const excludedTags = ['el salvador', 'no identificado'];
+    // Only exclude truly invalid/unhelpful tags
+    const excludedTags = ['no identificado', 'unknown', '', 'n/a'];
 
     // Prefer the tags array if it exists
     if (listing.tags && listing.tags.length > 0) {
-        return listing.tags
-            .filter(t => !excludedTags.includes(t.toLowerCase()))
+        const validTags = listing.tags
+            .filter(t => {
+                const normalized = t.toLowerCase().trim();
+                // Exclude invalid tags
+                if (excludedTags.includes(normalized)) return false;
+                // If we have multiple tags, exclude generic 'el salvador'
+                // (prefer specific locations like 'San Salvador', 'Santa Tecla')
+                if (normalized === 'el salvador' && listing.tags!.length > 1) return false;
+                return true;
+            })
             .slice(0, 3); // Max 3 location tags
+
+        // Fallback: If we got nothing but had 'el salvador', use it
+        // (better than showing nothing)
+        if (validTags.length === 0 && listing.tags.some(t => t.toLowerCase().trim() === 'el salvador')) {
+            return ['El Salvador'];
+        }
+
+        if (validTags.length > 0) return validTags;
     }
 
     // Fallback to building from location object

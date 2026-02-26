@@ -14,6 +14,31 @@ export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
 
 /**
+ * Fetch logo image and convert to base64 for @vercel/og Edge Runtime
+ * @returns Base64 data URI or null if fetch fails
+ */
+async function getLogoData(): Promise<string | null> {
+    try {
+        const baseUrl = process.env.VERCEL_URL
+            ? `https://${process.env.VERCEL_URL}`
+            : process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+
+        const logoUrl = `${baseUrl}/sivarcasaslogo.webp`;
+
+        const response = await fetch(logoUrl);
+        if (!response.ok) return null;
+
+        const arrayBuffer = await response.arrayBuffer();
+        const base64 = Buffer.from(arrayBuffer).toString('base64');
+
+        return `data:image/webp;base64,${base64}`;
+    } catch (error) {
+        console.error('Error loading logo for OG image:', error);
+        return null;
+    }
+}
+
+/**
  * Fetch listing data from Supabase
  */
 async function getListing(id: string): Promise<Listing | null> {
@@ -37,7 +62,11 @@ async function getListing(id: string): Promise<Listing | null> {
 
         return data && data.length > 0 ? data[0] : null;
     } catch (error) {
-        console.error('Error fetching listing for OG image:', error);
+        console.error('Error fetching listing for OG image:', {
+            id,
+            error: error instanceof Error ? error.message : String(error),
+            url,
+        });
         return null;
     }
 }
@@ -45,6 +74,7 @@ async function getListing(id: string): Promise<Listing | null> {
 export default async function Image({ params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
     const listing = await getListing(id);
+    const logoData = await getLogoData();
 
     // Fallback if listing not found
     if (!listing) {
@@ -76,7 +106,8 @@ export default async function Image({ params }: { params: Promise<{ id: string }
     const location = formatLocation(listing);
     const specs = formatSpecsForDisplay(listing.specs);
 
-    return new ImageResponse(
+    try {
+        return new ImageResponse(
         (
             <div
                 style={{
@@ -138,7 +169,8 @@ export default async function Image({ params }: { params: Promise<{ id: string }
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            backgroundColor: 'rgba(59, 130, 246, 0.9)',
+                            backgroundColor: '#3b82f6',
+                            opacity: 0.9,
                             border: '3px solid #ffffff',
                             borderRadius: '12px',
                             padding: '16px 32px',
@@ -170,7 +202,8 @@ export default async function Image({ params }: { params: Promise<{ id: string }
                                     display: 'flex',
                                     alignItems: 'center',
                                     gap: '8px',
-                                    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                                    backgroundColor: '#ffffff',
+                                    opacity: 0.2,
                                     padding: '12px 20px',
                                     borderRadius: '8px',
                                     color: '#ffffff',
@@ -187,7 +220,8 @@ export default async function Image({ params }: { params: Promise<{ id: string }
                             <div
                                 style={{
                                     height: '2px',
-                                    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+                                    backgroundColor: '#ffffff',
+                                    opacity: 0.3,
                                 }}
                             />
                         )}
@@ -220,65 +254,90 @@ export default async function Image({ params }: { params: Promise<{ id: string }
                         </div>
                     </div>
 
-                    {/* Bottom Section - Logo with Waves */}
+                    {/* Bottom Section - Logo with Simplified Decoration */}
                     <div
                         style={{
                             display: 'flex',
                             flexDirection: 'column',
                             alignItems: 'center',
+                            justifyContent: 'flex-end',
                             position: 'relative',
+                            paddingTop: '20px',
                         }}
                     >
-                        {/* Decorative Waves */}
+                        {/* Simplified decorative element - Edge Runtime compatible */}
                         <div
                             style={{
                                 position: 'absolute',
                                 bottom: '0',
-                                width: '200%',
-                                height: '80px',
-                                background: 'rgba(255, 255, 255, 0.1)',
-                                borderRadius: '50%',
-                                transform: 'scaleX(2)',
-                            }}
-                        />
-                        <div
-                            style={{
-                                position: 'absolute',
-                                bottom: '20px',
-                                width: '180%',
+                                left: '50%',
+                                width: '300px',
                                 height: '60px',
-                                background: 'rgba(255, 255, 255, 0.15)',
+                                marginLeft: '-150px',
+                                background: 'linear-gradient(to bottom, #3b82f6, #60a5fa)',
                                 borderRadius: '50%',
-                                transform: 'scaleX(2)',
+                                opacity: 0.2,
                             }}
                         />
 
-                        {/* Logo Text (fallback since image fetch is complex in Edge) */}
-                        <div
-                            style={{
-                                position: 'relative',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'center',
-                                marginTop: '10px',
-                            }}
-                        >
+                        {/* Logo Image or Text Fallback */}
+                        {logoData ? (
+                            <img
+                                src={logoData}
+                                width={180}
+                                height={82}
+                                style={{
+                                    position: 'relative',
+                                    objectFit: 'contain',
+                                }}
+                                alt="SivarCasas Logo"
+                            />
+                        ) : (
                             <div
                                 style={{
-                                    fontSize: 36,
+                                    position: 'relative',
+                                    display: 'flex',
+                                    fontSize: 32,
                                     fontWeight: 900,
                                     color: '#ffffff',
                                     letterSpacing: '-0.02em',
-                                    fontStyle: 'italic',
                                 }}
                             >
                                 SIVAR<span style={{ color: '#38bdf8' }}>CASAS</span>
                             </div>
-                        </div>
+                        )}
                     </div>
                 </div>
             </div>
         ),
         { ...size }
     );
+    } catch (error) {
+        console.error('Error generating OG image:', {
+            id,
+            error: error instanceof Error ? error.message : String(error),
+        });
+
+        // Return simple fallback image on error
+        return new ImageResponse(
+            (
+                <div
+                    style={{
+                        height: '100%',
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: 'linear-gradient(135deg, #1e40af 0%, #3b82f6 50%, #60a5fa 100%)',
+                        color: '#ffffff',
+                        fontSize: 48,
+                        fontWeight: 700,
+                    }}
+                >
+                    SivarCasas
+                </div>
+            ),
+            { ...size }
+        );
+    }
 }
