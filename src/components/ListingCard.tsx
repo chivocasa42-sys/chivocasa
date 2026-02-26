@@ -1,60 +1,15 @@
 'use client';
 
-import { Listing, ListingSpecs, ListingLocation } from '@/types/listing';
+import { Listing } from '@/types/listing';
 import LazyImage from './LazyImage';
 import { useFavorites } from '@/hooks/useFavorites';
+import { formatPrice, getArea, getImageUrl, getLocationTags } from '@/lib/listingFormatter';
 
 interface ListingCardProps {
     listing: Listing;
     onClick?: () => void;
     isFeatured?: boolean;
     hideFavorite?: boolean;
-}
-
-function formatPrice(price: number): string {
-    if (!price) return 'N/A';
-    return '$' + price.toLocaleString('en-US');
-}
-
-function getArea(specs: ListingSpecs | undefined | null): number {
-    if (!specs) return 0;
-    if (specs.area_m2) {
-        const numValue = parseFloat(String(specs.area_m2));
-        if (numValue > 0) return numValue;
-    }
-    return 0;
-}
-
-function getImageUrl(images: string[] | null | undefined): string {
-    if (!images || images.length === 0) {
-        return '/placeholder.webp';
-    }
-    const firstImage = Array.isArray(images) ? images[0] : images;
-    return firstImage || '/placeholder.webp';
-}
-
-// Get location-based tags from the listing
-function getLocationTags(location: ListingLocation | undefined, tags?: string[] | null): string[] {
-    // Tags to exclude from display (all listings are in El Salvador, so redundant)
-    const excludedTags = ['el salvador', 'no identificado'];
-
-    // Prefer the tags array if it exists
-    if (tags && tags.length > 0) {
-        return tags
-            .filter(t => !excludedTags.includes(t.toLowerCase()))
-            .slice(0, 3); // Max 3 location tags
-    }
-
-    // Fallback to building from location object
-    const locationTags: string[] = [];
-    if (location && typeof location === 'object') {
-        if (location.municipio_detectado) locationTags.push(location.municipio_detectado);
-        if (location.departamento) locationTags.push(location.departamento);
-    } else if (typeof location === 'string') {
-        locationTags.push(location);
-    }
-
-    return locationTags.slice(0, 3);
 }
 
 // Get human-readable "time since" text in Spanish
@@ -82,7 +37,7 @@ function getTimeSinceText(dateStr: string | undefined | null): string | null {
 export default function ListingCard({ listing, onClick, isFeatured, hideFavorite }: ListingCardProps) {
     const specs = listing.specs || {};
     const area = getArea(specs);
-    const locationTags = getLocationTags(listing.location, listing.tags);
+    const locationTags = getLocationTags(listing);
     const timeSinceText = getTimeSinceText(listing.published_date);
     const { isFavorite, toggleFavorite } = useFavorites();
     const liked = isFavorite(listing.external_id);
@@ -134,10 +89,7 @@ export default function ListingCard({ listing, onClick, isFeatured, hideFavorite
                 {/* Price + Favorite */}
                 <div className="flex items-center justify-between mb-1">
                     <div className="text-2xl font-black text-[#272727] tracking-tight">
-                        {formatPrice(listing.price)}
-                        {listing.listing_type === 'rent' && (
-                            <span className="text-sm font-normal text-slate-500 ml-1">/mes</span>
-                        )}
+                        {formatPrice(listing.price, listing.listing_type)}
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
                         {/* Share Button */}

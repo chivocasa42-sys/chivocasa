@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Navbar from '@/components/Navbar';
 import { useFavorites } from '@/hooks/useFavorites';
+import { formatPrice, getArea, getLocationTags } from '@/lib/listingFormatter';
 
 interface FullListing {
     id: number;
@@ -26,40 +27,6 @@ interface FullListing {
     published_date: string;
     scraped_at: string;
     last_updated: string;
-}
-
-function formatPrice(price: number): string {
-    if (!price) return 'N/A';
-    return '$' + price.toLocaleString('en-US');
-}
-
-function getArea(specs: Record<string, string | number | undefined> | null | undefined): number {
-    if (!specs) return 0;
-    if (specs.area_m2) {
-        const numValue = parseFloat(String(specs.area_m2));
-        if (numValue > 0) return numValue;
-    }
-    const areaFields = ['Área construida (m²)', 'area', 'terreno', 'Área del terreno', 'm2', 'metros'];
-    for (const field of areaFields) {
-        const value = specs[field];
-        if (value) {
-            const numValue = parseFloat(String(value).replace(/[^\d.]/g, ''));
-            if (numValue > 0) return numValue;
-        }
-    }
-    return 0;
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function getLocationTags(listingTags: string[] | null | undefined, location: Record<string, any> | null): string[] {
-    const excludedTags = ['el salvador', 'no identificado'];
-    if (listingTags && listingTags.length > 0) {
-        return listingTags.filter((t: string) => !excludedTags.includes(t.toLowerCase()));
-    }
-    const tags: string[] = [];
-    if (location?.municipio_detectado) tags.push(location.municipio_detectado);
-    if (location?.departamento) tags.push(location.departamento);
-    return tags;
 }
 
 export default function InmueblePage() {
@@ -159,7 +126,7 @@ export default function InmueblePage() {
 
     const specs = listing.specs || {};
     const area = getArea(specs);
-    const tags = getLocationTags(listing.tags, listing.location);
+    const tags = getLocationTags(listing);
     const municipio = listing.location?.municipio_detectado;
     const hasMap = listing.location?.latitude && listing.location?.longitude;
 
@@ -267,10 +234,7 @@ export default function InmueblePage() {
                                 <div className="flex-1 min-w-0">
                                     {/* Price */}
                                     <div className="text-3xl md:text-4xl font-black text-[#272727] tracking-tight mb-3">
-                                        {formatPrice(listing.price)}
-                                        {listing.listing_type === 'rent' && (
-                                            <span className="text-sm font-normal text-slate-400 ml-1">/mes</span>
-                                        )}
+                                        {formatPrice(listing.price, listing.listing_type)}
                                     </div>
 
                                     {/* Specs */}
