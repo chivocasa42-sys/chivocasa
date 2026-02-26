@@ -2344,8 +2344,8 @@ def scrape_micasasv_listing(url, listing_type):
         
         # Look for table items with label/value pairs
         for item in soup.select(".block-type-table .table-block li, .details-list li"):
-            label_el = item.select_one(".item-label")
-            value_el = item.select_one(".item-value")
+            label_el = item.select_one(".item-label") or item.select_one(".item-attr")
+            value_el = item.select_one(".item-value") or item.select_one(".item-property")
             if label_el and value_el:
                 label = label_el.get_text(strip=True).lower()
                 value = value_el.get_text(strip=True)

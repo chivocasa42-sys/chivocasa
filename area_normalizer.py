@@ -210,6 +210,18 @@ def _normalize_key_text(text: str) -> str:
     return "".join(ch for ch in text if not unicodedata.combining(ch))
 
 
+def _repair_mojibake_utf8_latin1(text: str) -> str:
+    """Best-effort repair for UTF-8 text mis-decoded as latin-1 (e.g. 'mÂ²', 'TamaÃ±o')."""
+    if not text:
+        return text
+    if "Ã" in text or "Â" in text:
+        try:
+            return text.encode("latin-1").decode("utf-8")
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            return text
+    return text
+
+
 def normalize_area(text: str) -> Dict[str, Any]:
     """
     Normalize area text to square meters (m²).
@@ -238,7 +250,9 @@ def normalize_area(text: str) -> Dict[str, Any]:
     if not text or not text.strip():
         result['error'] = 'Empty input'
         return result
-    
+
+    text = _repair_mojibake_utf8_latin1(text)
+
     # Detect unit
     unit = detect_unit(text)
     result['unit_detected'] = unit
@@ -350,7 +364,8 @@ def normalize_listing_specs(specs: Dict[str, Any]) -> Dict[str, Any]:
     best_area_m2: Optional[float] = None
 
     has_preferred_area_label = any(
-        any(tok in key_norm for tok in ('constru', 'tamano', 'tomano', 'construida'))
+        any(tok in key_norm for tok in ('constru', 'tamano', 'tomano', 'construida')) and
+        not (('constru' in key_norm) and any(t in key_norm for t in ('ano', 'anio', 'year')))
         for key_norm in normalized_key_map.values()
     )
 
@@ -380,12 +395,18 @@ def normalize_listing_specs(specs: Dict[str, Any]) -> Dict[str, Any]:
             if not value:
                 continue
             key_norm = normalized_key_map.get(key, '')
+            is_construction_year = ('constru' in key_norm) and any(t in key_norm for t in ('ano', 'anio', 'year'))
+            if is_construction_year:
+                continue
             if not any(kw in key_norm for kw in area_keywords):
                 continue
 
             val_str = str(value)
             result = normalize_area(val_str)
-            is_preferred_size = any(tok in key_norm for tok in ('construc', 'constru', 'tamano', 'tomano'))
+            is_preferred_size = (
+                any(tok in key_norm for tok in ('construc', 'constru', 'tamano', 'tomano'))
+                and not is_construction_year
+            )
 
             if result['parse_success'] and result['value_m2']:
                 if best_area_m2 is None or is_preferred_size:
