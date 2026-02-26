@@ -389,9 +389,9 @@ def normalize_listing_specs(specs: Dict[str, Any]) -> Dict[str, Any]:
             if val_num is None:
                 continue
 
-            key_has_m2 = bool(re.search(r'm(?:2|²)|metros?', key_norm))
-            key_has_v2 = bool(re.search(r'v(?:2|²)|varas?', key_norm))
-            key_has_ft2 = bool(re.search(r'ft(?:2|²)|pies?|sqft', key_norm))
+            key_has_m2 = bool(re.search(r'm(?:2|2)|metros?', key_norm))
+            key_has_v2 = bool(re.search(r'v(?:2|2)|varas?', key_norm))
+            key_has_ft2 = bool(re.search(r'ft(?:2|2)|pies?|sqft', key_norm))
 
             if key_has_m2:
                 area_val = val_num
