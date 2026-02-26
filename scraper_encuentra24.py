@@ -2365,7 +2365,14 @@ def scrape_micasasv_listing(url, listing_type):
         def _normalize_spec_label(text):
             if not text:
                 return ""
-            text = unicodedata.normalize("NFKD", str(text).lower().strip())
+            text = str(text).strip()
+            # Repair common mojibake labels from MiCasaSV, e.g. "TamaÃ±o", "BaÃ±os".
+            if "Ã" in text or "Â" in text:
+                try:
+                    text = text.encode("latin-1").decode("utf-8")
+                except (UnicodeEncodeError, UnicodeDecodeError):
+                    pass
+            text = unicodedata.normalize("NFKD", text.lower())
             return "".join(ch for ch in text if not unicodedata.combining(ch))
 
         # Fallback pass for MiCasaSV "Detalles" rows rendered without .item-label/.item-value

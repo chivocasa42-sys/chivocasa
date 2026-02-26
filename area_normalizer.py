@@ -199,7 +199,14 @@ def _normalize_key_text(text: str) -> str:
     """Normalize labels for matching (lowercase + remove accents)."""
     if not text:
         return ""
-    text = unicodedata.normalize("NFKD", str(text).lower().strip())
+    text = str(text).strip()
+    # Repair common mojibake like "TamaÃ±o" / "BaÃ±os" from UTF-8 decoded as latin1.
+    if "Ã" in text or "Â" in text:
+        try:
+            text = text.encode("latin-1").decode("utf-8")
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            pass
+    text = unicodedata.normalize("NFKD", text.lower())
     return "".join(ch for ch in text if not unicodedata.combining(ch))
 
 
