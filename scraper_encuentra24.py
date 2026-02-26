@@ -2355,9 +2355,9 @@ def scrape_micasasv_listing(url, listing_type):
                     specs["bedrooms"] = value
                 elif "baño" in label:
                     specs["bathrooms"] = value
-                elif "parqueo" in label or "parking" in label or "estacionamiento" in label or "garaje" in label:
+                elif "parqueo" in label or "parking" in label or "estacionamiento" in label or "garaje" in label or "aparcamiento" in label:
                     specs["parking"] = value
-                elif "área" in label or "tamaño" in label or "terreno" in label or "construcción" in label:
+                elif "área" in label or "tamaño" in label or "tomaño" in label or "terreno" in label or "construcción" in label:
                     specs[label_el.get_text(strip=True)] = value
                 else:
                     details[label_el.get_text(strip=True)] = value
@@ -2391,7 +2391,7 @@ def scrape_micasasv_listing(url, listing_type):
                 specs.setdefault("bathrooms", value)
             elif any(tok in label_norm for tok in ["parqueo", "parking", "estacionamiento", "garaje", "aparcamiento"]):
                 specs.setdefault("parking", value)
-            elif any(tok in label_norm for tok in ["area", "tamano", "terreno", "construccion", "superficie", "lote"]):
+            elif any(tok in label_norm for tok in ["area", "tamano", "tomano", "terreno", "construccion", "superficie", "lote"]):
                 specs.setdefault(label_text, value)
             else:
                 details.setdefault(label_text, value)
@@ -2401,7 +2401,7 @@ def scrape_micasasv_listing(url, listing_type):
         # that conflicts with the detailed table "Tamaño"/"Construcción" value.
         # Keep the detailed table area when present.
         has_detailed_area_spec = any(
-            any(token in str(k).lower() for token in ["tama", "area", "constru", "superficie", "terreno", "lote"])
+            any(token in _normalize_spec_label(k) for token in ["tama", "toma", "area", "constru", "superficie", "terreno", "lote"])
             for k in specs.keys()
         )
         for li in soup.select(".listing-details-3 .details-list li"):

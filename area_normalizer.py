@@ -19,6 +19,7 @@ Usage:
 """
 
 import re
+import unicodedata
 from typing import Tuple, Optional, Dict, Any
 
 # ============== CONVERSION CONSTANTS ==============
@@ -194,6 +195,14 @@ def _parse_number(text: str) -> Optional[float]:
         return None
 
 
+def _normalize_key_text(text: str) -> str:
+    """Normalize labels for matching (lowercase + remove accents)."""
+    if not text:
+        return ""
+    text = unicodedata.normalize("NFKD", str(text).lower().strip())
+    return "".join(ch for ch in text if not unicodedata.combining(ch))
+
+
 def normalize_area(text: str) -> Dict[str, Any]:
     """
     Normalize area text to square meters (m²).
@@ -313,143 +322,123 @@ def extract_number(text: str) -> Optional[str]:
 def normalize_listing_specs(specs: Dict[str, Any]) -> Dict[str, Any]:
     """
     Normalize all listing specs (bedrooms, bathrooms, parking, area).
-    
-    Args:
-        specs: Raw specs dictionary
-        
-    Returns:
-        Standardized specs dictionary containing ONLY:
-        - bedrooms (str): Number of bedrooms
-        - bathrooms (str): Number of bathrooms
-        - parking (str): Number of parking spots
-        - area_m2 (str): Area in square meters (converted if needed)
+
+    Returns a compact standardized dict:
+    - bedrooms
+    - bathrooms
+    - parking
+    - area_m2
     """
     if not specs:
         return {}
-    
-    normalized = {}
-    
-    # 1. Normalize Area (m2)
-    # ----------------------
-    # Reuse logic from normalize_specs_area but cleaned up
-    area_keywords = [
-        'área', 'area', 'terreno', 'construcción', 'construida',
-        'tamaño', 'superficie', 'lote', 'm2', 'mt2', 'metros'
-    ]
-    
-    best_area_m2 = None
-    area_source = None
-    
-    # Check explicitly named 'area' or 'area_m2' first if they exist
-    potential_area_keys = ['area_m2', 'area', 'm2']
-    for k in specs:
-        if k.lower() in potential_area_keys and specs[k]:
-             # If it already looks like a number, just trust it but verify unit if present
-             val_str = str(specs[k])
-             result = normalize_area(val_str)
-             if result['parse_success']:
-                 best_area_m2 = result['value_m2']
-                 area_source = k
-                 break
-             else:
-                 # If parse failed (e.g. just a number without unit), assume m2 if likely
-                 val_num = _parse_number(val_str)
-                 if val_num:
-                     best_area_m2 = val_num
-                     area_source = k
-                     break
 
-    # If simple check failed, scan all fields
+    normalized: Dict[str, Any] = {}
+    normalized_key_map = {k: _normalize_key_text(k) for k in specs}
+
+    # 1) Normalize area (prefer construction/size labels over generic/land labels)
+    area_keywords = [
+        'area', 'terreno', 'construccion', 'construida',
+        'tamano', 'tomano', 'superficie', 'lote', 'm2', 'mt2', 'metros'
+    ]
+    best_area_m2: Optional[float] = None
+
+    has_preferred_area_label = any(
+        any(tok in key_norm for tok in ('constru', 'tamano', 'tomano', 'construida'))
+        for key_norm in normalized_key_map.values()
+    )
+
+    potential_area_keys = {'area_m2', 'area', 'm2'}
+    for k, raw_value in specs.items():
+        if not raw_value:
+            continue
+        key_norm = normalized_key_map.get(k, '')
+        if key_norm == 'area' and has_preferred_area_label:
+            continue
+        if key_norm not in potential_area_keys:
+            continue
+
+        val_str = str(raw_value)
+        result = normalize_area(val_str)
+        if result['parse_success'] and result['value_m2']:
+            best_area_m2 = result['value_m2']
+            break
+
+        val_num = _parse_number(val_str)
+        if val_num is not None:
+            best_area_m2 = val_num
+            break
+
     if best_area_m2 is None:
         for key, value in specs.items():
             if not value:
                 continue
-            key_lower = key.lower()
-            if any(kw in key_lower for kw in area_keywords):
-                val_str = str(value)
-                result = normalize_area(val_str)
-                if result['parse_success'] and result['value_m2']:
-                    # Prefer construction area over land area for "housing" stats
-                    is_construction = 'construc' in key_lower or 'constru' in key_lower
-                    if best_area_m2 is None or is_construction:
-                        best_area_m2 = result['value_m2']
-                        area_source = key
-                else:
-                    # If value has no unit, check if the KEY indicates the unit
-                    # e.g., "Área construida (m²)": "1" - the key tells us it's m²
-                    val_num = _parse_number(val_str)
-                    if val_num is not None:
-                        # Check if key indicates the unit
-                        key_has_m2 = bool(re.search(r'm[²2]|metros?', key_lower))
-                        key_has_v2 = bool(re.search(r'v[²2]|varas?', key_lower))
-                        key_has_ft2 = bool(re.search(r'ft[²2]|pies?|sqft', key_lower))
-                        
-                        if key_has_m2:
-                            area_val = val_num  # Already in m²
-                        elif key_has_v2:
-                            area_val = val_num * VARA2_TO_M2
-                        elif key_has_ft2:
-                            area_val = val_num * FT2_TO_M2
-                        else:
-                            # No unit in key, assume m² if it's an area keyword
-                            area_val = val_num
-                        
-                        is_construction = 'construc' in key_lower or 'constru' in key_lower
-                        if best_area_m2 is None or is_construction:
-                            best_area_m2 = round(area_val, 2)
-                            area_source = key
+            key_norm = normalized_key_map.get(key, '')
+            if not any(kw in key_norm for kw in area_keywords):
+                continue
 
-    
+            val_str = str(value)
+            result = normalize_area(val_str)
+            is_preferred_size = any(tok in key_norm for tok in ('construc', 'constru', 'tamano', 'tomano'))
+
+            if result['parse_success'] and result['value_m2']:
+                if best_area_m2 is None or is_preferred_size:
+                    best_area_m2 = result['value_m2']
+                continue
+
+            val_num = _parse_number(val_str)
+            if val_num is None:
+                continue
+
+            key_has_m2 = bool(re.search(r'm(?:2|�)|metros?', key_norm))
+            key_has_v2 = bool(re.search(r'v(?:2|�)|varas?', key_norm))
+            key_has_ft2 = bool(re.search(r'ft(?:2|�)|pies?|sqft', key_norm))
+
+            if key_has_m2:
+                area_val = val_num
+            elif key_has_v2:
+                area_val = val_num * VARA2_TO_M2
+            elif key_has_ft2:
+                area_val = val_num * FT2_TO_M2
+            else:
+                area_val = val_num
+
+            if best_area_m2 is None or is_preferred_size:
+                best_area_m2 = round(area_val, 2)
+
     if best_area_m2 is not None:
         normalized['area_m2'] = str(best_area_m2)
-        # Optional: include source if debugging is needed, but user seems to want clean output
-        # normalized['area_m2_source'] = area_source
 
-    # 2. Normalize Bedrooms
-    # ---------------------
+    # 2) Bedrooms
     bedroom_keys = ['bedrooms', 'habitaciones', 'recamaras', 'dormitorios', 'hab']
-    found_beds = None
-    for k in specs:
-        if any(bk in k.lower() for bk in bedroom_keys):
-            val = extract_number(str(specs[k]))
+    for k, raw_value in specs.items():
+        k_norm = normalized_key_map.get(k, '')
+        if any(bk in k_norm for bk in bedroom_keys):
+            val = extract_number(str(raw_value))
             if val:
-                found_beds = val
+                normalized['bedrooms'] = val
                 break
-    
-    if found_beds:
-        normalized['bedrooms'] = found_beds
-    
-    # 3. Normalize Bathrooms
-    # ----------------------
-    bathroom_keys = ['bathrooms', 'baños', 'banos', 'baths']
-    found_baths = None
-    for k in specs:
-        if any(bk in k.lower() for bk in bathroom_keys):
-            val = extract_number(str(specs[k]))
+
+    # 3) Bathrooms
+    bathroom_keys = ['bathrooms', 'banos', 'baths']
+    for k, raw_value in specs.items():
+        k_norm = normalized_key_map.get(k, '')
+        if any(bk in k_norm for bk in bathroom_keys):
+            val = extract_number(str(raw_value))
             if val:
-                found_baths = val
+                normalized['bathrooms'] = val
                 break
-                
-    if found_baths:
-        normalized['bathrooms'] = found_baths
-        
-    # 4. Normalize Parking
-    # --------------------
-    parking_keys = ['parking', 'estacionamientos', 'cocheras', 'garaje', 'parqueo']
-    found_parking = None
-    for k in specs:
-        if any(pk in k.lower() for pk in parking_keys):
-             val = extract_number(str(specs[k]))
-             if val:
-                 found_parking = val
-                 break
-    
-    if found_parking:
-        normalized['parking'] = found_parking
+
+    # 4) Parking
+    parking_keys = ['parking', 'estacionamientos', 'cocheras', 'garaje', 'parqueo', 'aparcamiento']
+    for k, raw_value in specs.items():
+        k_norm = normalized_key_map.get(k, '')
+        if any(pk in k_norm for pk in parking_keys):
+            val = extract_number(str(raw_value))
+            if val:
+                normalized['parking'] = val
+                break
 
     return normalized
-
-
 # ============== CONVENIENCE FUNCTIONS ==============
 
 def convert_vara2_to_m2(value: float) -> float:
