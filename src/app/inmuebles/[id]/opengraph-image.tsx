@@ -14,6 +14,25 @@ export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
 
 /**
+ * Convert ArrayBuffer to base64 string (Edge Runtime compatible)
+ * Using native browser APIs instead of Node.js Buffer
+ * @param buffer - ArrayBuffer from fetch response
+ * @returns Base64 encoded string
+ */
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+    const bytes = new Uint8Array(buffer);
+    const chunkSize = 0x8000; // 32KB chunks to avoid call stack size issues
+    const chunks: string[] = [];
+
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+        const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+        chunks.push(String.fromCharCode(...chunk));
+    }
+
+    return btoa(chunks.join(''));
+}
+
+/**
  * Fetch logo image and convert to base64 for @vercel/og Edge Runtime
  * @returns Base64 data URI or null if fetch fails
  */
@@ -26,14 +45,17 @@ async function getLogoData(): Promise<string | null> {
             : 'http://localhost:3000/sivarcasaslogo.webp';
 
         const response = await fetch(logoUrl);
-        if (!response.ok) return null;
+        if (!response.ok) {
+            console.error('[OG Image] Logo fetch failed:', response.status);
+            return null;
+        }
 
         const arrayBuffer = await response.arrayBuffer();
-        const base64 = Buffer.from(arrayBuffer).toString('base64');
+        const base64 = arrayBufferToBase64(arrayBuffer); // ✅ Edge-compatible
 
         return `data:image/webp;base64,${base64}`;
     } catch (error) {
-        console.error('Error loading logo for OG image:', error);
+        console.error('[OG Image] Error loading logo:', error);
         return null;
     }
 }
@@ -73,11 +95,18 @@ async function getListing(id: string): Promise<Listing | null> {
 
 export default async function Image({ params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
+
+    console.log('[OG Image] Generating for listing ID:', id);
+
     const listing = await getListing(id);
     const logoData = await getLogoData();
 
+    console.log('[OG Image] Listing found:', !!listing);
+    console.log('[OG Image] Logo loaded:', !!logoData);
+
     // Fallback if listing not found
     if (!listing) {
+        console.warn('[OG Image] No listing found for ID:', id);
         return new ImageResponse(
             (
                 <div
