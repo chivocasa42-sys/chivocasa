@@ -20,6 +20,7 @@ import time
 import os
 import hashlib
 import random
+import unicodedata
 from urllib.parse import unquote
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -2361,7 +2362,48 @@ def scrape_micasasv_listing(url, listing_type):
                 else:
                     details[label_el.get_text(strip=True)] = value
         
+        def _normalize_spec_label(text):
+            if not text:
+                return ""
+            text = unicodedata.normalize("NFKD", str(text).lower().strip())
+            return "".join(ch for ch in text if not unicodedata.combining(ch))
+
+        # Fallback pass for MiCasaSV "Detalles" rows rendered without .item-label/.item-value
+        # (e.g. "Tamaño 110 m²"), which otherwise causes the generic quick-spec area to win.
+        for item in soup.select(".details-list li"):
+            if item.select_one(".item-label") and item.select_one(".item-value"):
+                continue
+
+            parts = [s.strip() for s in item.stripped_strings if s and s.strip()]
+            if len(parts) < 2:
+                continue
+
+            label_text = parts[0]
+            value = parts[-1]
+            if not label_text or not value or label_text == value:
+                continue
+
+            label_norm = _normalize_spec_label(label_text)
+
+            if "habitacion" in label_norm or "recamara" in label_norm or "dormitorio" in label_norm:
+                specs.setdefault("bedrooms", value)
+            elif "bano" in label_norm or "bath" in label_norm:
+                specs.setdefault("bathrooms", value)
+            elif any(tok in label_norm for tok in ["parqueo", "parking", "estacionamiento", "garaje", "aparcamiento"]):
+                specs.setdefault("parking", value)
+            elif any(tok in label_norm for tok in ["area", "tamano", "terreno", "construccion", "superficie", "lote"]):
+                specs.setdefault(label_text, value)
+            else:
+                details.setdefault(label_text, value)
+
         # Also check for quick specs in card format
+        # MiCasaSV sometimes shows a generic icon "area" value (often lot area)
+        # that conflicts with the detailed table "Tamaño"/"Construcción" value.
+        # Keep the detailed table area when present.
+        has_detailed_area_spec = any(
+            any(token in str(k).lower() for token in ["tama", "area", "constru", "superficie", "terreno", "lote"])
+            for k in specs.keys()
+        )
         for li in soup.select(".listing-details-3 .details-list li"):
             icon = li.select_one("i")
             value_span = li.select_one("span")
@@ -2375,7 +2417,8 @@ def scrape_micasasv_listing(url, listing_type):
                 elif any("car" in c or "parking" in c or "garage" in c for c in icon_class):
                     specs["parking"] = value
                 elif any("box" in c or "area" in c for c in icon_class):
-                    specs["area"] = value
+                    if not has_detailed_area_spec and "area" not in specs:
+                        specs["area"] = value
         
         # Categories
         categories = []

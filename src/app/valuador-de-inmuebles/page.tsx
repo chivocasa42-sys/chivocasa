@@ -107,19 +107,7 @@ const ValuadorLocationMap = memo(function ValuadorLocationMap({
     onMapClick: (lat: number, lng: number) => void;
 }) {
     return (
-        <div className="mt-3 rounded-xl border border-slate-200 overflow-hidden bg-slate-50">
-            <div className="px-3 py-2 border-b border-slate-200 bg-white/70 flex items-center justify-between gap-3">
-                <p className="text-xs text-slate-500">
-                    Haga clic en el mapa para afinar la ubicacion exacta de la propiedad.
-                </p>
-                {isReverseGeocoding && (
-                    <div className="flex items-center gap-1.5 text-[11px] text-slate-500 whitespace-nowrap">
-                        <div className="w-3 h-3 border-2 border-slate-300 border-t-blue-500 rounded-full animate-spin"></div>
-                        Ubicando...
-                    </div>
-                )}
-            </div>
-
+        <div className="mt-3 rounded-xl border border-slate-200 overflow-hidden bg-white">
             <div className="h-56 md:h-64 relative" style={{ zIndex: 0 }}>
                 {mapReady ? (
                     <MapContainer
@@ -141,12 +129,15 @@ const ValuadorLocationMap = memo(function ValuadorLocationMap({
                         Cargando mapa...
                     </div>
                 )}
-            </div>
 
-            <div className="px-3 py-2 bg-white/80 border-t border-slate-200 text-xs text-slate-600">
-                {markerPosition
-                    ? `Punto seleccionado: ${markerPosition.lat.toFixed(5)}, ${markerPosition.lng.toFixed(5)}`
-                    : 'Seleccione una zona en el mapa o mediante la busqueda para continuar.'}
+                {isReverseGeocoding && (
+                    <div className="absolute top-2 right-2 z-[500] pointer-events-none">
+                        <div className="flex items-center gap-1.5 rounded-full bg-white/95 border border-slate-200 shadow-sm px-2.5 py-1 text-[11px] text-slate-600">
+                            <div className="w-3 h-3 border-2 border-slate-300 border-t-blue-500 rounded-full animate-spin"></div>
+                            Ubicando...
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -529,7 +520,7 @@ export default function ValuadorPage() {
             />
 
             {/* Header */}
-            <div className="container mx-auto px-4 max-w-5xl pt-8 pb-4">
+            <div className="container mx-auto px-4 max-w-7xl pt-8 pb-4">
                 <SectionHeader
                     title={['Valuador de', 'Inmuebles']}
                     subtitle="Estimá el valor de tu propiedad basado en datos reales del mercado salvadoreño"
@@ -541,8 +532,8 @@ export default function ValuadorPage() {
             </div>
 
             {/* Main content */}
-            <div className="container mx-auto px-4 max-w-5xl pb-16">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+            <div className="container mx-auto px-4 max-w-7xl pb-16">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.2fr)] gap-6 items-start">
                     {/* Left: Form */}
                     <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
                         <h2 className="text-base font-bold text-slate-800 mb-5 flex items-center gap-2">
@@ -765,14 +756,93 @@ export default function ValuadorPage() {
                                         </div>
                                     </div>
                                 </div>
+
+                                {/* Desktop comparables table (kept inside right column to use vertical space) */}
+                                {result.top_comps && result.top_comps.length > 0 && (
+                                    <div className="hidden md:block">
+                                        <h3 className="text-base font-bold text-slate-800 mb-3">
+                                            Propiedades comparables mas similares
+                                        </h3>
+                                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                                            <div className="valuador-table-scroll overflow-x-auto pb-1">
+                                                <table className="w-full text-sm">
+                                                    <thead>
+                                                        <tr className="bg-slate-50 border-b border-slate-200">
+                                                            <th className="text-right px-1.5 py-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Precio</th>
+                                                            <th className="text-right px-1.5 py-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Area</th>
+                                                            <th className="text-right px-1.5 py-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wide">$/m2</th>
+                                                            <th className="hidden 2xl:table-cell text-center px-1.5 py-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Specs</th>
+                                                            <th className="text-right px-1.5 py-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Dist.</th>
+                                                            <th className="text-right px-1.5 py-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Sim.</th>
+                                                            <th className="text-center px-1 py-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wide"></th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {result.top_comps.map((comp, idx) => (
+                                                            <tr key={idx} className={`border-b border-slate-100 last:border-0 hover:bg-slate-50/50 ${!comp.active ? 'opacity-60' : ''}`}>
+                                                                <td className="px-1.5 py-2.5 text-right font-bold text-slate-700 whitespace-nowrap">
+                                                                    <div>{formatCurrencyFull(comp.price)}</div>
+                                                                    <div className="2xl:hidden mt-0.5 text-[10px] font-medium text-slate-400">
+                                                                        {[
+                                                                            comp.bedrooms != null ? `${comp.bedrooms}h` : null,
+                                                                            comp.bathrooms != null ? `${comp.bathrooms}b` : null,
+                                                                            comp.parking != null ? `${comp.parking}p` : null,
+                                                                        ].filter(Boolean).join(' · ') || '-'}
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-1.5 py-2.5 text-right text-slate-600 whitespace-nowrap">
+                                                                    {comp.area_m2} m²
+                                                                </td>
+                                                                <td className="px-1.5 py-2.5 text-right text-slate-600 whitespace-nowrap">
+                                                                    ${comp.price_per_m2.toLocaleString()}
+                                                                </td>
+                                                                <td className="hidden 2xl:table-cell px-1.5 py-2.5 text-center text-[11px] text-slate-500 whitespace-nowrap">
+                                                                    {[
+                                                                        comp.bedrooms != null ? `${comp.bedrooms} hab` : null,
+                                                                        comp.bathrooms != null ? `${comp.bathrooms} ba` : null,
+                                                                        comp.parking != null ? `${comp.parking} parq` : null,
+                                                                    ].filter(Boolean).join(' · ') || '—'}
+                                                                </td>
+                                                                <td className="px-1.5 py-2.5 text-right text-slate-500 whitespace-nowrap">
+                                                                    {comp.distance_km}km
+                                                                </td>
+                                                                <td className="px-1.5 py-2.5 text-right">
+                                                                    <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${comp.similarity >= 70 ? 'bg-emerald-100 text-emerald-700' :
+                                                                        comp.similarity >= 40 ? 'bg-yellow-100 text-yellow-700' :
+                                                                            'bg-slate-100 text-slate-500'
+                                                                        }`}>
+                                                                        {comp.similarity}%
+                                                                    </span>
+                                                                </td>
+                                                                <td className="px-1 py-2.5 text-center">
+                                                                    {comp.active && comp.url ? (
+                                                                        <a
+                                                                            href={comp.url}
+                                                                            target="_blank"
+                                                                            rel="noopener noreferrer"
+                                                                            className="text-blue-500 hover:text-blue-700 text-[10px] font-medium whitespace-nowrap"
+                                                                        >
+                                                                            Ver →
+                                                                        </a>
+                                                                    ) : (
+                                                                        <span className="text-slate-300 text-xs">—</span>
+                                                                    )}
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                             </>
                         )}
                     </div>
-                </div>
 
                 {/* Top 5 Similar Listings Table — full width below */}
                 {result && result.top_comps && result.top_comps.length > 0 && (
-                    <div className="mt-8">
+                    <div className="mt-8 md:hidden">
                         <h3 className="text-base font-bold text-slate-800 mb-3">
                             Propiedades comparables más similares
                         </h3>
@@ -885,6 +955,7 @@ export default function ValuadorPage() {
                         </div>
                     </div>
                 )}
+                </div>
             </div>
         </div>
     );

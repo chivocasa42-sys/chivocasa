@@ -1899,3 +1899,30 @@ body {
     animation: none !important;
   }
 }
+
+/* Valuador comparables table horizontal scrollbar */
+.valuador-table-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 #e2e8f0;
+  scrollbar-gutter: stable;
+}
+
+.valuador-table-scroll::-webkit-scrollbar {
+  height: 10px;
+}
+
+.valuador-table-scroll::-webkit-scrollbar-track {
+  background: #e2e8f0;
+  border-radius: 999px;
+  margin: 0 10px 6px;
+}
+
+.valuador-table-scroll::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 999px;
+  border: 2px solid #e2e8f0;
+}
+
+.valuador-table-scroll::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
