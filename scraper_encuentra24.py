@@ -10,6 +10,7 @@ Usage:
   python scraper_encuentra24.py --Realtor --limit 50        # Scrape 50 from Realtor.com only
   python scraper_encuentra24.py --VivoLatam --limit 20      # Scrape 20 from Vivo Latam only
   python scraper_encuentra24.py --Encuentra24 --MiCasaSV    # Scrape from specific sources
+  python scraper_encuentra24.py --update-actives            # Validate active/inactive status only
 """
 import argparse
 import requests
@@ -583,7 +584,7 @@ def run_update_mode(sources=None, limit=None, skip_validation=False):
 
 # ============== LISTING VALIDATION FUNCTIONS ==============
 
-def get_stale_active_listings(run_start_time, source=None):
+def get_stale_active_listings(run_start_time, source=None, page_size=1000):
     """
     Fetch active listings that were NOT updated in the current run.
     These are candidates for validation (might be sold/removed).
@@ -591,6 +592,7 @@ def get_stale_active_listings(run_start_time, source=None):
     Args:
         run_start_time: ISO timestamp of when the scrape run started
         source: Optional source filter (e.g., "Encuentra24", "MiCasaSV")
+        page_size: Number of records per page when paginating Supabase results
     
     Returns:
         List of dicts with {external_id, url, source}
@@ -601,27 +603,48 @@ def get_stale_active_listings(run_start_time, source=None):
         "Content-Type": "application/json"
     }
     
-    # Query: active=true AND last_updated < run_start_time
+    # Query all pages: active=true AND last_updated < run_start_time
+    # Supabase may cap single responses (commonly at ~1000 rows), so paginate.
     url = f"{SUPABASE_URL}/rest/v1/{TABLE_NAME}"
-    params = {
-        "select": "external_id,url,source",
-        "active": "eq.true",
-        "last_updated": f"lt.{run_start_time}"
-    }
+    all_listings = []
+    offset = 0
     
-    if source:
-        params["source"] = f"eq.{source}"
+    while True:
+        params = {
+            "select": "external_id,url,source",
+            "active": "eq.true",
+            "last_updated": f"lt.{run_start_time}",
+            "order": "external_id",
+            "limit": page_size,
+            "offset": offset
+        }
+        
+        if source:
+            params["source"] = f"eq.{source}"
+        
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=60)
+            if resp.status_code != 200:
+                print(f"  Error fetching stale listings (offset {offset}): {resp.status_code} - {resp.text[:200]}")
+                break
+            
+            batch = resp.json()
+            if not batch:
+                break
+            
+            all_listings.extend(batch)
+            print(f"  Fetched {len(all_listings)} stale active listings so far...")
+            
+            # Last page reached
+            if len(batch) < page_size:
+                break
+            
+            offset += page_size
+        except Exception as e:
+            print(f"  Exception fetching stale listings at offset {offset}: {e}")
+            break
     
-    try:
-        resp = requests.get(url, headers=headers, params=params, timeout=60)
-        if resp.status_code == 200:
-            return resp.json()
-        else:
-            print(f"  Error fetching stale listings: {resp.status_code} - {resp.text[:200]}")
-            return []
-    except Exception as e:
-        print(f"  Exception fetching stale listings: {e}")
-        return []
+    return all_listings
 
 
 def check_listing_still_active(url, source):
@@ -3733,6 +3756,12 @@ if __name__ == "__main__":
         action="store_true",
         help="Validate-all mode: check ALL active listings in DB to see if they are still live (lightweight HTTP check, no full re-scrape)"
     )
+    parser.add_argument(
+        "--update-actives", "--update_actives",
+        dest="update_actives",
+        action="store_true",
+        help="Update-actives mode: only check current active listings and deactivate those that are no longer live (no scraping)"
+    )
     args = parser.parse_args()
     
     # Get source flags
@@ -3756,8 +3785,8 @@ if __name__ == "__main__":
     if not sources:
         sources = None  # run_update_mode will use all sources
     
-    # Check for validate-all mode first (lightweight)
-    if args.validate_all:
+    # Check for active-status-only modes first (lightweight)
+    if args.validate_all or args.update_actives:
         validate_all_active_listings(sources=sources, max_workers=10)
     elif args.update:
         # Update mode: re-scrape and update existing active listings
