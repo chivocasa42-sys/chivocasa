@@ -273,10 +273,10 @@ def get_active_listings_from_db(source=None, limit=None):
         if batch is None:
             # All retries failed for this batch
             consecutive_failures += 1
-            print(f"  ⚠️ Failed to fetch batch at offset {offset} after {max_retries} attempts, skipping...")
+            print(f"  [WARN] Failed to fetch batch at offset {offset} after {max_retries} attempts, skipping...")
             
             if consecutive_failures >= max_consecutive_failures:
-                print(f"  ❌ Too many consecutive failures ({consecutive_failures}), stopping pagination")
+                print(f"  [ERROR] Too many consecutive failures ({consecutive_failures}), stopping pagination")
                 break
             
             # Continue to next batch
@@ -495,12 +495,12 @@ def run_update_mode(sources=None, limit=None, skip_validation=False):
                 missing_ids = db_external_ids - scraped_external_ids
                 
                 if missing_ids:
-                    print(f"  ⚠️ {len(missing_ids)} Realtor listings no longer on site, deactivating...")
+                    print(f"  [WARN] {len(missing_ids)} Realtor listings no longer on site, deactivating...")
                     deactivated = deactivate_listings([int(eid) for eid in missing_ids])
                     total_deactivated += deactivated
                     print(f"  Deactivated {deactivated} Realtor listings")
             elif False:
-                print(f"  ⚠️ Scrape returned too few results ({len(scraped_listings)}/{len(active_listings)}), skipping deactivation to prevent data loss")
+                print(f"  [WARN] Scrape returned too few results ({len(scraped_listings)}/{len(active_listings)}), skipping deactivation to prevent data loss")
             
         elif source == "VivoLatam":
             all_urls = [u[0] for u in sale_urls + rent_urls]
@@ -523,14 +523,14 @@ def run_update_mode(sources=None, limit=None, skip_validation=False):
         
         # Disabled: per-source deactivation is handled by the shared validation phase below.
         if False and failed_urls:
-            print(f"  ⚠️ {len(failed_urls)} listings failed to scrape, verifying if truly inactive...")
+            print(f"  [WARN] {len(failed_urls)} listings failed to scrape, verifying if truly inactive...")
             # Verify each failed URL to confirm it's actually 404/sold (not just rate limited)
             confirmed_inactive_ids = []
             for url in failed_urls:
                 is_active, reason = check_listing_still_active(url, source)
                 if not is_active:
                     confirmed_inactive_ids.append(url_to_id[url])
-                    print(f"    ✗ Confirmed inactive: {url[:60]}... ({reason})")
+                    print(f"    X Confirmed inactive: {url[:60]}... ({reason})")
                 else:
                     print(f"    ? Skipping (may be transient): {url[:60]}... ({reason})")
             
@@ -820,7 +820,7 @@ def validate_and_deactivate_listings(run_start_time, sources=None, max_workers=5
                         'external_id': listing['external_id'],
                         'reason': reason
                     })
-                    print(f"    ✗ INACTIVE: {listing['url'][:60]}... ({reason})")
+                    print(f"    X INACTIVE: {listing['url'][:60]}... ({reason})")
                 elif listing.get("source") == "PropiLatam":
                     resolved_url = status.get("resolved_url")
                     resolved_type = status.get("resolved_listing_type")
@@ -917,7 +917,7 @@ def validate_all_active_listings(sources=None, max_workers=10):
                     reason = status.get("reason", "Active")
                     if not is_active:
                         to_deactivate.append(listing['external_id'])
-                        print(f"    ✗ INACTIVE: {listing['url'][:70]}... ({reason})")
+                        print(f"    X INACTIVE: {listing['url'][:70]}... ({reason})")
                     elif source == "PropiLatam":
                         resolved_url = status.get("resolved_url")
                         resolved_type = status.get("resolved_listing_type")
@@ -3427,6 +3427,25 @@ def dedupe_propilatam_urls_by_id(urls):
     return [selected_by_id[k] for k in ordered_ids], sale_replacements
 
 
+def get_propilatam_visibility_flag(raw_html):
+    """
+    Extract Propi visibility flag from embedded payload.
+
+    Returns:
+        True / False when flag is present, otherwise None.
+    """
+    if not raw_html:
+        return None
+
+    # Matches both escaped and unescaped forms:
+    # "isPropertyVisible":false
+    # \"isPropertyVisible\":false
+    m = re.search(r'\\\\?"isPropertyVisible\\\\?"\s*:\s*(true|false)', raw_html, re.IGNORECASE)
+    if not m:
+        return None
+    return m.group(1).lower() == "true"
+
+
 def get_propilatam_listing_status(url, headers):
     """
     Validate Propi listing activity across sale/rent variants for the same ID.
@@ -3496,6 +3515,12 @@ def get_propilatam_listing_status(url, headers):
             }
 
         raw_html = resp.text
+
+        visibility_flag = get_propilatam_visibility_flag(raw_html)
+        if visibility_flag is False:
+            last_unavailable_reason = "isPropertyVisible=false (listing unavailable)"
+            continue
+
         soup = BeautifulSoup(raw_html, "html.parser")
         for tag in soup(["script", "style", "template"]):
             tag.decompose()
@@ -3724,6 +3749,11 @@ def scrape_propilatam_listing(url, listing_type="sale"):
                 continue
 
             candidate_html = resp.text
+
+            visibility_flag = get_propilatam_visibility_flag(candidate_html)
+            if visibility_flag is False:
+                continue
+
             candidate_soup = BeautifulSoup(candidate_html, "html.parser")
             candidate_text_lower = candidate_soup.get_text(" ", strip=True).lower()
             title_el = candidate_soup.find("h1")
