@@ -694,6 +694,9 @@ def check_listing_still_active(url, source):
     }
     
     try:
+        if source == "PropiLatam":
+            return check_propilatam_listing_still_active(url, headers)
+
         # Use GET to check the full page (some sites don't support HEAD properly)
         resp = requests.get(url, headers=headers, timeout=20, allow_redirects=True)
         
@@ -734,36 +737,6 @@ def check_listing_still_active(url, source):
         h1_el = soup.select_one("h1")
         h1_text = h1_el.get_text(" ", strip=True).lower() if h1_el else ""
 
-        # PropiLatam-specific heuristic:
-        # Some inactive URLs can return HTTP 200 with a thin shell/no property content.
-        # If there's no H1 and no embedded listing payload, treat as inactive.
-        if source == "PropiLatam":
-            # Business rule: if both rent and sale routes exist for the same ID,
-            # we prefer sale but keep the listing active (single-record model).
-            if "/sv/alquiler/" in url.lower():
-                preferred_sale = resolve_propilatam_preferred_url(url)
-                if preferred_sale != url and "/sv/venta/" in preferred_sale.lower():
-                    return True, "Active (rent route superseded by canonical sale route)"
-
-            challenge_signals = [
-                "just a moment",
-                "cloudflare",
-                "captcha",
-                "access denied",
-                "temporarily unavailable",
-            ]
-            if any(sig in page_text or sig in title_text for sig in challenge_signals):
-                return True, "Challenge/blocked page (assumed active)"
-
-            if "no se encuentra disponible" in page_text:
-                return False, "Page says listing is unavailable"
-
-            has_embedded_code = bool(re.search(r'\\\\?"code\\\\?"\s*:\s*\d+', raw_html))
-            has_embedded_name = bool(re.search(r'\\\\?"name\\\\?"\s*:\s*\\\\?"[^"]+', raw_html))
-
-            if not h1_text and not (has_embedded_code and has_embedded_name):
-                return False, "No title/content found (likely inactive)"
-        
         # Check for exact inactive phrases in visible content
         for phrase in INACTIVE_PHRASES:
             if phrase in page_text:
@@ -3321,33 +3294,75 @@ def dedupe_propilatam_urls_by_id(urls):
     return [selected_by_id[k] for k in ordered_ids], sale_replacements
 
 
-def resolve_propilatam_preferred_url(url):
+def check_propilatam_listing_still_active(url, headers):
     """
-    Prefer sale-route variant when a rent-route URL also has a live sale URL.
+    Validate Propi listing activity across sale/rent variants for the same ID.
 
-    This helps catch entries where sitemap exposes /alquiler/... but the /venta/...
-    variant exists and is the one we want to ingest for sale inventory.
+    Returns:
+        (is_active: bool, reason: str)
     """
-    if not url or "/sv/alquiler/" not in url:
-        return url
+    candidate_urls = build_propilatam_candidate_urls(url)
+    if not candidate_urls:
+        return False, "No Propi URL candidates"
 
-    sale_url = build_propilatam_sale_variant_url(url)
-    if not sale_url:
-        return url
+    challenge_signals = [
+        "just a moment",
+        "cloudflare",
+        "captcha",
+        "access denied",
+        "temporarily unavailable",
+    ]
 
-    try:
-        # Use stream=True so we only inspect headers/final URL and avoid downloading
-        # full HTML payloads during URL resolution.
-        resp = requests.get(sale_url, headers=HEADERS, timeout=8, allow_redirects=True, stream=True)
+    last_unavailable_reason = "No active Propi variant found"
+
+    for candidate_url in candidate_urls:
         try:
-            if resp.status_code == 200 and "/sv/venta/" in resp.url.lower():
-                return sale_url
-        finally:
-            resp.close()
-    except Exception:
-        pass
+            resp = requests.get(candidate_url, headers=headers, timeout=20, allow_redirects=True)
+        except requests.exceptions.Timeout:
+            return True, "Timeout (assumed active)"
+        except requests.exceptions.ConnectionError:
+            return True, "Connection error (assumed active)"
+        except Exception:
+            continue
 
-    return url
+        if resp.status_code == 403:
+            return True, "403 Forbidden (assumed active - bot blocked)"
+        if resp.status_code in (404, 410):
+            last_unavailable_reason = f"{resp.status_code} on variant"
+            continue
+        if resp.status_code >= 400:
+            return True, f"HTTP {resp.status_code} (assumed active)"
+
+        raw_html = resp.text
+        soup = BeautifulSoup(raw_html, "html.parser")
+        for tag in soup(["script", "style", "template"]):
+            tag.decompose()
+
+        page_text = soup.get_text(" ", strip=True).lower()
+        title_text = (soup.title.get_text(" ", strip=True).lower() if soup.title else "")
+        h1_el = soup.select_one("h1")
+        h1_text = h1_el.get_text(" ", strip=True).lower() if h1_el else ""
+
+        if any(sig in page_text or sig in title_text for sig in challenge_signals):
+            return True, "Challenge/blocked page (assumed active)"
+
+        if "no se encuentra disponible" in page_text:
+            last_unavailable_reason = "Page says listing is unavailable"
+            continue
+
+        has_embedded_code = bool(re.search(r'\\\\?"code\\\\?"\s*:\s*\d+', raw_html))
+        has_embedded_name = bool(re.search(r'\\\\?"name\\\\?"\s*:\s*\\\\?"[^"]+', raw_html))
+        if not h1_text and not (has_embedded_code and has_embedded_name):
+            last_unavailable_reason = "No title/content found (likely inactive)"
+            continue
+
+        if candidate_url != url:
+            target_type = "sale" if "/sv/venta/" in candidate_url.lower() else "rent"
+            return True, f"Active via {target_type} variant"
+
+        return True, "Active"
+
+    return False, last_unavailable_reason
 
 
 def get_propilatam_listing_urls(url_file=None, max_listings=None):
