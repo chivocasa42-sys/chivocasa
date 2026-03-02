@@ -511,8 +511,6 @@ def run_update_mode(sources=None, limit=None, skip_validation=False):
 
         elif source == "PropiLatam":
             all_urls = [u[0] for u in sale_urls + rent_urls]
-            # Prefer sale URL variant for dual-mode Propi listings.
-            all_urls = [resolve_propilatam_preferred_url(u) for u in all_urls]
             all_urls = list(dict.fromkeys(all_urls))  # de-duplicate while preserving order
             if all_urls:
                 print(f"  Re-scraping {len(all_urls)} listings...")
@@ -3247,6 +3245,82 @@ def build_propilatam_sale_variant_url(url):
         return None
 
 
+def build_propilatam_rent_variant_url(url):
+    """
+    Build a rent-route variant from a Propi sale URL.
+
+    Example:
+    /sv/venta/<property_type>/<municipio>/<slug>/<id>
+    -> /sv/alquiler/<municipio>/<slug>/<id>
+    """
+    try:
+        parsed = urlparse(url)
+        parts = [p for p in parsed.path.split("/") if p]
+        if len(parts) < 6 or parts[0] != "sv" or parts[1] != "venta":
+            return None
+
+        municipio = parts[-3]
+        slug = parts[-2]
+        listing_id = parts[-1]
+        if not listing_id.isdigit():
+            return None
+
+        return f"{PROPILATAM_BASE_URL}/sv/alquiler/{municipio}/{slug}/{listing_id}"
+    except Exception:
+        return None
+
+
+def build_propilatam_candidate_urls(url):
+    """Return preferred URL candidates for one Propi listing (sale first, rent fallback)."""
+    candidates = []
+
+    def add(candidate):
+        if candidate and candidate not in candidates:
+            candidates.append(candidate)
+
+    url_l = (url or "").lower()
+    if "/sv/alquiler/" in url_l:
+        add(build_propilatam_sale_variant_url(url))
+        add(url)
+    elif "/sv/venta/" in url_l:
+        add(url)
+        add(build_propilatam_rent_variant_url(url))
+    else:
+        add(url)
+
+    return candidates
+
+
+def dedupe_propilatam_urls_by_id(urls):
+    """
+    De-duplicate Propi URLs by numeric listing ID, preferring sale routes.
+
+    Returns:
+        (deduped_urls, sale_replacements)
+    """
+    selected_by_id = {}
+    ordered_ids = []
+    sale_replacements = 0
+
+    for url in urls:
+        id_match = re.search(r"/(\d+)/?$", url or "")
+        listing_key = id_match.group(1) if id_match else f"url::{url}"
+
+        existing = selected_by_id.get(listing_key)
+        if existing is None:
+            selected_by_id[listing_key] = url
+            ordered_ids.append(listing_key)
+            continue
+
+        existing_is_sale = "/sv/venta/" in existing.lower()
+        candidate_is_sale = "/sv/venta/" in (url or "").lower()
+        if candidate_is_sale and not existing_is_sale:
+            selected_by_id[listing_key] = url
+            sale_replacements += 1
+
+    return [selected_by_id[k] for k in ordered_ids], sale_replacements
+
+
 def resolve_propilatam_preferred_url(url):
     """
     Prefer sale-route variant when a rent-route URL also has a live sale URL.
@@ -3337,57 +3411,23 @@ def get_propilatam_listing_urls(url_file=None, max_listings=None):
             print(f"    Error fetching sitemap: {e}")
             return []
     
+    # De-duplicate exact URL repeats while preserving order.
+    all_urls = list(dict.fromkeys(all_urls))
+
+    # Keep one URL per listing ID (prefer sale route when both sale/rent exist).
+    before_id_dedupe = len(all_urls)
+    all_urls, sale_replacements = dedupe_propilatam_urls_by_id(all_urls)
+    removed_by_id = before_id_dedupe - len(all_urls)
+    if removed_by_id > 0:
+        print(
+            f"    De-duplicated Propi IDs: removed {removed_by_id} duplicates "
+            f"(sale-preferred replacements: {sale_replacements})"
+        )
+
     if max_listings and len(all_urls) > max_listings:
         print(f"  Limiting to {max_listings} listings")
         all_urls = all_urls[:max_listings]
 
-    # Prefer sale-route variants for URLs discovered as /alquiler/ when available.
-    # This runs for both sitemap and file inputs.
-    replaced_count = 0
-    resolved_by_original = {}
-    total_to_resolve = len(all_urls)
-    resolved_count = 0
-    started_at = time.time()
-    progress_every = 20 if total_to_resolve >= 200 else 10
-    print(f"    Resolving Propi URL variants: 0/{total_to_resolve} (workers=12)")
-    with ThreadPoolExecutor(max_workers=12) as executor:
-        future_to_original = {
-            executor.submit(resolve_propilatam_preferred_url, url): url
-            for url in all_urls
-        }
-        for future in as_completed(future_to_original):
-            original = future_to_original[future]
-            resolved_count += 1
-            try:
-                resolved = future.result() or original
-            except Exception:
-                resolved = original
-
-            if resolved != original:
-                replaced_count += 1
-            resolved_by_original[original] = resolved
-
-            if resolved_count % progress_every == 0 or resolved_count == total_to_resolve:
-                elapsed = time.time() - started_at
-                print(
-                    f"    Resolving Propi URL variants: {resolved_count}/{total_to_resolve} "
-                    f"(sale-preferred: {replaced_count}, elapsed: {elapsed:.1f}s)"
-                )
-
-    # De-duplicate while preserving original sitemap/file order.
-    deduped_urls = []
-    seen = set()
-    for original in all_urls:
-        resolved = resolved_by_original.get(original, original)
-        if resolved in seen:
-            continue
-        seen.add(resolved)
-        deduped_urls.append(resolved)
-    all_urls = deduped_urls
-
-    if replaced_count:
-        print(f"    Preferred sale-route variants for {replaced_count} listings")
-    
     return all_urls
 
 
@@ -3459,25 +3499,63 @@ def extract_propilatam_date_from_html(raw_html):
 def scrape_propilatam_listing(url, listing_type="sale"):
     """Scrape a single Propi Latam listing page."""
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=15)
-        if resp.status_code != 200:
-            print(f"  Failed to fetch {url}: HTTP {resp.status_code}")
+        original_url = url
+        candidate_urls = build_propilatam_candidate_urls(original_url)
+        if not candidate_urls:
+            print(f"  No Propi candidates for {original_url}")
             return None
-            
-        soup = BeautifulSoup(resp.text, "html.parser")
+
+        selected_url = None
+        selected_html = ""
+        selected_soup = None
+        title = ""
+
+        for candidate_url in candidate_urls:
+            try:
+                resp = requests.get(candidate_url, headers=HEADERS, timeout=15, allow_redirects=True)
+            except Exception:
+                continue
+
+            if resp.status_code != 200:
+                continue
+
+            candidate_html = resp.text
+            candidate_soup = BeautifulSoup(candidate_html, "html.parser")
+            candidate_text_lower = candidate_soup.get_text(" ", strip=True).lower()
+            title_el = candidate_soup.find("h1")
+            candidate_title = title_el.get_text(strip=True) if title_el else ""
+
+            if "no se encuentra disponible" in candidate_text_lower:
+                continue
+
+            if not candidate_title:
+                continue
+
+            selected_url = resp.url if resp.url else candidate_url
+            selected_html = candidate_html
+            selected_soup = candidate_soup
+            title = candidate_title
+            break
+
+        if not selected_url or not selected_soup:
+            listing_id_match = re.search(r"/(\d+)/?$", original_url or "")
+            listing_id = listing_id_match.group(1) if listing_id_match else "unknown-id"
+            print(f"  No active Propi variant found for ID {listing_id}: {original_url}")
+            return None
+
+        if selected_url != original_url:
+            listing_id_match = re.search(r"/(\d+)/?$", selected_url)
+            listing_id = listing_id_match.group(1) if listing_id_match else "unknown-id"
+            selected_kind = "sale" if "/sv/venta/" in selected_url.lower() else "rent"
+            print(f"  Variant selected for {listing_id}: {selected_kind}")
+
+        url = selected_url
+        soup = selected_soup
         page_text = soup.get_text()
-        
-        # Title from h1
-        title_el = soup.find("h1")
-        title = title_el.get_text(strip=True) if title_el else ""
-        
-        if not title:
-            print(f"  No title found for {url}")
-            return None
-        
+        raw_html = selected_html
+
         # Price extraction - prefer structured values from embedded JSON when available.
         price = None
-        raw_html = resp.text
         
         # Try multiple patterns for embedded JSON data
         # NOTE: PropiLatam/VivoLatam HTML often uses escaped quotes like \".
@@ -3825,8 +3903,12 @@ def scrape_propilatam_listings_concurrent(urls, listing_type="auto", max_workers
     """
     results = []
     old_listing_count = 0
+    total_urls = len(urls)
+    completed_count = 0
+    started_at = time.time()
+    progress_every = 25 if total_urls >= 250 else 10
     
-    print(f"  Scraping {len(urls)} Propi Latam listings with {max_workers} workers...")
+    print(f"  Scraping {total_urls} Propi Latam listings with {max_workers} workers...")
     
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_url = {}
@@ -3838,6 +3920,7 @@ def scrape_propilatam_listings_concurrent(urls, listing_type="auto", max_workers
             future_to_url[future] = url
         for future in as_completed(future_to_url):
             url = future_to_url[future]
+            completed_count += 1
             try:
                 result = future.result()
                 if result:
@@ -3851,6 +3934,13 @@ def scrape_propilatam_listings_concurrent(urls, listing_type="auto", max_workers
                     results.append(result)
             except Exception as e:
                 print(f"  Error processing {url}: {e}")
+            finally:
+                if completed_count % progress_every == 0 or completed_count == total_urls:
+                    elapsed = time.time() - started_at
+                    print(
+                        f"    Propi scrape progress: {completed_count}/{total_urls} "
+                        f"(ok: {len(results)}, old-skipped: {old_listing_count}, elapsed: {elapsed:.1f}s)"
+                    )
     
     return results, old_listing_count
 
