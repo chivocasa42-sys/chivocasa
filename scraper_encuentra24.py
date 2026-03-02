@@ -511,6 +511,9 @@ def run_update_mode(sources=None, limit=None, skip_validation=False):
 
         elif source == "PropiLatam":
             all_urls = [u[0] for u in sale_urls + rent_urls]
+            # Prefer sale URL variant for dual-mode Propi listings.
+            all_urls = [resolve_propilatam_preferred_url(u) for u in all_urls]
+            all_urls = list(dict.fromkeys(all_urls))  # de-duplicate while preserving order
             if all_urls:
                 print(f"  Re-scraping {len(all_urls)} listings...")
                 scraped, _ = scrape_propilatam_listings_concurrent(all_urls, "auto", max_workers=5)
@@ -732,6 +735,36 @@ def check_listing_still_active(url, source):
         title_text = (soup.title.get_text(" ", strip=True).lower() if soup.title else "")
         h1_el = soup.select_one("h1")
         h1_text = h1_el.get_text(" ", strip=True).lower() if h1_el else ""
+
+        # PropiLatam-specific heuristic:
+        # Some inactive URLs can return HTTP 200 with a thin shell/no property content.
+        # If there's no H1 and no embedded listing payload, treat as inactive.
+        if source == "PropiLatam":
+            # Business rule: if both rent and sale routes exist for the same ID,
+            # we prefer sale but keep the listing active (single-record model).
+            if "/sv/alquiler/" in url.lower():
+                preferred_sale = resolve_propilatam_preferred_url(url)
+                if preferred_sale != url and "/sv/venta/" in preferred_sale.lower():
+                    return True, "Active (rent route superseded by canonical sale route)"
+
+            challenge_signals = [
+                "just a moment",
+                "cloudflare",
+                "captcha",
+                "access denied",
+                "temporarily unavailable",
+            ]
+            if any(sig in page_text or sig in title_text for sig in challenge_signals):
+                return True, "Challenge/blocked page (assumed active)"
+
+            if "no se encuentra disponible" in page_text:
+                return False, "Page says listing is unavailable"
+
+            has_embedded_code = bool(re.search(r'\\\\?"code\\\\?"\s*:\s*\d+', raw_html))
+            has_embedded_name = bool(re.search(r'\\\\?"name\\\\?"\s*:\s*\\\\?"[^"]+', raw_html))
+
+            if not h1_text and not (has_embedded_code and has_embedded_name):
+                return False, "No title/content found (likely inactive)"
         
         # Check for exact inactive phrases in visible content
         for phrase in INACTIVE_PHRASES:
@@ -3165,6 +3198,84 @@ def main_encuentra24(limit=None, max_days=None):
 
 # ============== PROPILATAM FUNCTIONS ==============
 
+def infer_propilatam_property_type(slug):
+    """Infer Propi property type segment for /sv/venta/<property_type>/... routes."""
+    if not slug:
+        return "casa"
+
+    slug_l = slug.lower()
+    token = slug_l.split("-en-")[0].split("-")[0]
+    allowed = {"casa", "apartamento", "terreno", "local", "oficina", "bodega", "finca"}
+    if token in allowed:
+        return token
+
+    if "apart" in token:
+        return "apartamento"
+    if "terreno" in slug_l or "lote" in slug_l:
+        return "terreno"
+    if "oficina" in slug_l:
+        return "oficina"
+    if "local" in slug_l:
+        return "local"
+
+    return "casa"
+
+
+def build_propilatam_sale_variant_url(url):
+    """
+    Build a sale-route variant from a Propi rent URL.
+
+    Example:
+    /sv/alquiler/<municipio>/<slug>/<id>
+    -> /sv/venta/<property_type>/<municipio>/<slug>/<id>
+    """
+    try:
+        parsed = urlparse(url)
+        parts = [p for p in parsed.path.split("/") if p]
+        if len(parts) < 5 or parts[0] != "sv" or parts[1] != "alquiler":
+            return None
+
+        municipio = parts[2]
+        slug = parts[3]
+        listing_id = parts[4]
+        if not listing_id.isdigit():
+            return None
+
+        property_type = infer_propilatam_property_type(slug)
+        return f"{PROPILATAM_BASE_URL}/sv/venta/{property_type}/{municipio}/{slug}/{listing_id}"
+    except Exception:
+        return None
+
+
+def resolve_propilatam_preferred_url(url):
+    """
+    Prefer sale-route variant when a rent-route URL also has a live sale URL.
+
+    This helps catch entries where sitemap exposes /alquiler/... but the /venta/...
+    variant exists and is the one we want to ingest for sale inventory.
+    """
+    if not url or "/sv/alquiler/" not in url:
+        return url
+
+    sale_url = build_propilatam_sale_variant_url(url)
+    if not sale_url:
+        return url
+
+    try:
+        # Use stream=True so we only inspect headers/final URL and avoid downloading
+        # full HTML payloads during URL resolution.
+        resp = requests.get(sale_url, headers=HEADERS, timeout=8, allow_redirects=True, stream=True)
+        try:
+            if resp.status_code == 200 and "/sv/venta/" in resp.url.lower():
+                return sale_url
+        finally:
+            resp.close()
+    except Exception:
+        pass
+
+    return url
+
+
 def get_propilatam_listing_urls(url_file=None, max_listings=None):
     """
     Collect listing URLs from Propi Latam sitemap.
@@ -3180,9 +3291,10 @@ def get_propilatam_listing_urls(url_file=None, max_listings=None):
         List of property page URLs
     """
     all_urls = []
+    from_file = bool(url_file and os.path.exists(url_file))
     
     # If URL file is provided, use it
-    if url_file and os.path.exists(url_file):
+    if from_file:
         print(f"  Reading Propi Latam URLs from file: {url_file}")
         with open(url_file, 'r', encoding='utf-8') as f:
             for line in f:
@@ -3227,7 +3339,54 @@ def get_propilatam_listing_urls(url_file=None, max_listings=None):
     
     if max_listings and len(all_urls) > max_listings:
         print(f"  Limiting to {max_listings} listings")
-        return all_urls[:max_listings]
+        all_urls = all_urls[:max_listings]
+
+    # Prefer sale-route variants for URLs discovered as /alquiler/ when available.
+    # This runs for both sitemap and file inputs.
+    replaced_count = 0
+    resolved_by_original = {}
+    total_to_resolve = len(all_urls)
+    resolved_count = 0
+    started_at = time.time()
+    progress_every = 20 if total_to_resolve >= 200 else 10
+    print(f"    Resolving Propi URL variants: 0/{total_to_resolve} (workers=12)")
+    with ThreadPoolExecutor(max_workers=12) as executor:
+        future_to_original = {
+            executor.submit(resolve_propilatam_preferred_url, url): url
+            for url in all_urls
+        }
+        for future in as_completed(future_to_original):
+            original = future_to_original[future]
+            resolved_count += 1
+            try:
+                resolved = future.result() or original
+            except Exception:
+                resolved = original
+
+            if resolved != original:
+                replaced_count += 1
+            resolved_by_original[original] = resolved
+
+            if resolved_count % progress_every == 0 or resolved_count == total_to_resolve:
+                elapsed = time.time() - started_at
+                print(
+                    f"    Resolving Propi URL variants: {resolved_count}/{total_to_resolve} "
+                    f"(sale-preferred: {replaced_count}, elapsed: {elapsed:.1f}s)"
+                )
+
+    # De-duplicate while preserving original sitemap/file order.
+    deduped_urls = []
+    seen = set()
+    for original in all_urls:
+        resolved = resolved_by_original.get(original, original)
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        deduped_urls.append(resolved)
+    all_urls = deduped_urls
+
+    if replaced_count:
+        print(f"    Preferred sale-route variants for {replaced_count} listings")
     
     return all_urls
 
