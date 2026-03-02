@@ -620,7 +620,7 @@ def get_stale_active_listings(run_start_time, source=None, page_size=1000):
     
     while True:
         params = {
-            "select": "external_id,url,source",
+            "select": "external_id,url,source,listing_type",
             "active": "eq.true",
             "last_updated": f"lt.{run_start_time}",
             "order": "external_id",
@@ -799,34 +799,53 @@ def validate_and_deactivate_listings(run_start_time, sources=None, max_workers=5
     
     # Validate listings concurrently
     to_deactivate = []
+    route_updates = []
     validated = 0
     
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_listing = {
-            executor.submit(check_listing_still_active, l['url'], l['source']): l 
+            executor.submit(check_listing_status_for_record, l): l
             for l in stale_listings
         }
         
         for future in as_completed(future_to_listing):
             listing = future_to_listing[future]
             validated += 1
-            
             try:
-                is_active, reason = future.result()
+                status = future.result()
+                is_active = status.get("is_active", True)
+                reason = status.get("reason", "Active")
                 if not is_active:
                     to_deactivate.append({
                         'external_id': listing['external_id'],
                         'reason': reason
                     })
                     print(f"    ✗ INACTIVE: {listing['url'][:60]}... ({reason})")
+                elif listing.get("source") == "PropiLatam":
+                    resolved_url = status.get("resolved_url")
+                    resolved_type = status.get("resolved_listing_type")
+                    if resolved_url and resolved_url != listing.get("url"):
+                        route_updates.append({
+                            "external_id": listing["external_id"],
+                            "url": resolved_url,
+                            "listing_type": resolved_type
+                        })
             except Exception as e:
                 print(f"    ? ERROR checking: {listing['url'][:60]}... ({e})")
             
             # Progress update every 50 listings
             if validated % 50 == 0:
-                print(f"    Validated {validated}/{len(stale_listings)} ({len(to_deactivate)} inactive)")
+                print(
+                    f"    Validated {validated}/{len(stale_listings)} "
+                    f"({len(to_deactivate)} inactive, {len(route_updates)} route-updates)"
+                )
     
     print(f"  Validation complete: {validated} checked, {len(to_deactivate)} to deactivate")
+    
+    if route_updates:
+        print(f"  Applying {len(route_updates)} Propi URL/type updates...")
+        route_ok, route_err = update_listing_routes(route_updates)
+        print(f"  Applied {route_ok} route updates ({route_err} errors)")
     
     # Deactivate listings in database
     if to_deactivate:
@@ -880,31 +899,53 @@ def validate_all_active_listings(sources=None, max_workers=10):
         
         # Validate listings concurrently
         to_deactivate = []
+        route_updates = []
         validated = 0
         
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_listing = {
-                executor.submit(check_listing_still_active, l['url'], source): l
+                executor.submit(check_listing_status_for_record, l): l
                 for l in active_listings
             }
             
             for future in as_completed(future_to_listing):
                 listing = future_to_listing[future]
                 validated += 1
-                
                 try:
-                    is_active, reason = future.result()
+                    status = future.result()
+                    is_active = status.get("is_active", True)
+                    reason = status.get("reason", "Active")
                     if not is_active:
                         to_deactivate.append(listing['external_id'])
                         print(f"    ✗ INACTIVE: {listing['url'][:70]}... ({reason})")
+                    elif source == "PropiLatam":
+                        resolved_url = status.get("resolved_url")
+                        resolved_type = status.get("resolved_listing_type")
+                        if resolved_url and resolved_url != listing.get("url"):
+                            route_updates.append({
+                                "external_id": listing["external_id"],
+                                "url": resolved_url,
+                                "listing_type": resolved_type
+                            })
                 except Exception as e:
                     print(f"    ? ERROR: {listing['url'][:70]}... ({e})")
                 
                 # Progress update every 100 listings
                 if validated % 100 == 0:
-                    print(f"    Progress: {validated}/{len(active_listings)} checked ({len(to_deactivate)} inactive)")
+                    print(
+                        f"    Progress: {validated}/{len(active_listings)} checked "
+                        f"({len(to_deactivate)} inactive, {len(route_updates)} route-updates)"
+                    )
         
-        print(f"  {source}: {validated} checked, {len(to_deactivate)} inactive")
+        print(
+            f"  {source}: {validated} checked, {len(to_deactivate)} inactive, "
+            f"{len(route_updates)} route-updates"
+        )
+
+        if route_updates:
+            print(f"  Applying {len(route_updates)} Propi URL/type updates...")
+            route_ok, route_err = update_listing_routes(route_updates)
+            print(f"  Applied {route_ok} route updates ({route_err} errors)")
         
         # Deactivate confirmed inactive listings
         if to_deactivate:
@@ -989,6 +1030,98 @@ def deactivate_listings(external_ids):
             print(f"    Deactivate batch exception: {e}")
     
     return deactivated
+
+
+def update_listing_routes(route_updates):
+    """
+    Update listing URL/listing_type by external_id.
+
+    Args:
+        route_updates: list of dicts with keys:
+            - external_id
+            - url
+            - listing_type (optional)
+
+    Returns:
+        Tuple of (updated_count, error_count)
+    """
+    if not route_updates:
+        return 0, 0
+
+    headers = {
+        "apikey": SUPABASE_SERVICE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal"
+    }
+
+    deduped = {}
+    for item in route_updates:
+        ext_id = item.get("external_id")
+        new_url = item.get("url")
+        if ext_id is None or not new_url:
+            continue
+        deduped[str(ext_id)] = item
+
+    updated = 0
+    errors = 0
+    now_iso = datetime.now().isoformat()
+    total = len(deduped)
+
+    for idx, item in enumerate(deduped.values(), 1):
+        ext_id = item["external_id"]
+        patch_data = {
+            "url": item["url"],
+            "last_updated": now_iso
+        }
+        if item.get("listing_type"):
+            patch_data["listing_type"] = item["listing_type"]
+
+        patch_url = f"{SUPABASE_URL}/rest/v1/{TABLE_NAME}?external_id=eq.{ext_id}"
+        try:
+            resp = requests.patch(patch_url, headers=headers, json=patch_data, timeout=30)
+            if resp.status_code in (200, 204):
+                updated += 1
+            else:
+                errors += 1
+                print(f"    Route update error for {ext_id}: {resp.status_code} - {resp.text[:160]}")
+        except Exception as e:
+            errors += 1
+            print(f"    Route update exception for {ext_id}: {e}")
+
+        if idx % 50 == 0 or idx == total:
+            print(f"    Route updates: {idx}/{total} processed ({updated} ok, {errors} errors)")
+
+    return updated, errors
+
+
+def check_listing_status_for_record(listing):
+    """
+    Validate listing with optional normalized URL/type output.
+
+    Returns dict:
+      - is_active
+      - reason
+      - resolved_url
+      - resolved_listing_type
+    """
+    source = listing.get("source")
+    url = listing.get("url")
+
+    if source == "PropiLatam":
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        }
+        return get_propilatam_listing_status(url, headers)
+
+    is_active, reason = check_listing_still_active(url, source)
+    return {
+        "is_active": is_active,
+        "reason": reason,
+        "resolved_url": url,
+        "resolved_listing_type": listing.get("listing_type"),
+    }
 
 
 def parse_price(price_str):
@@ -3294,16 +3427,25 @@ def dedupe_propilatam_urls_by_id(urls):
     return [selected_by_id[k] for k in ordered_ids], sale_replacements
 
 
-def check_propilatam_listing_still_active(url, headers):
+def get_propilatam_listing_status(url, headers):
     """
     Validate Propi listing activity across sale/rent variants for the same ID.
 
     Returns:
-        (is_active: bool, reason: str)
+        dict with:
+            is_active (bool)
+            reason (str)
+            resolved_url (str)
+            resolved_listing_type ("sale"|"rent"|None)
     """
     candidate_urls = build_propilatam_candidate_urls(url)
     if not candidate_urls:
-        return False, "No Propi URL candidates"
+        return {
+            "is_active": False,
+            "reason": "No Propi URL candidates",
+            "resolved_url": url,
+            "resolved_listing_type": None,
+        }
 
     challenge_signals = [
         "just a moment",
@@ -3319,19 +3461,39 @@ def check_propilatam_listing_still_active(url, headers):
         try:
             resp = requests.get(candidate_url, headers=headers, timeout=20, allow_redirects=True)
         except requests.exceptions.Timeout:
-            return True, "Timeout (assumed active)"
+            return {
+                "is_active": True,
+                "reason": "Timeout (assumed active)",
+                "resolved_url": url,
+                "resolved_listing_type": None,
+            }
         except requests.exceptions.ConnectionError:
-            return True, "Connection error (assumed active)"
+            return {
+                "is_active": True,
+                "reason": "Connection error (assumed active)",
+                "resolved_url": url,
+                "resolved_listing_type": None,
+            }
         except Exception:
             continue
 
         if resp.status_code == 403:
-            return True, "403 Forbidden (assumed active - bot blocked)"
+            return {
+                "is_active": True,
+                "reason": "403 Forbidden (assumed active - bot blocked)",
+                "resolved_url": url,
+                "resolved_listing_type": None,
+            }
         if resp.status_code in (404, 410):
             last_unavailable_reason = f"{resp.status_code} on variant"
             continue
         if resp.status_code >= 400:
-            return True, f"HTTP {resp.status_code} (assumed active)"
+            return {
+                "is_active": True,
+                "reason": f"HTTP {resp.status_code} (assumed active)",
+                "resolved_url": url,
+                "resolved_listing_type": None,
+            }
 
         raw_html = resp.text
         soup = BeautifulSoup(raw_html, "html.parser")
@@ -3344,7 +3506,12 @@ def check_propilatam_listing_still_active(url, headers):
         h1_text = h1_el.get_text(" ", strip=True).lower() if h1_el else ""
 
         if any(sig in page_text or sig in title_text for sig in challenge_signals):
-            return True, "Challenge/blocked page (assumed active)"
+            return {
+                "is_active": True,
+                "reason": "Challenge/blocked page (assumed active)",
+                "resolved_url": url,
+                "resolved_listing_type": None,
+            }
 
         if "no se encuentra disponible" in page_text:
             last_unavailable_reason = "Page says listing is unavailable"
@@ -3356,13 +3523,35 @@ def check_propilatam_listing_still_active(url, headers):
             last_unavailable_reason = "No title/content found (likely inactive)"
             continue
 
-        if candidate_url != url:
-            target_type = "sale" if "/sv/venta/" in candidate_url.lower() else "rent"
-            return True, f"Active via {target_type} variant"
+        resolved_url = resp.url if resp.url else candidate_url
+        resolved_type = "sale" if "/sv/venta/" in resolved_url.lower() else "rent"
 
-        return True, "Active"
+        if resolved_url != url:
+            return {
+                "is_active": True,
+                "reason": f"Active via {resolved_type} variant",
+                "resolved_url": resolved_url,
+                "resolved_listing_type": resolved_type,
+            }
 
-    return False, last_unavailable_reason
+        return {
+            "is_active": True,
+            "reason": "Active",
+            "resolved_url": resolved_url,
+            "resolved_listing_type": resolved_type,
+        }
+
+    return {
+        "is_active": False,
+        "reason": last_unavailable_reason,
+        "resolved_url": url,
+        "resolved_listing_type": None,
+    }
+
+
+def check_propilatam_listing_still_active(url, headers):
+    status = get_propilatam_listing_status(url, headers)
+    return status["is_active"], status["reason"]
 
 
 def get_propilatam_listing_urls(url_file=None, max_listings=None):
@@ -4399,3 +4588,5 @@ if __name__ == "__main__":
             skip_validation=args.skip_validation,
             max_days=args.max_days
         )
+
+
