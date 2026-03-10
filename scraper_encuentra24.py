@@ -1,6 +1,6 @@
 """
 Multi-Source Housing Scraper - OPTIMIZED
-Uses concurrent requests to scrape listings from Encuentra24, MiCasaSV, Realtor.com, Vivo Latam, and Propi Latam.
+Uses concurrent requests to scrape listings from Encuentra24, MiCasaSV, Realtor.com, Camara Bienes Raices, Vivo Latam, and Propi Latam.
 Inserts results directly into Supabase database (scrappeddata_ingest table).
 
 Usage:
@@ -8,6 +8,7 @@ Usage:
   python scraper_encuentra24.py --Encuentra24 --limit 100   # Scrape 100 from Encuentra24 only
   python scraper_encuentra24.py --MiCasaSV --limit 10       # Scrape 10 from MiCasaSV only
   python scraper_encuentra24.py --Realtor --limit 50        # Scrape 50 from Realtor.com only
+  python scraper_encuentra24.py --CamaraBienesRaices --limit 20  # Scrape 20 from Camara Bienes Raices only
   python scraper_encuentra24.py --VivoLatam --limit 20      # Scrape 20 from Vivo Latam only
   python scraper_encuentra24.py --PropiLatam --limit 20     # Scrape 20 from Propi Latam only
   python scraper_encuentra24.py --Encuentra24 --MiCasaSV    # Scrape from specific sources
@@ -59,20 +60,8 @@ def insert_listing(listing):
         print(f"  Invalid external_id: {external_id_str}")
         return False
     
-    # Parse published_date - convert DD/MM/YYYY to YYYY-MM-DD
-    pub_date = listing.get("published_date")
-    parsed_date = None
-    if pub_date and pub_date.strip():
-        # Convert DD/MM/YYYY to YYYY-MM-DD for PostgreSQL
-        try:
-            parts = pub_date.strip().split("/")
-            if len(parts) == 3:
-                day, month, year = parts
-                parsed_date = f"{year}-{month.zfill(2)}-{day.zfill(2)}"
-            else:
-                parsed_date = pub_date  # Keep as-is if not in expected format
-        except:
-            parsed_date = None
+    # Normalize published_date for PostgreSQL while preserving ISO-like values.
+    parsed_date = normalize_published_date_for_db(listing.get("published_date"))
     
     # Prepare data for insertion (match DB schema)
     # JSONB fields are sent as dicts/lists - requests.post with json= handles serialization
@@ -126,6 +115,34 @@ def insert_listing(listing):
         return False
 
 
+def normalize_published_date_for_db(pub_date):
+    """Normalize scraped published_date values to YYYY-MM-DD when possible."""
+    if pub_date is None:
+        return None
+
+    pub_date_str = str(pub_date).strip()
+    if not pub_date_str:
+        return None
+
+    iso_match = re.match(r"^(\d{4}-\d{2}-\d{2})", pub_date_str)
+    if iso_match:
+        return iso_match.group(1)
+
+    normalized_iso = pub_date_str.replace("Z", "+00:00").replace(" ", "T", 1)
+    try:
+        return datetime.fromisoformat(normalized_iso).date().isoformat()
+    except ValueError:
+        pass
+
+    for fmt in ("%d/%m/%Y", "%Y/%m/%d", "%d-%m-%Y"):
+        try:
+            return datetime.strptime(pub_date_str, fmt).date().isoformat()
+        except ValueError:
+            continue
+
+    return None
+
+
 def insert_listings_batch(listings, batch_size=50):
     """Insert multiple listings to Supabase in batches."""
     if not listings:
@@ -155,17 +172,8 @@ def insert_listings_batch(listings, batch_size=50):
                 errors += 1
                 continue
             
-            # Parse published_date - convert DD/MM/YYYY to YYYY-MM-DD
-            pub_date = listing.get("published_date")
-            parsed_date = None
-            if pub_date and pub_date.strip():
-                try:
-                    parts = pub_date.strip().split("/")
-                    if len(parts) == 3:
-                        day, month, year = parts
-                        parsed_date = f"{year}-{month.zfill(2)}-{day.zfill(2)}"
-                except:
-                    parsed_date = None
+            # Normalize published_date for PostgreSQL while preserving ISO-like values.
+            parsed_date = normalize_published_date_for_db(listing.get("published_date"))
             
             # Build location JSONB with coordinates only (L2-L5 resolved by match_locations)
             location_data = {
@@ -416,7 +424,7 @@ def run_update_mode(sources=None, limit=None, skip_validation=False):
     print(f"Update run started at: {run_start_time}")
     
     # Determine which sources to update
-    all_sources = ["Encuentra24", "MiCasaSV", "Realtor", "PropiLatam", "VivoLatam"]
+    all_sources = ["Encuentra24", "MiCasaSV", "Realtor", CAMARABIENESRAICES_SOURCE, "PropiLatam", "VivoLatam"]
     if sources:
         sources_to_update = [s for s in sources if s in all_sources]
     else:
@@ -501,7 +509,13 @@ def run_update_mode(sources=None, limit=None, skip_validation=False):
                     print(f"  Deactivated {deactivated} Realtor listings")
             elif False:
                 print(f"  [WARN] Scrape returned too few results ({len(scraped_listings)}/{len(active_listings)}), skipping deactivation to prevent data loss")
-            
+
+        elif source == CAMARABIENESRAICES_SOURCE:
+            property_ids = [l["external_id"] for l in active_listings if l.get("external_id")]
+            if property_ids:
+                print(f"  Re-fetching {len(property_ids)} Camara Bienes Raices listings via REST API...")
+                scraped_listings.extend(get_cbr_properties_by_ids(property_ids))
+
         elif source == "VivoLatam":
             all_urls = [u[0] for u in sale_urls + rent_urls]
             if all_urls:
@@ -874,7 +888,7 @@ def validate_all_active_listings(sources=None, max_workers=10):
     print("="*60)
     
     # Determine which sources to validate
-    all_source_names = ["Encuentra24", "MiCasaSV", "Realtor", "PropiLatam", "VivoLatam"]
+    all_source_names = ["Encuentra24", "MiCasaSV", "Realtor", CAMARABIENESRAICES_SOURCE, "PropiLatam", "VivoLatam"]
     if sources:
         sources_to_check = [s for s in sources if s in all_source_names]
     else:
@@ -1627,6 +1641,29 @@ def get_realtor_session():
             'Cache-Control': 'max-age=0',
         })
     return REALTOR_SESSION
+
+# ============== CAMARA BIENES RAICES CONFIG ==============
+CAMARABIENESRAICES_SOURCE = "CamaraBienesRaices"
+CBR_BASE_URL = "https://www.camarabienesraices.com.sv"
+CBR_API_BASE = f"{CBR_BASE_URL}/wp-json/wp/v2"
+CBR_PROPERTIES_URL = f"{CBR_API_BASE}/properties"
+CBR_AGENTS_URL = f"{CBR_API_BASE}/agents"
+CBR_MEDIA_URL = f"{CBR_API_BASE}/media"
+CBR_PER_PAGE = 100
+
+CBR_SESSION = None
+
+def get_cbr_session():
+    """Get or create a shared requests.Session for Camara Bienes Raices."""
+    global CBR_SESSION
+    if CBR_SESSION is None:
+        CBR_SESSION = requests.Session()
+        CBR_SESSION.headers.update({
+            "User-Agent": HEADERS["User-Agent"],
+            "Accept": "application/json,text/plain,*/*",
+            "Accept-Language": "es-SV,es;q=0.9,en;q=0.8",
+        })
+    return CBR_SESSION
 
 # ============== VIVOLATAM CONFIG ==============
 VIVOLATAM_BASE_URL = "https://www.vivolatam.com"
@@ -3300,6 +3337,566 @@ def main_encuentra24(limit=None, max_days=None):
     return all_listings, sale_data, rent_data
 
 
+# ============== CAMARA BIENES RAICES FUNCTIONS ==============
+
+def cbr_get_meta_list(meta, key):
+    """Return a clean list of non-empty meta values for a property/agent payload."""
+    if not isinstance(meta, dict):
+        return []
+
+    raw_value = meta.get(key)
+    if raw_value is None:
+        return []
+
+    if isinstance(raw_value, list):
+        values = []
+        for item in raw_value:
+            item_str = str(item).strip()
+            if item_str:
+                values.append(item_str)
+        return values
+
+    raw_str = str(raw_value).strip()
+    return [raw_str] if raw_str else []
+
+
+def cbr_get_meta_value(meta, key, default=""):
+    """Return the first non-empty meta value for a property/agent payload."""
+    values = cbr_get_meta_list(meta, key)
+    return values[0] if values else default
+
+
+def cbr_to_int(value):
+    """Convert numeric-looking values to int, returning None on failure."""
+    if value is None:
+        return None
+
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def cbr_parse_number(value):
+    """Parse a numeric string that may contain commas or periods."""
+    if value is None:
+        return None
+
+    cleaned = re.sub(r"[^\d,.-]", "", str(value).strip())
+    if not cleaned:
+        return None
+
+    if cleaned.count(",") > 1 and "." not in cleaned:
+        cleaned = cleaned.replace(",", "")
+    elif "," in cleaned and "." in cleaned:
+        if cleaned.rfind(",") > cleaned.rfind("."):
+            cleaned = cleaned.replace(".", "").replace(",", ".")
+        else:
+            cleaned = cleaned.replace(",", "")
+    elif "," in cleaned and "." not in cleaned:
+        left, right = cleaned.rsplit(",", 1)
+        if len(right) == 3 and left.replace("-", "").isdigit():
+            cleaned = cleaned.replace(",", "")
+        else:
+            cleaned = f"{left}.{right}"
+
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
+def cbr_strip_html(html_text, max_length=None):
+    """Convert HTML text to cleaned plain text."""
+    if not html_text:
+        return ""
+
+    text = BeautifulSoup(str(html_text), "html.parser").get_text("\n", strip=True)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = remove_emojis(text)
+    if max_length:
+        return text[:max_length].strip()
+    return text.strip()
+
+
+def cbr_get_embedded_terms(property_data):
+    """Extract embedded WP taxonomy terms grouped by taxonomy name."""
+    terms_by_taxonomy = {}
+    embedded = property_data.get("_embedded", {}) or {}
+
+    for group in embedded.get("wp:term", []) or []:
+        if not isinstance(group, list):
+            continue
+        for term in group:
+            if not isinstance(term, dict):
+                continue
+            taxonomy = term.get("taxonomy")
+            name = term.get("name")
+            if not taxonomy or not name:
+                continue
+            bucket = terms_by_taxonomy.setdefault(taxonomy, [])
+            if name not in bucket:
+                bucket.append(name)
+
+    return terms_by_taxonomy
+
+
+def cbr_get_featured_image(property_data):
+    """Extract the featured image URL from an embedded property payload."""
+    embedded = property_data.get("_embedded", {}) or {}
+    for media_item in embedded.get("wp:featuredmedia", []) or []:
+        if not isinstance(media_item, dict):
+            continue
+        source_url = media_item.get("source_url")
+        if source_url:
+            return source_url
+    return ""
+
+
+def cbr_fetch_media_map(media_ids):
+    """Fetch WordPress media records in batches and map id -> source_url."""
+    session = get_cbr_session()
+    media_map = {}
+    unique_ids = []
+    seen_ids = set()
+
+    for media_id in media_ids:
+        int_id = cbr_to_int(media_id)
+        if int_id is None or int_id in seen_ids:
+            continue
+        seen_ids.add(int_id)
+        unique_ids.append(int_id)
+
+    for start in range(0, len(unique_ids), CBR_PER_PAGE):
+        batch_ids = unique_ids[start:start + CBR_PER_PAGE]
+        params = {
+            "include": ",".join(str(media_id) for media_id in batch_ids),
+            "per_page": len(batch_ids),
+            "orderby": "include",
+            "_fields": "id,source_url"
+        }
+        try:
+            resp = session.get(CBR_MEDIA_URL, params=params, timeout=30)
+            if resp.status_code != 200:
+                print(f"  Warning: media batch fetch failed ({resp.status_code})")
+                continue
+            for item in resp.json():
+                media_id = item.get("id")
+                source_url = item.get("source_url")
+                if media_id and source_url:
+                    media_map[int(media_id)] = source_url
+        except Exception as e:
+            print(f"  Warning: media batch fetch exception: {e}")
+
+    return media_map
+
+
+def cbr_fetch_agents_map(agent_ids):
+    """Fetch WordPress agent records in batches and map id -> agent payload."""
+    session = get_cbr_session()
+    agents_map = {}
+    unique_ids = []
+    seen_ids = set()
+
+    for agent_id in agent_ids:
+        int_id = cbr_to_int(agent_id)
+        if int_id is None or int_id in seen_ids:
+            continue
+        seen_ids.add(int_id)
+        unique_ids.append(int_id)
+
+    for start in range(0, len(unique_ids), CBR_PER_PAGE):
+        batch_ids = unique_ids[start:start + CBR_PER_PAGE]
+        params = {
+            "include": ",".join(str(agent_id) for agent_id in batch_ids),
+            "per_page": len(batch_ids),
+            "orderby": "include",
+            "_fields": "id,title,link,agent_meta"
+        }
+        try:
+            resp = session.get(CBR_AGENTS_URL, params=params, timeout=30)
+            if resp.status_code != 200:
+                print(f"  Warning: agent batch fetch failed ({resp.status_code})")
+                continue
+            for item in resp.json():
+                agent_id = item.get("id")
+                if agent_id:
+                    agents_map[int(agent_id)] = item
+        except Exception as e:
+            print(f"  Warning: agent batch fetch exception: {e}")
+
+    return agents_map
+
+
+def cbr_prefetch_related_records(properties):
+    """Collect media and agent records referenced by a property batch."""
+    media_ids = []
+    agent_ids = []
+
+    for property_data in properties:
+        property_meta = property_data.get("property_meta", {}) or {}
+        media_ids.extend(cbr_get_meta_list(property_meta, "fave_property_images"))
+
+        thumbnail_id = cbr_get_meta_value(property_meta, "_thumbnail_id")
+        if thumbnail_id:
+            media_ids.append(thumbnail_id)
+
+        agent_ids.extend(cbr_get_meta_list(property_meta, "fave_agents"))
+
+    media_map = cbr_fetch_media_map(media_ids) if media_ids else {}
+    agents_map = cbr_fetch_agents_map(agent_ids) if agent_ids else {}
+    return media_map, agents_map
+
+
+def cbr_map_property_type(property_type_name):
+    """Map a raw Houzez property type label to normalized values used downstream."""
+    if not property_type_name:
+        return "", ""
+
+    value = str(property_type_name).strip().lower()
+    if any(token in value for token in ["apart", "condo", "penthouse"]):
+        return "apartment", "Apartamento"
+    if any(token in value for token in ["casa", "residencia", "vivienda", "townhouse"]):
+        return "house", "Casa"
+    if any(token in value for token in ["terreno", "lote", "land", "solar", "finca", "parcela"]):
+        return "land", "Terreno"
+    if any(token in value for token in ["local", "oficina", "bodega", "comercial", "warehouse", "retail"]):
+        return "commercial", "Local"
+    return "", ""
+
+
+def cbr_build_location_text(term_names, property_meta):
+    """Build a compact location string from taxonomy names and address fields."""
+    parts = []
+    for taxonomy in ["property_area", "property_city", "property_state"]:
+        for value in term_names.get(taxonomy, []):
+            if value and value not in parts:
+                parts.append(value)
+
+    for meta_key in ["fave_property_location", "fave_property_map_address", "fave_property_address"]:
+        value = cbr_get_meta_value(property_meta, meta_key)
+        if value and value not in parts:
+            parts.append(value)
+            if len(parts) >= 3:
+                break
+
+    return ", ".join(parts[:3])
+
+
+def cbr_build_contact_info(agent_data):
+    """Extract contact fields from an agent payload."""
+    if not agent_data:
+        return None
+
+    agent_meta = agent_data.get("agent_meta", {}) or {}
+    contact_info = {
+        "name": cbr_strip_html((agent_data.get("title") or {}).get("rendered", ""), max_length=120),
+        "company": cbr_get_meta_value(agent_meta, "fave_agent_company"),
+        "phone": cbr_get_meta_value(agent_meta, "fave_agent_mobile"),
+        "whatsapp": cbr_get_meta_value(agent_meta, "fave_agent_whatsapp"),
+        "email": cbr_get_meta_value(agent_meta, "fave_agent_email"),
+        "website": cbr_get_meta_value(agent_meta, "fave_agent_website"),
+        "address": cbr_get_meta_value(agent_meta, "fave_agent_address"),
+        "profile_url": agent_data.get("link") or "",
+    }
+
+    filtered = {key: value for key, value in contact_info.items() if value}
+    return filtered or None
+
+
+def cbr_parse_listing_type(status_names, title="", description="", price=None, url=None):
+    """Infer the normalized listing type from property status terms."""
+    status_text = " ".join(status_names).lower()
+    if "renta" in status_text or "alquiler" in status_text:
+        return "rent"
+    if "venta" in status_text:
+        return "sale"
+    return correct_listing_type("sale", title, description, price, url=url)
+
+
+def normalize_cbr_property(property_data, media_map=None, agents_map=None):
+    """Normalize one Camara Bienes Raices REST payload into the scraper schema."""
+    media_map = media_map or {}
+    agents_map = agents_map or {}
+
+    property_id = property_data.get("id")
+    if not property_id:
+        return None
+
+    property_meta = property_data.get("property_meta", {}) or {}
+    term_names = cbr_get_embedded_terms(property_data)
+
+    title = cbr_strip_html((property_data.get("title") or {}).get("rendered", ""), max_length=200)
+    if not title:
+        title = cbr_strip_html(property_data.get("slug", ""), max_length=200)
+    if not title:
+        return None
+
+    description = cbr_strip_html((property_data.get("content") or {}).get("rendered", ""), max_length=1000)
+    price_raw = cbr_get_meta_value(property_meta, "fave_property_price")
+    price_value = cbr_parse_number(price_raw)
+    published_date = normalize_published_date_for_db(property_data.get("date_gmt") or property_data.get("date"))
+    source_modified_at = property_data.get("modified_gmt") or property_data.get("modified") or ""
+    listing_type = cbr_parse_listing_type(
+        term_names.get("property_status", []),
+        title=title,
+        description=description,
+        price=price_value,
+        url=property_data.get("link"),
+    )
+
+    property_type_label = (term_names.get("property_type") or [""])[0]
+    property_type, property_tag = cbr_map_property_type(property_type_label)
+    location = cbr_build_location_text(term_names, property_meta)
+
+    specs = {}
+    size = cbr_get_meta_value(property_meta, "fave_property_size")
+    land = cbr_get_meta_value(property_meta, "fave_property_land")
+    bedrooms = cbr_get_meta_value(property_meta, "fave_property_bedrooms")
+    bathrooms = cbr_get_meta_value(property_meta, "fave_property_bathrooms")
+    garage = cbr_get_meta_value(property_meta, "fave_property_garage")
+
+    if size:
+        specs["area"] = size
+    if land:
+        specs["terreno"] = land
+    if bedrooms:
+        specs["bedrooms"] = bedrooms
+    if bathrooms:
+        specs["bathrooms"] = bathrooms
+    if garage:
+        specs["parking"] = garage
+
+    details = {}
+    if property_type:
+        details["property_type"] = property_type
+    if property_type_label:
+        details["property_type_label"] = property_type_label
+    status_label = ", ".join(term_names.get("property_status", []))
+    if status_label:
+        details["property_status"] = status_label
+    country = ", ".join(term_names.get("property_country", []))
+    if country:
+        details["country"] = country
+    state = ", ".join(term_names.get("property_state", []))
+    if state:
+        details["state"] = state
+    city = ", ".join(term_names.get("property_city", []))
+    if city:
+        details["city"] = city
+    area = ", ".join(term_names.get("property_area", []))
+    if area:
+        details["area"] = area
+
+    for meta_key, detail_key in [
+        ("fave_property_id", "fave_property_id"),
+        ("fave_property_address", "address"),
+        ("fave_property_map_address", "map_address"),
+        ("fave_property_location", "location_label"),
+        ("fave_property_year", "year_built"),
+    ]:
+        value = cbr_get_meta_value(property_meta, meta_key)
+        if value:
+            details[detail_key] = value
+
+    if published_date:
+        details["published_date"] = published_date
+    if source_modified_at:
+        details["source_modified_at"] = source_modified_at
+
+    latitude = cbr_parse_number(cbr_get_meta_value(property_meta, "houzez_geolocation_lat"))
+    longitude = cbr_parse_number(cbr_get_meta_value(property_meta, "houzez_geolocation_long"))
+
+    image_urls = []
+    featured_image = cbr_get_featured_image(property_data)
+    if featured_image:
+        image_urls.append(featured_image)
+
+    for media_id in cbr_get_meta_list(property_meta, "fave_property_images"):
+        media_url = media_map.get(cbr_to_int(media_id))
+        if media_url and media_url not in image_urls:
+            image_urls.append(media_url)
+
+    thumbnail_url = media_map.get(cbr_to_int(cbr_get_meta_value(property_meta, "_thumbnail_id")))
+    if thumbnail_url and thumbnail_url not in image_urls:
+        image_urls.insert(0, thumbnail_url)
+
+    agent_contact = None
+    for agent_id in cbr_get_meta_list(property_meta, "fave_agents"):
+        agent_contact = cbr_build_contact_info(agents_map.get(cbr_to_int(agent_id)))
+        if agent_contact:
+            break
+
+    if agent_contact and agent_contact.get("company"):
+        details["agent_company"] = agent_contact["company"]
+
+    municipio_info = detect_municipio(location, description, title)
+    listing = {
+        "title": title,
+        "price": price_raw or price_value,
+        "location": location,
+        "published_date": published_date,
+        "listing_type": listing_type,
+        "url": property_data.get("link"),
+        "external_id": str(property_id),
+        "specs": normalize_listing_specs(specs),
+        "details": details,
+        "description": description,
+        "images": image_urls,
+        "source": CAMARABIENESRAICES_SOURCE,
+        "active": True,
+        "municipio_detectado": municipio_info["municipio_detectado"],
+        "departamento": municipio_info["departamento"],
+        "latitude": latitude,
+        "longitude": longitude,
+        "last_updated": datetime.now().isoformat(),
+    }
+
+    if property_tag:
+        listing["tags"] = [property_tag]
+    if agent_contact:
+        listing["contact_info"] = agent_contact
+
+    return listing
+
+
+def normalize_cbr_properties(properties):
+    """Normalize a property batch while prefetching related media and agent data."""
+    if not properties:
+        return []
+
+    media_map, agents_map = cbr_prefetch_related_records(properties)
+    listings = []
+
+    for property_data in properties:
+        normalized = normalize_cbr_property(property_data, media_map=media_map, agents_map=agents_map)
+        if normalized:
+            listings.append(normalized)
+
+    return listings
+
+
+def get_cbr_properties_page(page=1, extra_params=None):
+    """Fetch one Camara Bienes Raices property page from the WP REST API."""
+    session = get_cbr_session()
+    params = {
+        "page": page,
+        "per_page": CBR_PER_PAGE,
+        "_embed": "1",
+        "orderby": "date",
+        "order": "desc",
+        "status": "publish",
+    }
+    if extra_params:
+        params.update(extra_params)
+
+    resp = session.get(CBR_PROPERTIES_URL, params=params, timeout=45)
+    if resp.status_code != 200:
+        raise RuntimeError(f"CBR property page fetch failed ({resp.status_code}): {resp.text[:200]}")
+
+    total_pages = int(resp.headers.get("X-WP-TotalPages", "1") or "1")
+    total_items = int(resp.headers.get("X-WP-Total", "0") or "0")
+    return resp.json(), total_pages, total_items
+
+
+def get_cbr_all_properties(limit=None, max_days=None):
+    """Fetch property payloads from Camara Bienes Raices with optional date filtering."""
+    all_properties = []
+    page = 1
+    extra_params = {}
+
+    if max_days and max_days > 0:
+        threshold = datetime.utcnow() - timedelta(days=max_days)
+        extra_params["after"] = threshold.isoformat(timespec="seconds")
+
+    while True:
+        properties, total_pages, total_items = get_cbr_properties_page(page=page, extra_params=extra_params)
+        all_properties.extend(properties)
+        print(f"  Fetched CBR page {page}/{total_pages} ({len(all_properties)}/{total_items} raw listings)")
+
+        if limit and len(all_properties) >= limit:
+            return all_properties[:limit]
+
+        if page >= total_pages:
+            break
+
+        page += 1
+        time.sleep(0.15)
+
+    return all_properties
+
+
+def get_cbr_properties_by_ids(property_ids):
+    """Fetch specific CBR property IDs in API batches for update mode."""
+    session = get_cbr_session()
+    unique_ids = []
+    seen_ids = set()
+
+    for property_id in property_ids:
+        int_id = cbr_to_int(property_id)
+        if int_id is None or int_id in seen_ids:
+            continue
+        seen_ids.add(int_id)
+        unique_ids.append(int_id)
+
+    properties = []
+    for start in range(0, len(unique_ids), CBR_PER_PAGE):
+        batch_ids = unique_ids[start:start + CBR_PER_PAGE]
+        params = {
+            "include": ",".join(str(property_id) for property_id in batch_ids),
+            "per_page": len(batch_ids),
+            "_embed": "1",
+            "orderby": "include",
+            "status": "publish",
+        }
+        try:
+            resp = session.get(CBR_PROPERTIES_URL, params=params, timeout=45)
+            if resp.status_code != 200:
+                print(f"  Warning: CBR batch fetch failed ({resp.status_code})")
+                continue
+            batch = resp.json()
+            properties.extend(batch)
+            print(f"  Fetched {len(properties)}/{len(unique_ids)} CBR update candidates")
+        except Exception as e:
+            print(f"  Warning: CBR batch fetch exception: {e}")
+
+    return normalize_cbr_properties(properties)
+
+
+def main_camarabienesraices(limit=None, max_days=None):
+    """Main scraper function for Camara Bienes Raices."""
+    if limit:
+        print(f"\n*** LIMIT MODE: Scraping up to {limit} total listings from Camara Bienes Raices ***")
+    if max_days and max_days > 0:
+        print(f"*** DATE FILTER: Only listings from last {max_days} days ***")
+
+    raw_properties = get_cbr_all_properties(limit=limit, max_days=max_days)
+    all_listings = normalize_cbr_properties(raw_properties)
+
+    total_old_skipped = 0
+    if max_days and max_days > 0:
+        filtered_listings = []
+        for listing in all_listings:
+            is_recent, _ = is_listing_within_date_range(listing.get("published_date"), max_days)
+            if is_recent:
+                filtered_listings.append(listing)
+            else:
+                total_old_skipped += 1
+        all_listings = filtered_listings
+
+    sale_data = [listing for listing in all_listings if listing.get("listing_type") == "sale"]
+    rent_data = [listing for listing in all_listings if listing.get("listing_type") == "rent"]
+
+    print(
+        f"  Camara Bienes Raices total: {len(all_listings)} "
+        f"({len(sale_data)} sales, {len(rent_data)} rentals)"
+    )
+    if total_old_skipped > 0:
+        print(f"  Skipped {total_old_skipped} old listings (>{max_days} days)")
+
+    return all_listings, sale_data, rent_data
+
+
 # ============== PROPILATAM FUNCTIONS ==============
 
 def infer_propilatam_property_type(slug):
@@ -4340,7 +4937,7 @@ def main_vivolatam(limit=None, url_file=None, max_days=None):
     return all_listings, sale_data, rent_data
 
 
-def main(encuentra24=True, micasasv=False, realtor=False, vivolatam=False, propilatam=False, limit=None, vivolatam_urls=None, propilatam_urls=None, skip_validation=False, max_days=None):
+def main(encuentra24=True, micasasv=False, realtor=False, camarabienesraices=False, vivolatam=False, propilatam=False, limit=None, vivolatam_urls=None, propilatam_urls=None, skip_validation=False, max_days=None):
     """
     Main scraper function that orchestrates scraping from multiple sources.
     
@@ -4348,6 +4945,7 @@ def main(encuentra24=True, micasasv=False, realtor=False, vivolatam=False, propi
         encuentra24: If True, scrape from Encuentra24
         micasasv: If True, scrape from MiCasaSV
         realtor: If True, scrape from Realtor.com International
+        camarabienesraices: If True, scrape from Camara Bienes Raices
         vivolatam: If True, scrape from Vivo Latam
         propilatam: If True, scrape from Propi Latam
         limit: Optional max number of listings to scrape (per source if both enabled)
@@ -4403,7 +5001,18 @@ def main(encuentra24=True, micasasv=False, realtor=False, vivolatam=False, propi
         all_listings.extend(listings)
         total_sale += len(sale_data)
         total_rent += len(rent_data)
-    
+
+    # --- CAMARA BIENES RAICES ---
+    if camarabienesraices:
+        active_sources.append(CAMARABIENESRAICES_SOURCE)
+        print("\n" + "="*60)
+        print("SCRAPING SOURCE: Camara Bienes Raices")
+        print("="*60)
+        listings, sale_data, rent_data = main_camarabienesraices(limit, max_days=max_days)
+        all_listings.extend(listings)
+        total_sale += len(sale_data)
+        total_rent += len(rent_data)
+
     # --- VIVOLATAM ---
     if vivolatam:
         active_sources.append("VivoLatam")
@@ -4489,7 +5098,7 @@ def main(encuentra24=True, micasasv=False, realtor=False, vivolatam=False, propi
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Multi-source real estate scraper (Encuentra24, MiCasaSV, Realtor.com, Vivo Latam, Propi Latam)"
+        description="Multi-source real estate scraper (Encuentra24, MiCasaSV, Realtor.com, Camara Bienes Raices, Vivo Latam, Propi Latam)"
     )
     parser.add_argument(
         "--Encuentra24",
@@ -4505,6 +5114,11 @@ if __name__ == "__main__":
         "--Realtor",
         action="store_true",
         help="Scrape listings from Realtor.com International (El Salvador)"
+    )
+    parser.add_argument(
+        "--CamaraBienesRaices",
+        action="store_true",
+        help="Scrape listings from Camara Bienes Raices (El Salvador)"
     )
     parser.add_argument(
         "--PropiLatam",
@@ -4569,6 +5183,7 @@ if __name__ == "__main__":
     encuentra24 = args.Encuentra24
     micasasv = args.MiCasaSV
     realtor = args.Realtor
+    camarabienesraices = args.CamaraBienesRaices
     vivolatam = args.VivoLatam
     propilatam = args.PropiLatam
     
@@ -4580,6 +5195,8 @@ if __name__ == "__main__":
         sources.append("MiCasaSV")
     if realtor:
         sources.append("Realtor")
+    if camarabienesraices:
+        sources.append(CAMARABIENESRAICES_SOURCE)
     if vivolatam:
         sources.append("VivoLatam")
     if propilatam:
@@ -4598,18 +5215,20 @@ if __name__ == "__main__":
     else:
         # Normal scrape mode
         # Default behavior: scrape from ALL sources if no source is specified
-        if not encuentra24 and not micasasv and not realtor and not vivolatam and not propilatam:
+        if not encuentra24 and not micasasv and not realtor and not camarabienesraices and not vivolatam and not propilatam:
             encuentra24 = True
             micasasv = True
             realtor = True
+            camarabienesraices = True
             vivolatam = True
             propilatam = True
-            print("No source specified. Scraping from ALL sources: Encuentra24, MiCasaSV, Realtor, VivoLatam, PropiLatam")
+            print("No source specified. Scraping from ALL sources: Encuentra24, MiCasaSV, Realtor, CamaraBienesRaices, VivoLatam, PropiLatam")
         
         main(
             encuentra24=encuentra24, 
             micasasv=micasasv, 
             realtor=realtor, 
+            camarabienesraices=camarabienesraices,
             vivolatam=vivolatam,
             propilatam=propilatam,
             limit=args.limit,

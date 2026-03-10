@@ -5,7 +5,7 @@
  * across components (ListingCard, ListingModal, page.tsx, OG images, metadata).
  */
 
-import { Listing, ListingSpecs, ListingLocation } from '@/types/listing';
+import { Listing, ListingSpecs } from '@/types/listing';
 
 /**
  * Format price with currency and /mes suffix for rentals
@@ -66,6 +66,37 @@ export function formatArea(specs: ListingSpecs | null | undefined): string | nul
     const area = getArea(specs);
     if (area <= 0) return null;
     return `${area.toLocaleString()} m²`;
+}
+
+/**
+ * Get human-readable "time since" text in Spanish
+ * @example getTimeSinceText('2026-03-09T10:00:00Z') => "Hace 1 día"
+ */
+export function getTimeSinceText(dateStr: string | undefined | null): string | null {
+    if (!dateStr) return null;
+
+    const normalizedDateStr = dateStr
+        .trim()
+        .replace(' ', 'T')
+        .replace(/\+00$/, 'Z');
+
+    const date = new Date(normalizedDateStr);
+    if (Number.isNaN(date.getTime())) return null;
+
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    if (diffMs < 0) return null;
+
+    const days = Math.floor(diffMs / 86400000);
+
+    if (days === 0) return 'Hoy';
+    if (days === 1) return 'Hace 1 día';
+    if (days < 7) return `Hace ${days} días`;
+    if (days < 14) return 'Hace 1 semana';
+    if (days < 30) return `Hace ${Math.floor(days / 7)} semanas`;
+    if (days < 60) return 'Hace 1 mes';
+    if (days < 365) return `Hace ${Math.floor(days / 30)} meses`;
+    return 'Hace más de 1 año';
 }
 
 /**

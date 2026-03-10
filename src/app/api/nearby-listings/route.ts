@@ -22,7 +22,8 @@ interface NearbyListing {
     external_id: string | number;
     listing_type: 'sale' | 'rent';
     price: number;
-    last_updated: string;
+    published_date?: string | null;
+    last_updated: string | null;
     title: string;
     url: string;
     source: string;

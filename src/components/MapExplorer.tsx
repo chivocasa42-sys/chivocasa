@@ -5,6 +5,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import SectionHeader from './SectionHeader';
 import ListingModal from './ListingModal';
+import { getTimeSinceText } from '@/lib/listingFormatter';
 
 // Dynamically import Leaflet components to avoid SSR issues
 const MapContainer = dynamic(
@@ -50,7 +51,8 @@ interface NearbyListing {
     external_id: string | number;
     listing_type: 'sale' | 'rent';
     price: number;
-    last_updated: string;
+    published_date?: string | null;
+    last_updated: string | null;
     title: string;
     url: string;
     source: string;
@@ -593,7 +595,10 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
 
                                     {/* Listings - New Card Style */}
                                     <div className={`space-y-2 transition-opacity duration-200 ${isPaginating ? 'opacity-50' : 'opacity-100'}`}>
-                                        {nearbyData.listings.map((listing) => (
+                                        {nearbyData.listings.map((listing) => {
+                                            const timeSinceText = getTimeSinceText(listing.published_date || listing.last_updated);
+
+                                            return (
                                             <div
                                                 key={listing.external_id}
                                                 onClick={() => setSelectedListingId(listing.external_id)}
@@ -665,6 +670,16 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
                                                         )}
                                                     </div>
 
+                                                    {/* Time Since Published */}
+                                                    {timeSinceText && (
+                                                        <div className="flex items-center gap-1 text-[11px] text-slate-400">
+                                                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                            </svg>
+                                                            {timeSinceText}
+                                                        </div>
+                                                    )}
+
                                                     {/* Bottom Row: Distance + Tags */}
                                                     <div className="flex items-center gap-2 text-xs">
                                                         <span className="font-medium text-slate-600">{parseFloat(listing.distance_km).toFixed(1)} km</span>
@@ -683,7 +698,8 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
                                                     </div>
                                                 </div>
                                             </div>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
 
                                     {/* No listings */}

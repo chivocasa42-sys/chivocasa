@@ -38,7 +38,7 @@ export default function ListingCard({ listing, onClick, isFeatured, hideFavorite
     const specs = listing.specs || {};
     const area = getArea(specs);
     const locationTags = getLocationTags(listing);
-    const timeSinceText = getTimeSinceText(listing.published_date);
+    const timeSinceText = getTimeSinceText(listing.published_date || listing.last_updated);
     const { isFavorite, toggleFavorite } = useFavorites();
     const liked = isFavorite(listing.external_id);
 
