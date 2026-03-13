@@ -1,12 +1,13 @@
 """
 Multi-Source Housing Scraper - OPTIMIZED
-Uses concurrent requests to scrape listings from Encuentra24, MiCasaSV, Realtor.com, Camara Bienes Raices, Vivo Latam, and Propi Latam.
+Uses concurrent requests to scrape listings from Encuentra24, MiCasaSV, Nexo, Realtor.com, Camara Bienes Raices, Vivo Latam, and Propi Latam.
 Inserts results directly into Supabase database (scrappeddata_ingest table).
 
 Usage:
   python scraper_encuentra24.py                             # Default: scrape ALL sources
   python scraper_encuentra24.py --Encuentra24 --limit 100   # Scrape 100 from Encuentra24 only
   python scraper_encuentra24.py --MiCasaSV --limit 10       # Scrape 10 from MiCasaSV only
+  python scraper_encuentra24.py --Nexo --limit 20           # Scrape 20 from Nexo only
   python scraper_encuentra24.py --Realtor --limit 50        # Scrape 50 from Realtor.com only
   python scraper_encuentra24.py --CamaraBienesRaices --limit 20  # Scrape 20 from Camara Bienes Raices only
   python scraper_encuentra24.py --VivoLatam --limit 20      # Scrape 20 from Vivo Latam only
@@ -24,7 +25,7 @@ import os
 import hashlib
 import random
 import unicodedata
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote, urlparse, urljoin
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -424,7 +425,7 @@ def run_update_mode(sources=None, limit=None, skip_validation=False):
     print(f"Update run started at: {run_start_time}")
     
     # Determine which sources to update
-    all_sources = ["Encuentra24", "MiCasaSV", "Realtor", CAMARABIENESRAICES_SOURCE, "PropiLatam", "VivoLatam"]
+    all_sources = ["Encuentra24", "MiCasaSV", NEXO_SOURCE, "Realtor", CAMARABIENESRAICES_SOURCE, "PropiLatam", "VivoLatam"]
     if sources:
         sources_to_update = [s for s in sources if s in all_sources]
     else:
@@ -477,6 +478,14 @@ def run_update_mode(sources=None, limit=None, skip_validation=False):
             if rent_urls:
                 print(f"  Re-scraping {len(rent_urls)} rent listings...")
                 scraped, _ = scrape_micasasv_listings_concurrent([u[0] for u in rent_urls], "rent", max_workers=5)
+                scraped_listings.extend(scraped)
+
+        elif source == NEXO_SOURCE:
+            all_urls = [u[0] for u in sale_urls + rent_urls]
+            all_urls = list(dict.fromkeys(all_urls))
+            if all_urls:
+                print(f"  Re-scraping {len(all_urls)} listings...")
+                scraped, _ = scrape_nexo_listings_concurrent(all_urls, "auto", max_workers=4)
                 scraped_listings.extend(scraped)
                 
         elif source == "Realtor":
@@ -713,6 +722,34 @@ def check_listing_still_active(url, source):
 
         # Use GET to check the full page (some sites don't support HEAD properly)
         resp = requests.get(url, headers=headers, timeout=20, allow_redirects=True)
+
+        if source == NEXO_SOURCE:
+            raw_html = resp.text or ""
+            soup = BeautifulSoup(raw_html, "html.parser")
+
+            if resp.status_code in (404, 410):
+                return False, f"HTTP {resp.status_code}"
+
+            if is_nexo_error_page(raw_html, soup=soup):
+                return False, "ColdFusion error page"
+
+            title_el = soup.select_one("article.titulo [itemprop='name']") or soup.select_one("article.titulo h1")
+            has_title = bool(normalize_nexo_text(title_el.get_text(" ", strip=True) if title_el else ""))
+            has_characteristics = bool(soup.select_one(".caracteristicas"))
+
+            if not has_title and not has_characteristics:
+                return False, "Missing title and characteristics"
+
+            if resp.status_code == 403:
+                return True, "403 Forbidden (assumed active - bot blocked)"
+
+            if resp.status_code >= 500:
+                return True, f"HTTP {resp.status_code} (assumed active)"
+
+            if resp.status_code >= 400:
+                return True, f"HTTP {resp.status_code} (assumed active)"
+
+            return True, "Active"
         
         # Check for 404 or 410 (Gone) - these definitively mean listing removed
         if resp.status_code == 404:
@@ -888,7 +925,7 @@ def validate_all_active_listings(sources=None, max_workers=10):
     print("="*60)
     
     # Determine which sources to validate
-    all_source_names = ["Encuentra24", "MiCasaSV", "Realtor", CAMARABIENESRAICES_SOURCE, "PropiLatam", "VivoLatam"]
+    all_source_names = ["Encuentra24", "MiCasaSV", NEXO_SOURCE, "Realtor", CAMARABIENESRAICES_SOURCE, "PropiLatam", "VivoLatam"]
     if sources:
         sources_to_check = [s for s in sources if s in all_source_names]
     else:
@@ -1610,6 +1647,36 @@ RENT_URL = "https://www.encuentra24.com/el-salvador-es/bienes-raices-alquiler-ca
 MICASASV_BASE_URL = "https://micasasv.com"
 MICASASV_SALE_URL = "https://micasasv.com/explore/?type=inmuebles-en-venta"
 MICASASV_RENT_URL = "https://micasasv.com/explore/?type=inmuebles-en-alquiler"
+
+# ============== NEXO CONFIG ==============
+NEXO_SOURCE = "Nexo"
+NEXO_BASE_URL = "https://nexo.com.sv"
+NEXO_LISTING_TYPE_BY_CODE = {
+    "1": "sale",
+    "2": "rent",
+    "3": "sale",
+    "4": "rent",
+    "6": "sale",
+}
+NEXO_PROPERTY_TYPE_BY_CODE = {
+    "1": "house",
+    "2": "house",
+    "3": "apartment",
+    "4": "apartment",
+    "6": "land",
+}
+NEXO_CATEGORIES = [
+    {"name": "houses_sale", "url": f"{NEXO_BASE_URL}/casas-en-venta-el-salvador/{{}}", "listing_type": "sale", "property_type": "house", "type_code": "1"},
+    {"name": "apartments_sale", "url": f"{NEXO_BASE_URL}/apartamentos-en-venta-el-salvador/{{}}", "listing_type": "sale", "property_type": "apartment", "type_code": "3"},
+    {"name": "land_sale", "url": f"{NEXO_BASE_URL}/terrenos-en-venta-el-salvador/{{}}", "listing_type": "sale", "property_type": "land", "type_code": "6"},
+    {"name": "houses_rent", "url": f"{NEXO_BASE_URL}/casas-en-alquiler-el-salvador/{{}}", "listing_type": "rent", "property_type": "house", "type_code": "2"},
+    {"name": "apartments_rent", "url": f"{NEXO_BASE_URL}/apartamentos-en-alquiler-el-salvador/{{}}", "listing_type": "rent", "property_type": "apartment", "type_code": "4"},
+]
+NEXO_ERROR_MARKERS = [
+    "error occurred while processing request",
+    "the web site you are accessing has experienced an unexpected error",
+    "error executing database query",
+]
 
 # ============== REALTOR.COM CONFIG ==============
 REALTOR_BASE_URL = "https://www.realtor.com"
@@ -2356,6 +2423,369 @@ def slug_to_external_id(slug):
     hash_hex = hashlib.md5(slug.encode()).hexdigest()
     # Take first 15 hex chars and convert to int (fits in bigint)
     return int(hash_hex[:15], 16)
+
+
+# ============== NEXO FUNCTIONS ==============
+
+def normalize_nexo_text(text):
+    """Normalize text extracted from Nexo pages."""
+    if text is None:
+        return ""
+
+    cleaned = str(text)
+    if any(marker in cleaned for marker in ("\u00c3", "\u00c2", "\u00e2")):
+        try:
+            repaired = cleaned.encode("latin-1").decode("utf-8")
+            if repaired:
+                cleaned = repaired
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            pass
+
+    cleaned = remove_emojis(cleaned).replace("\xa0", " ").replace("\r", " ")
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    return cleaned.strip()
+
+
+def normalize_nexo_key(text):
+    """Normalize a Nexo label for matching without accents or punctuation."""
+    normalized = normalize_nexo_text(text).lower()
+    normalized = unicodedata.normalize("NFD", normalized)
+    normalized = "".join(c for c in normalized if unicodedata.category(c) != "Mn")
+    normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+    return normalized.strip()
+
+
+def is_nexo_error_page(raw_html, soup=None):
+    """Return True when a Nexo page is a ColdFusion error page or equivalent."""
+    html_lower = (raw_html or "").lower()
+    if any(marker in html_lower for marker in NEXO_ERROR_MARKERS):
+        return True
+
+    if soup is None:
+        soup = BeautifulSoup(raw_html or "", "html.parser")
+
+    title_text = normalize_nexo_text(soup.title.get_text(" ", strip=True) if soup.title else "").lower()
+    if "error occurred while processing request" in title_text:
+        return True
+
+    return False
+
+
+def nexo_extract_value_text(node):
+    """Extract a list item value while ignoring the bold label span."""
+    if node is None:
+        return ""
+
+    parts = []
+    for child in node.contents:
+        if getattr(child, "name", None) == "span":
+            classes = child.get("class", []) or []
+            if "bold" in classes:
+                continue
+        if isinstance(child, str):
+            parts.append(child)
+        else:
+            parts.append(child.get_text(" ", strip=True))
+
+    return normalize_nexo_text(" ".join(parts))
+
+
+def nexo_extract_first_number(text):
+    """Extract the first numeric token from a text fragment."""
+    match = re.search(r"(\d+(?:[.,]\d+)?)", normalize_nexo_text(text))
+    return match.group(1) if match else ""
+
+
+def nexo_normalize_area_value(text):
+    """Normalize Nexo area units to formats understood by area_normalizer."""
+    value = normalize_nexo_text(text)
+    value = re.sub(r"\bvrs(?:2)?\b", "v2", value, flags=re.IGNORECASE)
+    return value
+
+
+def get_nexo_listing_urls(max_listings=None):
+    """Collect Nexo listing detail URLs from the public paginated category pages."""
+    all_urls = []
+    seen = set()
+
+    for category in NEXO_CATEGORIES:
+        page = 1
+        print(f"  Fetching Nexo category: {category['name']}")
+
+        while True:
+            page_url = category["url"].format(page)
+
+            try:
+                resp = requests.get(page_url, headers=HEADERS, timeout=15)
+            except Exception as e:
+                print(f"    Error fetching {page_url}: {e}")
+                break
+
+            if resp.status_code != 200:
+                print(f"    Stopping {category['name']}: HTTP {resp.status_code}")
+                break
+
+            resp.encoding = "iso-8859-1"
+            soup = BeautifulSoup(resp.text, "html.parser")
+            visible_text = soup.get_text(" ", strip=True)
+
+            if is_nexo_error_page(resp.text, soup=soup):
+                print(f"    Stopping {category['name']}: error page at page {page}")
+                break
+
+            detail_links = []
+            for anchor in soup.select(".resultados .dresultado a[itemprop='url'], .resultados .dresultado a[href]"):
+                href = (anchor.get("href") or "").strip()
+                if not href or "ver detalles" not in normalize_nexo_text(anchor.get_text(" ", strip=True)).lower():
+                    continue
+                detail_links.append(urljoin(page_url, href))
+
+            if not detail_links or re.search(r"Existen\s+0\b", visible_text, re.IGNORECASE):
+                print(f"    Page {page}: no listings")
+                break
+
+            new_on_page = 0
+            for detail_url in detail_links:
+                if detail_url in seen:
+                    continue
+                seen.add(detail_url)
+                all_urls.append(detail_url)
+                new_on_page += 1
+
+                if max_listings and len(all_urls) >= max_listings:
+                    print(f"    Reached limit of {max_listings} Nexo listings")
+                    return all_urls[:max_listings]
+
+            print(f"    Page {page}: found {new_on_page} new listings (total {len(all_urls)})")
+            page += 1
+
+    return all_urls
+
+
+def scrape_nexo_listing(url, listing_type="auto"):
+    """Scrape a single Nexo listing page."""
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=15, allow_redirects=True)
+    except Exception:
+        return None
+
+    if resp.status_code != 200:
+        return None
+
+    resp.encoding = "iso-8859-1"
+    raw_html = resp.text
+    soup = BeautifulSoup(raw_html, "html.parser")
+
+    if is_nexo_error_page(raw_html, soup=soup):
+        return None
+
+    title_el = soup.select_one("article.titulo [itemprop='name']") or soup.select_one("article.titulo h1")
+    title = normalize_nexo_text(title_el.get_text(" ", strip=True) if title_el else "")
+    if not title:
+        return None
+
+    description_el = soup.select_one("article.descripcion [itemprop='description']") or soup.select_one("article.descripcion p")
+    description = normalize_nexo_text(description_el.get_text(" ", strip=True) if description_el else "")
+
+    price_el = soup.select_one("[itemprop='price']")
+    price = normalize_nexo_text(price_el.get_text(" ", strip=True) if price_el else "")
+
+    id_inmueble_el = soup.select_one("input[name='id_inmueble']")
+    type_code_el = soup.select_one("input[name='cod_tipo_inmueble']")
+    product_code_el = soup.select_one("input[name='cod_inmueble']") or soup.select_one("[itemprop='productID']")
+    id_inmueble = normalize_nexo_text(id_inmueble_el.get("value", "") if id_inmueble_el else "")
+    type_code = normalize_nexo_text(type_code_el.get("value", "") if type_code_el else "")
+    product_code = normalize_nexo_text(
+        product_code_el.get("value", "") if product_code_el and product_code_el.name == "input"
+        else product_code_el.get_text(" ", strip=True) if product_code_el
+        else ""
+    )
+
+    if product_code:
+        external_id = slug_to_external_id(f"nexo:{product_code}")
+    else:
+        url_path = urlparse(resp.url).path.rstrip("/")
+        external_id = slug_to_external_id(f"nexo:{type_code}:{id_inmueble}:{url_path}")
+
+    href_type = (soup.select_one("link[itemprop='additionalType']") or {}).get("href", "").lower()
+    property_type = NEXO_PROPERTY_TYPE_BY_CODE.get(type_code, "")
+    if not property_type:
+        if "apartment" in href_type:
+            property_type = "apartment"
+        elif "house" in href_type:
+            property_type = "house"
+        elif "land" in href_type or "lot" in href_type:
+            property_type = "land"
+
+    if listing_type == "auto":
+        listing_type = NEXO_LISTING_TYPE_BY_CODE.get(type_code, "sale")
+
+    departamento = normalize_nexo_text((soup.select_one("[itemprop='addressRegion']") or {}).get_text(" ", strip=True) if soup.select_one("[itemprop='addressRegion']") else "")
+    municipio = normalize_nexo_text((soup.select_one("[itemprop='addressLocality']") or {}).get_text(" ", strip=True) if soup.select_one("[itemprop='addressLocality']") else "")
+    zona = normalize_nexo_text((soup.select_one("[itemprop='streetAddress']") or {}).get_text(" ", strip=True) if soup.select_one("[itemprop='streetAddress']") else "")
+    location_text = ", ".join(part for part in [zona, municipio, departamento] if part)
+
+    details = {}
+    specs = {}
+
+    if property_type:
+        details["property_type"] = property_type
+    if product_code:
+        details["product_code"] = product_code
+
+    location_article = soup.select_one(".caracteristicas article.caracteristicas2[itemprop='offers']")
+    if location_article:
+        for paragraph in location_article.select("p"):
+            text = normalize_nexo_text(paragraph.get_text(" ", strip=True))
+            if not text:
+                continue
+
+            p_classes = set(paragraph.get("class", []) or [])
+            text_key = normalize_nexo_key(text)
+
+            if "cuarto2" in p_classes or "habitacion" in text_key:
+                value = nexo_extract_first_number(text) or text
+                specs["bedrooms"] = value
+                continue
+            if "bano2" in p_classes or "bano" in text_key:
+                value = nexo_extract_first_number(text) or text
+                specs["bathrooms"] = value
+                continue
+            if "cochera2" in p_classes or "vehiculo" in text_key or "parqueo" in text_key:
+                value = nexo_extract_first_number(text) or text
+                specs["parking"] = value
+                continue
+            if "piso2" in p_classes or "planta" in text_key:
+                value = nexo_extract_first_number(text) or text
+                specs["floors"] = value
+                continue
+            if "nivel" in text_key:
+                value = nexo_extract_first_number(text) or text
+                specs["level"] = value
+
+    detail_articles = soup.select(".caracteristicas article.caracteristicas2:not([itemprop='offers'])")
+    for article in detail_articles:
+        for item in article.select("li"):
+            label_el = item.select_one("span.bold")
+            label = normalize_nexo_text(label_el.get_text(" ", strip=True)).rstrip(":") if label_el else ""
+            value = nexo_extract_value_text(item)
+            if not label or not value:
+                continue
+
+            details[label] = value
+            label_key = normalize_nexo_key(label)
+
+            if "habitacion" in label_key:
+                specs["bedrooms"] = nexo_extract_first_number(value) or value
+            elif "bano" in label_key:
+                specs["bathrooms"] = nexo_extract_first_number(value) or value
+            elif "vehiculo" in label_key or "parqueo" in label_key or "cochera" in label_key:
+                specs["parking"] = nexo_extract_first_number(value) or value
+            elif "tamano del terreno" in label_key or "area del terreno" in label_key or "tamano terreno" in label_key:
+                area_value = nexo_normalize_area_value(value)
+                specs[label] = area_value
+                specs["lot_area"] = area_value
+            elif "tamano construccion" in label_key or "tamano de construccion" in label_key or "area del apartamento" in label_key or "area construida" in label_key:
+                area_value = nexo_normalize_area_value(value)
+                specs[label] = area_value
+                specs["area"] = area_value
+            elif "planta" in label_key:
+                specs["floors"] = nexo_extract_first_number(value) or value
+            elif "nivel" in label_key:
+                specs["level"] = nexo_extract_first_number(value) or value
+
+    listing_type = correct_listing_type(listing_type, title, description, parse_price(price), url=resp.url)
+
+    municipio_info = detect_municipio(location_text, description, title)
+    municipio_detectado = municipio or municipio_info.get("municipio_detectado") or "No identificado"
+    departamento_final = departamento or municipio_info.get("departamento") or ""
+
+    location_data = {
+        "direccion": zona,
+        "zona": zona,
+        "municipio": municipio,
+        "municipio_detectado": municipio_detectado,
+        "departamento": departamento_final,
+    }
+
+    images = []
+    main_image = soup.select_one(".imgprincipal img")
+    if main_image and main_image.get("src"):
+        images.append(urljoin(resp.url, main_image.get("src").strip()))
+
+    for anchor in soup.select(".gallery a[href]"):
+        image_url = urljoin(resp.url, anchor.get("href", "").strip())
+        if image_url and image_url not in images:
+            images.append(image_url)
+
+    og_image = soup.select_one("meta[property='og:image']")
+    if og_image and og_image.get("content"):
+        og_url = urljoin(resp.url, og_image.get("content").strip())
+        if og_url and og_url not in images:
+            images.insert(0, og_url)
+
+    return {
+        "title": title,
+        "price": price,
+        "location": location_data,
+        "published_date": None,
+        "listing_type": listing_type,
+        "url": resp.url,
+        "external_id": external_id,
+        "specs": normalize_listing_specs(specs),
+        "details": details,
+        "description": description,
+        "images": images,
+        "source": NEXO_SOURCE,
+        "active": True,
+        "municipio_detectado": municipio_detectado,
+        "departamento": departamento_final,
+        "latitude": None,
+        "longitude": None,
+        "last_updated": datetime.now().isoformat()
+    }
+
+
+def scrape_nexo_listings_concurrent(urls, listing_type="auto", max_workers=4):
+    """Scrape multiple Nexo listings concurrently."""
+    results = []
+    total = len(urls)
+    completed = 0
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(scrape_nexo_listing, url, listing_type): url for url in urls}
+        for future in as_completed(futures):
+            completed += 1
+            data = future.result()
+            if data and data.get("title"):
+                results.append(data)
+
+            if completed % 25 == 0 or completed == total:
+                print(f"    Scraped {completed}/{total} ({len(results)} with data)")
+
+    return results, 0
+
+
+def main_nexo(limit=None, max_days=None):
+    """Main scraper function for Nexo."""
+    if limit:
+        print(f"\n*** LIMIT MODE: Scraping up to {limit} total listings from Nexo ***")
+    if max_days and max_days > 0:
+        print("*** DATE FILTER requested, but Nexo does not expose a reliable published date. Scraping all live listings. ***")
+
+    urls = get_nexo_listing_urls(max_listings=limit)
+    if not urls:
+        print("  No Nexo URLs found to scrape")
+        return [], [], []
+
+    print(f"Found {len(urls)} Nexo URLs. Scraping details...")
+    all_listings, _ = scrape_nexo_listings_concurrent(urls, "auto", max_workers=4)
+
+    sale_data = [listing for listing in all_listings if listing.get("listing_type") == "sale"]
+    rent_data = [listing for listing in all_listings if listing.get("listing_type") == "rent"]
+
+    print(f"  Nexo total: {len(all_listings)} ({len(sale_data)} sales, {len(rent_data)} rentals)")
+    return all_listings, sale_data, rent_data
 
 
 def is_service_listing(listing_data):
@@ -4937,13 +5367,14 @@ def main_vivolatam(limit=None, url_file=None, max_days=None):
     return all_listings, sale_data, rent_data
 
 
-def main(encuentra24=True, micasasv=False, realtor=False, camarabienesraices=False, vivolatam=False, propilatam=False, limit=None, vivolatam_urls=None, propilatam_urls=None, skip_validation=False, max_days=None):
+def main(encuentra24=True, micasasv=False, nexo=False, realtor=False, camarabienesraices=False, vivolatam=False, propilatam=False, limit=None, vivolatam_urls=None, propilatam_urls=None, skip_validation=False, max_days=None):
     """
     Main scraper function that orchestrates scraping from multiple sources.
     
     Args:
         encuentra24: If True, scrape from Encuentra24
         micasasv: If True, scrape from MiCasaSV
+        nexo: If True, scrape from Nexo
         realtor: If True, scrape from Realtor.com International
         camarabienesraices: If True, scrape from Camara Bienes Raices
         vivolatam: If True, scrape from Vivo Latam
@@ -4987,6 +5418,17 @@ def main(encuentra24=True, micasasv=False, realtor=False, camarabienesraices=Fal
         print("SCRAPING SOURCE: MiCasaSV")
         print("="*60)
         listings, sale_data, rent_data = main_micasasv(limit, max_days=max_days)
+        all_listings.extend(listings)
+        total_sale += len(sale_data)
+        total_rent += len(rent_data)
+
+    # --- NEXO ---
+    if nexo:
+        active_sources.append(NEXO_SOURCE)
+        print("\n" + "="*60)
+        print("SCRAPING SOURCE: Nexo")
+        print("="*60)
+        listings, sale_data, rent_data = main_nexo(limit, max_days=max_days)
         all_listings.extend(listings)
         total_sale += len(sale_data)
         total_rent += len(rent_data)
@@ -5098,7 +5540,7 @@ def main(encuentra24=True, micasasv=False, realtor=False, camarabienesraices=Fal
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Multi-source real estate scraper (Encuentra24, MiCasaSV, Realtor.com, Camara Bienes Raices, Vivo Latam, Propi Latam)"
+        description="Multi-source real estate scraper (Encuentra24, MiCasaSV, Nexo, Realtor.com, Camara Bienes Raices, Vivo Latam, Propi Latam)"
     )
     parser.add_argument(
         "--Encuentra24",
@@ -5109,6 +5551,11 @@ if __name__ == "__main__":
         "--MiCasaSV",
         action="store_true",
         help="Scrape listings from MiCasaSV"
+    )
+    parser.add_argument(
+        "--Nexo",
+        action="store_true",
+        help="Scrape listings from Nexo"
     )
     parser.add_argument(
         "--Realtor",
@@ -5182,6 +5629,7 @@ if __name__ == "__main__":
     # Get source flags
     encuentra24 = args.Encuentra24
     micasasv = args.MiCasaSV
+    nexo = args.Nexo
     realtor = args.Realtor
     camarabienesraices = args.CamaraBienesRaices
     vivolatam = args.VivoLatam
@@ -5193,6 +5641,8 @@ if __name__ == "__main__":
         sources.append("Encuentra24")
     if micasasv:
         sources.append("MiCasaSV")
+    if nexo:
+        sources.append(NEXO_SOURCE)
     if realtor:
         sources.append("Realtor")
     if camarabienesraices:
@@ -5215,18 +5665,20 @@ if __name__ == "__main__":
     else:
         # Normal scrape mode
         # Default behavior: scrape from ALL sources if no source is specified
-        if not encuentra24 and not micasasv and not realtor and not camarabienesraices and not vivolatam and not propilatam:
+        if not encuentra24 and not micasasv and not nexo and not realtor and not camarabienesraices and not vivolatam and not propilatam:
             encuentra24 = True
             micasasv = True
+            nexo = True
             realtor = True
             camarabienesraices = True
             vivolatam = True
             propilatam = True
-            print("No source specified. Scraping from ALL sources: Encuentra24, MiCasaSV, Realtor, CamaraBienesRaices, VivoLatam, PropiLatam")
+            print("No source specified. Scraping from ALL sources: Encuentra24, MiCasaSV, Nexo, Realtor, CamaraBienesRaices, VivoLatam, PropiLatam")
         
         main(
             encuentra24=encuentra24, 
             micasasv=micasasv, 
+            nexo=nexo,
             realtor=realtor, 
             camarabienesraices=camarabienesraices,
             vivolatam=vivolatam,
