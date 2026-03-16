@@ -16,8 +16,13 @@ import json
 import math
 import unicodedata
 import requests
-from typing import Dict, List, Optional, Tuple
-from supabase import create_client, Client
+from typing import Any, Dict, List, Optional, Tuple
+
+try:
+    from supabase import create_client, Client
+except ModuleNotFoundError:
+    create_client = None
+    Client = Any
 
 # Supabase credentials (hardcoded for convenience)
 SUPABASE_URL = "https://zvamupbxzuxdgvzgbssn.supabase.co"
@@ -25,6 +30,59 @@ SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 
 BATCH_SIZE = 100
 DEBUG = True  # Set to True to see sample data
+
+
+def build_supabase_headers(supabase_key: str = None) -> Dict[str, str]:
+    """Build headers for Supabase REST API calls."""
+    key = supabase_key or SUPABASE_KEY
+    return {
+        "apikey": key,
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+    }
+
+
+def fetch_all_rows(table_name: str, supabase: Client = None,
+                   supabase_url: str = None, supabase_key: str = None,
+                   page_size: int = 1000) -> List[dict]:
+    """Fetch a full Supabase table via client or REST fallback."""
+    all_rows = []
+    offset = 0
+
+    if supabase is not None:
+        while True:
+            result = supabase.table(table_name).select("*").range(offset, offset + page_size - 1).execute()
+            data = result.data or []
+            if not data:
+                break
+            all_rows.extend(data)
+            if len(data) < page_size:
+                break
+            offset += page_size
+        return all_rows
+
+    url = supabase_url or SUPABASE_URL
+    headers = build_supabase_headers(supabase_key)
+
+    while True:
+        resp = requests.get(
+            f"{url}/rest/v1/{table_name}",
+            headers=headers,
+            params={"select": "*", "offset": offset, "limit": page_size},
+            timeout=60,
+        )
+        if resp.status_code not in (200, 206):
+            raise RuntimeError(f"{table_name} fetch failed: {resp.status_code} - {resp.text[:200]}")
+
+        data = resp.json() or []
+        if not data:
+            break
+        all_rows.extend(data)
+        if len(data) < page_size:
+            break
+        offset += page_size
+
+    return all_rows
 
 
 def normalize_text(text: str) -> str:
@@ -99,7 +157,8 @@ def extract_searchable_text(listing: dict) -> Dict[str, str]:
     return texts
 
 
-def load_location_groups(supabase: Client) -> Dict[int, Dict]:
+def load_location_groups(supabase: Client = None, supabase_url: str = None,
+                         supabase_key: str = None) -> Dict[int, Dict]:
     """Load all sv_loc_group tables into memory for fast matching.
     
     Note: L3 (municipalities), L4 (districts), L5 (departments) are static
@@ -111,18 +170,12 @@ def load_location_groups(supabase: Client) -> Dict[int, Dict]:
     for level in [2, 3, 4, 5]:
         table_name = f"sv_loc_group{level}"
         try:
-            # Paginate to get all rows (Supabase default limit is 1000)
-            all_rows = []
-            offset = 0
-            page_size = 1000
-            while True:
-                result = supabase.table(table_name).select("*").range(offset, offset + page_size - 1).execute()
-                if not result.data:
-                    break
-                all_rows.extend(result.data)
-                if len(result.data) < page_size:
-                    break
-                offset += page_size
+            all_rows = fetch_all_rows(
+                table_name,
+                supabase=supabase,
+                supabase_url=supabase_url,
+                supabase_key=supabase_key,
+            )
             
             groups[level] = {}
             
@@ -1306,9 +1359,12 @@ def match_scraped_listings(listings: list, supabase_url: str = None, supabase_ke
     
     print("\n=== Matching Listings to Location Hierarchy ===")
     
-    # Load location groups (uses Supabase client for loading)
-    supabase = create_client(url, key)
-    groups = load_location_groups(supabase)
+    # Load location groups. Use the Supabase client when available, otherwise
+    # fall back to direct REST requests so scraper-integrated matching still works.
+    supabase = create_client(url, key) if create_client else None
+    if supabase is None:
+        print("  Supabase Python client not installed; loading location groups via REST API.")
+    groups = load_location_groups(supabase, supabase_url=url, supabase_key=key)
     
     # Match all listings
     matches = []
@@ -1747,6 +1803,11 @@ def main():
     
     # Connect to Supabase
     print("\n🔌 Connecting to Supabase...")
+    if create_client is None:
+        raise ModuleNotFoundError(
+            "The 'supabase' package is required to run match_locations.py directly. "
+            "Scraper-integrated matching can run without it via the REST fallback."
+        )
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
     print("   ✓ Connected")
     

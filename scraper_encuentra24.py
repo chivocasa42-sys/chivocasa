@@ -1,6 +1,6 @@
 """
 Multi-Source Housing Scraper - OPTIMIZED
-Uses concurrent requests to scrape listings from Encuentra24, MiCasaSV, Nexo, Realtor.com, Camara Bienes Raices, Vivo Latam, and Propi Latam.
+Uses concurrent requests to scrape listings from Encuentra24, MiCasaSV, Nexo, Realtor.com, Realty El Salvador, Casas Ahorita, Camara Bienes Raices, Vivo Latam, and Propi Latam.
 Inserts results directly into Supabase database (scrappeddata_ingest table).
 
 Usage:
@@ -9,6 +9,8 @@ Usage:
   python scraper_encuentra24.py --MiCasaSV --limit 10       # Scrape 10 from MiCasaSV only
   python scraper_encuentra24.py --Nexo --limit 20           # Scrape 20 from Nexo only
   python scraper_encuentra24.py --Realtor --limit 50        # Scrape 50 from Realtor.com only
+  python scraper_encuentra24.py --RealtyElSalvador --limit 20  # Scrape 20 from Realty El Salvador only
+  python scraper_encuentra24.py --CasasAhorita --limit 20  # Scrape 20 from Casas Ahorita only
   python scraper_encuentra24.py --CamaraBienesRaices --limit 20  # Scrape 20 from Camara Bienes Raices only
   python scraper_encuentra24.py --VivoLatam --limit 20      # Scrape 20 from Vivo Latam only
   python scraper_encuentra24.py --PropiLatam --limit 20     # Scrape 20 from Propi Latam only
@@ -25,6 +27,7 @@ import os
 import hashlib
 import random
 import unicodedata
+from html import unescape
 from urllib.parse import unquote, urlparse, urljoin
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -35,8 +38,19 @@ from localization_plugin import build_destination_queries
 # Import area normalizer for standardizing area units to m²
 from area_normalizer import normalize_listing_specs
 
-# Import location matcher for matching scraped listings to sv_loc_group hierarchy
-from match_locations import match_scraped_listings
+# Import location matcher lazily so source-specific smoke tests can run
+# without importing the full Supabase client stack up front.
+MATCH_SCRAPED_LISTINGS = None
+
+
+def get_match_scraped_listings():
+    """Load the location matcher only when a full ingest run needs it."""
+    global MATCH_SCRAPED_LISTINGS
+    if MATCH_SCRAPED_LISTINGS is None:
+        from match_locations import match_scraped_listings as imported_match_scraped_listings
+
+        MATCH_SCRAPED_LISTINGS = imported_match_scraped_listings
+    return MATCH_SCRAPED_LISTINGS
 
 # ============== SUPABASE CONFIG ==============
 SUPABASE_URL = "https://zvamupbxzuxdgvzgbssn.supabase.co"
@@ -425,7 +439,17 @@ def run_update_mode(sources=None, limit=None, skip_validation=False):
     print(f"Update run started at: {run_start_time}")
     
     # Determine which sources to update
-    all_sources = ["Encuentra24", "MiCasaSV", NEXO_SOURCE, "Realtor", CAMARABIENESRAICES_SOURCE, "PropiLatam", "VivoLatam"]
+    all_sources = [
+        "Encuentra24",
+        "MiCasaSV",
+        NEXO_SOURCE,
+        "Realtor",
+        REALTYELSALVADOR_SOURCE,
+        CASASAHORITA_SOURCE,
+        CAMARABIENESRAICES_SOURCE,
+        "PropiLatam",
+        "VivoLatam",
+    ]
     if sources:
         sources_to_update = [s for s in sources if s in all_sources]
     else:
@@ -518,6 +542,16 @@ def run_update_mode(sources=None, limit=None, skip_validation=False):
                     print(f"  Deactivated {deactivated} Realtor listings")
             elif False:
                 print(f"  [WARN] Scrape returned too few results ({len(scraped_listings)}/{len(active_listings)}), skipping deactivation to prevent data loss")
+
+        elif source == REALTYELSALVADOR_SOURCE:
+            print(f"  Re-fetching Realty El Salvador listings from the WP REST API...")
+            scraped, _, _ = main_realtyelsalvador(limit=limit, max_days=None)
+            scraped_listings.extend(scraped)
+
+        elif source == CASASAHORITA_SOURCE:
+            print(f"  Re-fetching Casas Ahorita listings from current search results...")
+            scraped, _, _ = main_casasahorita(limit=limit, max_days=None)
+            scraped_listings.extend(scraped)
 
         elif source == CAMARABIENESRAICES_SOURCE:
             property_ids = [l["external_id"] for l in active_listings if l.get("external_id")]
@@ -719,6 +753,8 @@ def check_listing_still_active(url, source):
     try:
         if source == "PropiLatam":
             return check_propilatam_listing_still_active(url, headers)
+        if source == REALTYELSALVADOR_SOURCE:
+            return get_realtyelsalvador_listing_status(url)
 
         # Use GET to check the full page (some sites don't support HEAD properly)
         resp = requests.get(url, headers=headers, timeout=20, allow_redirects=True)
@@ -748,6 +784,34 @@ def check_listing_still_active(url, source):
 
             if resp.status_code >= 400:
                 return True, f"HTTP {resp.status_code} (assumed active)"
+
+            return True, "Active"
+
+        if source == CASASAHORITA_SOURCE:
+            raw_html = resp.text or ""
+            soup = BeautifulSoup(raw_html, "html.parser")
+
+            if resp.status_code in (404, 410):
+                return False, f"HTTP {resp.status_code}"
+
+            if resp.status_code == 403:
+                return True, "403 Forbidden (assumed active - bot blocked)"
+
+            if resp.status_code >= 500:
+                return True, f"HTTP {resp.status_code} (assumed active)"
+
+            if casasahorita_is_placeholder_page(raw_html, soup=soup):
+                return False, "Placeholder/empty listing page"
+
+            title_el = soup.select_one("div.content.row h1")
+            title_text = normalize_source_text(title_el.get_text(" ", strip=True) if title_el else "")
+            gallery_images = [
+                img for img in soup.select("img[src]")
+                if "/img/user_uploads/" in (img.get("src") or "")
+                and "/profile_fotos/" not in (img.get("src") or "")
+            ]
+            if not title_text or (title_text.endswith("-") and not gallery_images):
+                return False, "Missing title and gallery"
 
             return True, "Active"
         
@@ -925,7 +989,17 @@ def validate_all_active_listings(sources=None, max_workers=10):
     print("="*60)
     
     # Determine which sources to validate
-    all_source_names = ["Encuentra24", "MiCasaSV", NEXO_SOURCE, "Realtor", CAMARABIENESRAICES_SOURCE, "PropiLatam", "VivoLatam"]
+    all_source_names = [
+        "Encuentra24",
+        "MiCasaSV",
+        NEXO_SOURCE,
+        "Realtor",
+        REALTYELSALVADOR_SOURCE,
+        CASASAHORITA_SOURCE,
+        CAMARABIENESRAICES_SOURCE,
+        "PropiLatam",
+        "VivoLatam",
+    ]
     if sources:
         sources_to_check = [s for s in sources if s in all_source_names]
     else:
@@ -1631,6 +1705,29 @@ def remove_emojis(text):
     return cleaned.strip()
 
 
+def normalize_source_text(text):
+    """Normalize scraped text, including common mojibake repairs."""
+    if text is None:
+        return ""
+
+    cleaned = unescape(str(text)).replace("\xa0", " ").replace("\r", " ")
+    cleaned = cleaned.replace("\u200b", " ")
+
+    if any(marker in cleaned for marker in ("Ã", "Â", "â", "\x81", "\x8d", "\x8f", "\x90", "\x9d")):
+        for source_encoding in ("latin-1", "cp1252"):
+            try:
+                repaired = cleaned.encode(source_encoding).decode("utf-8")
+                if repaired and repaired.count("Ã") < cleaned.count("Ã"):
+                    cleaned = repaired
+                    break
+            except (UnicodeEncodeError, UnicodeDecodeError):
+                continue
+
+    cleaned = remove_emojis(cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    return cleaned.strip()
+
+
 # Get data directory from environment or use relative path
 DATA_DIR = os.environ.get("CHIVOFERTON_DATA_DIR", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data"))
 
@@ -1731,6 +1828,53 @@ def get_cbr_session():
             "Accept-Language": "es-SV,es;q=0.9,en;q=0.8",
         })
     return CBR_SESSION
+
+# ============== REALTY EL SALVADOR CONFIG ==============
+REALTYELSALVADOR_SOURCE = "RealtyElSalvador"
+REALTYELSALVADOR_BASE_URL = "https://realtyelsalvador.com"
+REALTYELSALVADOR_API_BASE = f"{REALTYELSALVADOR_BASE_URL}/wp-json/wp/v2"
+REALTYELSALVADOR_PROPERTIES_URL = f"{REALTYELSALVADOR_API_BASE}/propiedades"
+REALTYELSALVADOR_PROPERTY_TYPE_URL = f"{REALTYELSALVADOR_API_BASE}/tipo-de-propiedad"
+REALTYELSALVADOR_PROPERTY_STATUS_URL = f"{REALTYELSALVADOR_API_BASE}/estado-de-propiedad"
+REALTYELSALVADOR_PER_PAGE = 100
+
+REALTYELSALVADOR_SESSION = None
+REALTYELSALVADOR_AVAILABLE_STATUS_ID = None
+
+
+def get_realtyelsalvador_session():
+    """Get or create a shared requests.Session for Realty El Salvador."""
+    global REALTYELSALVADOR_SESSION
+    if REALTYELSALVADOR_SESSION is None:
+        REALTYELSALVADOR_SESSION = requests.Session()
+        REALTYELSALVADOR_SESSION.headers.update({
+            "User-Agent": HEADERS["User-Agent"],
+            "Accept": "application/json,text/plain,*/*",
+            "Accept-Language": "es-SV,es;q=0.9,en;q=0.8",
+        })
+    return REALTYELSALVADOR_SESSION
+
+
+# ============== CASAS AHORITA CONFIG ==============
+CASASAHORITA_SOURCE = "CasasAhorita"
+CASASAHORITA_BASE_URL = "https://casasahorita.com"
+CASASAHORITA_SEARCH_URL = f"{CASASAHORITA_BASE_URL}/buscar/sv"
+CASASAHORITA_FALLBACK_SEARCH_URL = f"{CASASAHORITA_BASE_URL}/pages/search"
+
+CASASAHORITA_SESSION = None
+
+
+def get_casasahorita_session():
+    """Get or create a shared requests.Session for Casas Ahorita."""
+    global CASASAHORITA_SESSION
+    if CASASAHORITA_SESSION is None:
+        CASASAHORITA_SESSION = requests.Session()
+        CASASAHORITA_SESSION.headers.update({
+            "User-Agent": HEADERS["User-Agent"],
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "es-SV,es;q=0.9,en;q=0.8",
+        })
+    return CASASAHORITA_SESSION
 
 # ============== VIVOLATAM CONFIG ==============
 VIVOLATAM_BASE_URL = "https://www.vivolatam.com"
@@ -4327,6 +4471,986 @@ def main_camarabienesraices(limit=None, max_days=None):
     return all_listings, sale_data, rent_data
 
 
+# ============== REALTY EL SALVADOR FUNCTIONS ==============
+
+def realtyelsalvador_parse_datetime(date_str):
+    """Parse a Realty El Salvador ISO-like datetime string."""
+    if not date_str:
+        return None
+
+    cleaned = str(date_str).strip().replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(cleaned)
+    except ValueError:
+        return None
+
+
+def realtyelsalvador_format_date(date_str):
+    """Convert Realty date strings to dd/mm/YYYY."""
+    parsed = realtyelsalvador_parse_datetime(date_str)
+    return parsed.strftime("%d/%m/%Y") if parsed else ""
+
+
+def realtyelsalvador_get_available_status_id(force_refresh=False):
+    """Resolve the Realty El Salvador status taxonomy ID for available listings."""
+    global REALTYELSALVADOR_AVAILABLE_STATUS_ID
+
+    if REALTYELSALVADOR_AVAILABLE_STATUS_ID and not force_refresh:
+        return REALTYELSALVADOR_AVAILABLE_STATUS_ID
+
+    session = get_realtyelsalvador_session()
+    try:
+        resp = session.get(
+            REALTYELSALVADOR_PROPERTY_STATUS_URL,
+            params={"per_page": 100},
+            timeout=30
+        )
+        if resp.status_code != 200:
+            return None
+
+        for term in resp.json():
+            slug = str(term.get("slug", "")).strip().lower()
+            if slug == "disponible":
+                REALTYELSALVADOR_AVAILABLE_STATUS_ID = term.get("id")
+                return REALTYELSALVADOR_AVAILABLE_STATUS_ID
+    except Exception as e:
+        print(f"  Warning: Could not resolve Realty available status ID: {e}")
+
+    return None
+
+
+def realtyelsalvador_get_class_slug(property_data, prefix):
+    """Extract one class_list slug suffix from a Realty property payload."""
+    for class_name in property_data.get("class_list", []) or []:
+        class_str = str(class_name).strip()
+        if class_str.startswith(prefix):
+            return class_str[len(prefix):]
+    return ""
+
+
+def realtyelsalvador_is_available(property_data, term_names=None):
+    """Return True when the Realty property is still marked as available."""
+    status_slug = realtyelsalvador_get_class_slug(property_data, "property-status-")
+    if status_slug == "disponible":
+        return True
+    if status_slug == "no-disponible":
+        return False
+
+    if property_data.get("status") != "publish":
+        return False
+
+    if term_names is None:
+        term_names = cbr_get_embedded_terms(property_data)
+
+    statuses = [normalize_source_text(value).lower() for value in term_names.get("property-status", [])]
+    if any(value == "disponible" for value in statuses):
+        return True
+    if any("no disponible" in value for value in statuses):
+        return False
+
+    return True
+
+
+def realtyelsalvador_pick_image_url(image_entry):
+    """Pick the best available image URL from a Realty gallery image entry."""
+    if not isinstance(image_entry, dict):
+        return ""
+
+    for key in ("full_url", "url"):
+        candidate = normalize_source_text(image_entry.get(key))
+        if candidate.startswith("http"):
+            return candidate
+
+    sizes = image_entry.get("sizes", {}) or {}
+    preferred_sizes = [
+        "post-featured-image",
+        "large",
+        "medium_large",
+        "property-detail-video-image",
+        "modern-property-child-slider",
+        "property-thumb-image",
+        "medium",
+        "thumbnail",
+    ]
+    for size_key in preferred_sizes:
+        size_entry = sizes.get(size_key)
+        if isinstance(size_entry, dict):
+            candidate = normalize_source_text(size_entry.get("url"))
+            if candidate.startswith("http"):
+                return candidate
+
+    return ""
+
+
+def realtyelsalvador_map_property_type(label="", slug=""):
+    """Map Realty property taxonomy labels/slugs into normalized property types."""
+    combined = normalize_source_text(f"{label} {slug}").lower()
+    if any(token in combined for token in ("apartamento", "apartment", "condo", "condominio")):
+        return "apartment"
+    if any(token in combined for token in ("terreno", "lote", "land", "lot", "parcela", "finca")):
+        return "land"
+    if any(token in combined for token in ("hotel", "local", "oficina", "bodega", "comercial", "industrial")):
+        return "commercial"
+    if any(token in combined for token in ("casa", "house", "residencia", "quinta")):
+        return "house"
+    return ""
+
+
+def realtyelsalvador_build_location_text(term_names, property_meta):
+    """Build the best location string available for a Realty listing."""
+    parts = []
+    address = normalize_source_text(property_meta.get("REAL_HOMES_property_address"))
+    if address:
+        parts.append(address)
+
+    for value in term_names.get("property-city", []) or []:
+        cleaned = normalize_source_text(value)
+        if cleaned and cleaned not in parts:
+            parts.append(cleaned)
+
+    return ", ".join(parts)
+
+
+def realtyelsalvador_get_properties_page(page=1, active_only=True):
+    """Fetch one page of Realty El Salvador properties from the public WP REST API."""
+    session = get_realtyelsalvador_session()
+    params = {
+        "page": page,
+        "per_page": REALTYELSALVADOR_PER_PAGE,
+        "_embed": "1",
+        "orderby": "modified",
+        "order": "desc",
+        "status": "publish",
+    }
+
+    available_status_id = realtyelsalvador_get_available_status_id()
+    if active_only and available_status_id:
+        params["estado-de-propiedad"] = available_status_id
+
+    resp = session.get(REALTYELSALVADOR_PROPERTIES_URL, params=params, timeout=45)
+    if resp.status_code != 200:
+        raise RuntimeError(
+            f"Realty property page fetch failed ({resp.status_code}): {resp.text[:200]}"
+        )
+
+    total_pages = int(resp.headers.get("X-WP-TotalPages", "1") or "1")
+    total_items = int(resp.headers.get("X-WP-Total", "0") or "0")
+    return resp.json(), total_pages, total_items
+
+
+def normalize_realtyelsalvador_property(property_data):
+    """Normalize one Realty El Salvador property payload to the shared listing schema."""
+    if not isinstance(property_data, dict):
+        return None
+
+    property_id = property_data.get("id")
+    if not property_id:
+        return None
+
+    property_meta = property_data.get("property_meta") or {}
+    term_names = cbr_get_embedded_terms(property_data)
+
+    title = cbr_strip_html((property_data.get("title") or {}).get("rendered", ""), max_length=200)
+    description = cbr_strip_html((property_data.get("content") or {}).get("rendered", ""))
+    if not description:
+        description = cbr_strip_html((property_data.get("excerpt") or {}).get("rendered", ""))
+
+    price_raw = normalize_source_text(property_meta.get("REAL_HOMES_property_price"))
+    price_prefix = normalize_source_text(property_meta.get("REAL_HOMES_property_price_prefix"))
+    price_postfix = normalize_source_text(property_meta.get("REAL_HOMES_property_price_postfix"))
+    price_parts = [part for part in [price_prefix, price_raw, price_postfix] if part]
+    price_text = " ".join(price_parts) if price_parts else price_raw
+    parsed_price = parse_price(price_text or price_raw)
+
+    listing_type = correct_listing_type(
+        "sale",
+        title,
+        description,
+        parsed_price,
+        url=property_data.get("link")
+    )
+
+    property_type_label = (term_names.get("property-type") or [""])[0]
+    property_type_slug = realtyelsalvador_get_class_slug(property_data, "property-type-")
+    property_type = realtyelsalvador_map_property_type(property_type_label, property_type_slug)
+
+    specs = {}
+    bedrooms = normalize_source_text(property_meta.get("REAL_HOMES_property_bedrooms"))
+    bathrooms = normalize_source_text(property_meta.get("REAL_HOMES_property_bathrooms"))
+    garage = normalize_source_text(property_meta.get("REAL_HOMES_property_garage"))
+    size = normalize_source_text(property_meta.get("REAL_HOMES_property_size"))
+    size_postfix = normalize_source_text(property_meta.get("REAL_HOMES_property_size_postfix"))
+    lot_size = normalize_source_text(property_meta.get("REAL_HOMES_property_lot_size"))
+    lot_postfix = normalize_source_text(property_meta.get("REAL_HOMES_property_lot_size_postfix"))
+
+    if bedrooms:
+        specs["bedrooms"] = bedrooms
+    if bathrooms:
+        specs["bathrooms"] = bathrooms
+    if garage:
+        specs["parking"] = garage
+    if size:
+        specs["area"] = " ".join(part for part in [size, size_postfix] if part)
+    if lot_size:
+        specs["terreno"] = " ".join(part for part in [lot_size, lot_postfix] if part)
+
+    location = realtyelsalvador_build_location_text(term_names, property_meta)
+    published_date = realtyelsalvador_format_date(property_data.get("date"))
+    source_modified_at = normalize_source_text(property_data.get("modified_gmt") or property_data.get("modified"))
+
+    details = {
+        "source_listing_id": str(property_id),
+    }
+    if property_type:
+        details["property_type"] = property_type
+    if property_type_label:
+        details["property_type_label"] = property_type_label
+
+    property_status = ", ".join(term_names.get("property-status", []))
+    if property_status:
+        details["property_status"] = property_status
+    city_label = ", ".join(term_names.get("property-city", []))
+    if city_label:
+        details["city"] = city_label
+
+    property_ref = normalize_source_text(property_meta.get("REAL_HOMES_property_id"))
+    if property_ref:
+        details["source_property_ref"] = property_ref
+    if source_modified_at:
+        details["source_modified_at"] = source_modified_at
+
+    author_data = ((property_data.get("_embedded") or {}).get("author") or [])
+    if author_data:
+        author = author_data[0]
+        author_name = normalize_source_text(author.get("name"))
+        author_url = normalize_source_text(author.get("url"))
+        if author_name:
+            details["agent_name"] = author_name
+        if author_url:
+            details["agent_url"] = author_url
+
+    feature_labels = term_names.get("property-feature", []) or []
+    if feature_labels:
+        details["features"] = feature_labels
+
+    property_location = property_meta.get("REAL_HOMES_property_location") or {}
+    latitude = cbr_parse_number(property_location.get("latitude"))
+    longitude = cbr_parse_number(property_location.get("longitude"))
+
+    images = []
+    featured_image = cbr_get_featured_image(property_data)
+    if featured_image:
+        images.append(featured_image)
+    for image_entry in property_meta.get("REAL_HOMES_property_images", []) or []:
+        image_url = realtyelsalvador_pick_image_url(image_entry)
+        if image_url and image_url not in images:
+            images.append(image_url)
+
+    municipio_info = detect_municipio(location, description, title)
+    return {
+        "title": title,
+        "price": price_text or price_raw,
+        "location": location,
+        "published_date": published_date,
+        "listing_type": listing_type,
+        "url": property_data.get("link"),
+        "external_id": str(slug_to_external_id(f"realtyelsalvador:{property_id}")),
+        "specs": normalize_listing_specs(specs),
+        "details": details,
+        "description": description,
+        "images": images,
+        "source": REALTYELSALVADOR_SOURCE,
+        "active": realtyelsalvador_is_available(property_data, term_names=term_names),
+        "municipio_detectado": municipio_info["municipio_detectado"],
+        "departamento": municipio_info["departamento"],
+        "latitude": latitude,
+        "longitude": longitude,
+        "last_updated": datetime.now().isoformat(),
+    }
+
+
+def get_realtyelsalvador_all_listings(limit=None, max_days=None, active_only=True):
+    """Fetch and normalize Realty El Salvador properties."""
+    raw_properties = []
+    page = 1
+
+    while True:
+        properties, total_pages, total_items = realtyelsalvador_get_properties_page(
+            page=page,
+            active_only=active_only
+        )
+        raw_properties.extend(properties)
+        print(
+            f"  Fetched Realty page {page}/{total_pages} "
+            f"({len(raw_properties)}/{total_items} raw listings)"
+        )
+
+        if limit and len(raw_properties) >= limit:
+            raw_properties = raw_properties[:limit]
+            break
+
+        if page >= total_pages:
+            break
+
+        page += 1
+        time.sleep(0.15)
+
+    listings = []
+    old_listing_count = 0
+    for property_data in raw_properties:
+        listing = normalize_realtyelsalvador_property(property_data)
+        if not listing:
+            continue
+        if active_only and not listing.get("active", True):
+            continue
+        if max_days and max_days > 0:
+            is_recent, _ = is_listing_within_date_range(listing.get("published_date"), max_days)
+            if not is_recent:
+                old_listing_count += 1
+                continue
+        listings.append(listing)
+
+    return listings, old_listing_count
+
+
+def get_realtyelsalvador_listing_status(url):
+    """Validate one Realty El Salvador listing via the public WP REST API."""
+    path_parts = [part for part in urlparse(url).path.split("/") if part]
+    slug = path_parts[-1] if path_parts else ""
+    if not slug or slug == "propiedades":
+        return False, "Missing property slug"
+
+    session = get_realtyelsalvador_session()
+    try:
+        resp = session.get(
+            REALTYELSALVADOR_PROPERTIES_URL,
+            params={"slug": slug, "per_page": 1, "_embed": "1"},
+            timeout=30
+        )
+        if resp.status_code == 404:
+            return False, "404 Not Found"
+        if resp.status_code >= 400:
+            return True, f"HTTP {resp.status_code} (assumed active)"
+
+        payload = resp.json()
+        if not payload:
+            return False, "Listing not present in WP API"
+
+        property_data = payload[0]
+        if not realtyelsalvador_is_available(property_data):
+            return False, "Property status is not disponible"
+
+        return True, "Active"
+    except requests.exceptions.Timeout:
+        return True, "Timeout (assumed active)"
+    except requests.exceptions.ConnectionError:
+        return True, "Connection error (assumed active)"
+    except Exception as e:
+        return True, f"Error: {str(e)[:50]} (assumed active)"
+
+
+def main_realtyelsalvador(limit=None, max_days=None):
+    """Main scraper function for Realty El Salvador."""
+    if limit:
+        print(f"\n*** LIMIT MODE: Scraping up to {limit} total listings from Realty El Salvador ***")
+    if max_days and max_days > 0:
+        print(f"*** DATE FILTER: Only listings from last {max_days} days ***")
+
+    all_listings, old_count = get_realtyelsalvador_all_listings(
+        limit=limit,
+        max_days=max_days,
+        active_only=True
+    )
+
+    sale_data = [listing for listing in all_listings if listing.get("listing_type") == "sale"]
+    rent_data = [listing for listing in all_listings if listing.get("listing_type") == "rent"]
+
+    print(
+        f"  Realty El Salvador total: {len(all_listings)} "
+        f"({len(sale_data)} sales, {len(rent_data)} rentals)"
+    )
+    if old_count > 0:
+        print(f"  Skipped {old_count} old listings (>{max_days} days)")
+
+    return all_listings, sale_data, rent_data
+
+
+# ============== CASAS AHORITA FUNCTIONS ==============
+
+CASASAHORITA_MONTHS = {
+    "ene": 1,
+    "feb": 2,
+    "mar": 3,
+    "abr": 4,
+    "may": 5,
+    "jun": 6,
+    "jul": 7,
+    "ago": 8,
+    "sep": 9,
+    "oct": 10,
+    "nov": 11,
+    "dic": 12,
+}
+
+CASASAHORITA_PROPERTY_TYPE_MAP = {
+    "casa": "house",
+    "apartamento": "apartment",
+    "terreno-general": "land",
+    "espacio-comercial": "commercial",
+    "industrial": "commercial",
+    "hotel": "commercial",
+    "otro": "other",
+}
+
+
+def casasahorita_normalize_key(text):
+    """Normalize Casas Ahorita labels for accent-insensitive matching."""
+    normalized = normalize_source_text(text).lower()
+    normalized = unicodedata.normalize("NFD", normalized)
+    normalized = "".join(c for c in normalized if unicodedata.category(c) != "Mn")
+    normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+    return normalized.strip()
+
+
+def _legacy_casasahorita_parse_datetime(date_text):
+    """Parse Casas Ahorita date strings like 'Jue 10 Abr 2025 09:38:01 CST'."""
+    cleaned = normalize_source_text(date_text).lower()
+    match = re.search(
+        r"(\d{1,2})\s+([a-záéíóú]+)\s+(\d{4})(?:\s+(\d{2}):(\d{2})(?::(\d{2}))?)?",
+        cleaned
+    )
+    if not match:
+        return None
+
+    day = int(match.group(1))
+    month_token = match.group(2)[:3]
+    month = CASASAHORITA_MONTHS.get(month_token)
+    year = int(match.group(3))
+    hour = int(match.group(4) or 0)
+    minute = int(match.group(5) or 0)
+    second = int(match.group(6) or 0)
+
+    if not month:
+        return None
+
+    try:
+        return datetime(year, month, day, hour, minute, second)
+    except ValueError:
+        return None
+
+
+def _legacy_casasahorita_extract_dates(raw_html):
+    """Extract publication and update timestamps from a Casas Ahorita detail page."""
+    original_match = re.search(
+        r"Fecha Original De Publicación:</strong>\s*<br>\s*([^<]+)",
+        raw_html,
+        re.IGNORECASE
+    )
+    updated_match = re.search(
+        r"Cambio Más Reciente:</strong>\s*<br>\s*([^<]+)",
+        raw_html,
+        re.IGNORECASE
+    )
+
+    original_raw = normalize_source_text(original_match.group(1)) if original_match else ""
+    updated_raw = normalize_source_text(updated_match.group(1)) if updated_match else ""
+    original_dt = _legacy_casasahorita_parse_datetime(original_raw)
+    updated_dt = _legacy_casasahorita_parse_datetime(updated_raw)
+
+    return {
+        "published_raw": original_raw,
+        "updated_raw": updated_raw,
+        "published_date": original_dt.strftime("%d/%m/%Y") if original_dt else "",
+        "updated_iso": updated_dt.isoformat() if updated_dt else "",
+    }
+
+
+def casasahorita_slug_info_from_url(url):
+    """Parse transaction, property type, and source ID from a Casas Ahorita listing URL."""
+    path = urlparse(url).path.rstrip("/")
+    slug = path.split("/")[-1] if path else ""
+    match = re.search(r"-(venta|alquiler)-([a-z-]+)-(\d{10})$", slug, re.IGNORECASE)
+    if not match:
+        return {
+            "slug": slug,
+            "listing_type": infer_listing_type_from_url(url, default_type="sale"),
+            "property_type_slug": "",
+            "source_listing_id": "",
+        }
+
+    return {
+        "slug": slug,
+        "listing_type": "rent" if match.group(1).lower() == "alquiler" else "sale",
+        "property_type_slug": match.group(2).lower(),
+        "source_listing_id": match.group(3),
+    }
+
+
+def casasahorita_is_placeholder_page(raw_html, soup=None):
+    """Return True when a Casas Ahorita URL resolves to an empty placeholder listing."""
+    if soup is None:
+        soup = BeautifulSoup(raw_html or "", "html.parser")
+
+    h1 = normalize_source_text(
+        soup.select_one("div.content.row h1").get_text(" ", strip=True)
+        if soup.select_one("div.content.row h1") else ""
+    ).lower()
+    h2 = normalize_source_text(
+        soup.select_one("div.content.row h2.lead").get_text(" ", strip=True)
+        if soup.select_one("div.content.row h2.lead") else ""
+    ).lower()
+    page_text = normalize_source_text(soup.get_text(" ", strip=True)).lower()
+    gallery_images = [
+        img for img in soup.select("img[src]")
+        if "/img/user_uploads/" in (img.get("src") or "")
+        and "/profile_fotos/" not in (img.get("src") or "")
+    ]
+
+    has_blank_heading = (not h1) or h1 in {"en -", "en  -", "-"} or (h1.endswith("-") and "$" not in h1)
+    has_blank_subheading = not h2
+    has_zero_photos = ("numero de fotos: 0" in page_text) or (len(gallery_images) == 0)
+    has_epoch_date = "31 dic 1969" in page_text or "1970" in page_text or "1969" in page_text
+
+    return (has_blank_heading and has_zero_photos) or (has_blank_subheading and has_epoch_date)
+
+
+def _legacy_casasahorita_extract_description(soup):
+    """Extract the main description block from a Casas Ahorita detail page."""
+    for heading in soup.select("h3, h4, h5"):
+        heading_text = normalize_source_text(heading.get_text(" ", strip=True)).lower()
+        if "descripción" in heading_text or "descripcion" in heading_text:
+            sibling = heading.find_next_sibling("div")
+            if sibling:
+                text = normalize_source_text(sibling.get_text("\n", strip=True))
+                return re.sub(r"\n{3,}", "\n\n", text).strip()
+    return ""
+
+
+def _legacy_casasahorita_extract_specs(soup):
+    """Extract the specs table from a Casas Ahorita detail page."""
+    specs = {}
+    raw_fields = {}
+
+    table = soup.select_one("table.table.table-hover")
+    if not table:
+        return specs, raw_fields
+
+    for row in table.select("tr"):
+        label_el = row.select_one("th")
+        value_cells = row.select("td")
+        if not label_el or not value_cells:
+            continue
+
+        label = normalize_source_text(label_el.get_text(" ", strip=True)).rstrip(":")
+        value = normalize_source_text(" ".join(cell.get_text(" ", strip=True) for cell in value_cells))
+        if not label or not value:
+            continue
+
+        raw_fields[label] = value
+        label_lower = label.lower()
+
+        if "recámara" in label_lower or "recamara" in label_lower:
+            specs["bedrooms"] = value
+        elif "baño" in label_lower:
+            specs["bathrooms"] = value
+        elif "vehículo" in label_lower or "vehiculo" in label_lower or "parqueo" in label_lower:
+            specs["parking"] = value
+        elif "tamaño del lote" in label_lower:
+            cleaned = re.sub(r"^\(\s*m²\s*\)\s*", "", value, flags=re.IGNORECASE).strip()
+            specs["terreno"] = f"{cleaned} m²" if cleaned and "m²" not in cleaned.lower() else cleaned
+        elif "tamaño de construcción" in label_lower or "tamaño de construccion" in label_lower:
+            cleaned = re.sub(r"^\(\s*m²\s*\)\s*", "", value, flags=re.IGNORECASE).strip()
+            specs["area"] = f"{cleaned} m²" if cleaned and "m²" not in cleaned.lower() else cleaned
+
+    return specs, raw_fields
+
+
+def _legacy_casasahorita_extract_contact_details(soup):
+    """Extract contact metadata from the Casas Ahorita detail page."""
+    details = {}
+    for heading in soup.select("h5"):
+        heading_text = normalize_source_text(heading.get_text(" ", strip=True)).lower()
+        if "propiedad por" not in heading_text:
+            continue
+
+        card_body = heading.find_parent(class_="card-body")
+        if not card_body:
+            break
+
+        lines = [
+            normalize_source_text(node.get_text(" ", strip=True))
+            for node in card_body.select("p.card-text")
+        ]
+        lines = [line for line in lines if line]
+        if lines:
+            details["contact_name"] = lines[0]
+
+        for line in lines[1:]:
+            if re.search(r"@[\w.-]+", line):
+                details["contact_email"] = line.strip()
+            elif re.search(r"\d", line):
+                details["contact_phone"] = line.strip()
+        break
+
+    return details
+
+
+def get_casasahorita_listing_urls(max_listings=None):
+    """Collect El Salvador listing URLs from Casas Ahorita's search pages."""
+    session = get_casasahorita_session()
+    all_urls = []
+
+    for discovery_url in [CASASAHORITA_SEARCH_URL, CASASAHORITA_FALLBACK_SEARCH_URL]:
+        try:
+            resp = session.get(discovery_url, timeout=30)
+            if resp.status_code != 200:
+                print(f"  Warning: Casas Ahorita discovery failed ({resp.status_code}) for {discovery_url}")
+                continue
+
+            soup = BeautifulSoup(resp.text, "html.parser")
+            found_urls = []
+            for anchor in soup.select("a[href]"):
+                href = normalize_source_text(anchor.get("href"))
+                if not href:
+                    continue
+                absolute_url = urljoin(CASASAHORITA_BASE_URL, href)
+                if re.match(r"^https://casasahorita\.com/propiedad/sv/[^/]+/?$", absolute_url):
+                    found_urls.append(absolute_url.rstrip("/"))
+
+            if found_urls:
+                print(f"  Found {len(set(found_urls))} Casas Ahorita URLs in {discovery_url}")
+                all_urls.extend(found_urls)
+        except Exception as e:
+            print(f"  Warning: Error collecting Casas Ahorita URLs from {discovery_url}: {e}")
+
+    deduped_urls = list(dict.fromkeys(all_urls))
+    if max_listings and len(deduped_urls) > max_listings:
+        return deduped_urls[:max_listings]
+    return deduped_urls
+
+
+def casasahorita_parse_datetime(date_text):
+    """Parse Casas Ahorita date strings like 'Jue 10 Abr 2025 09:38:01 CST'."""
+    cleaned = casasahorita_normalize_key(date_text)
+    match = re.search(
+        r"(\d{1,2})\s+([a-z]+)\s+(\d{4})(?:\s+(\d{2}):(\d{2})(?::(\d{2}))?)?",
+        cleaned
+    )
+    if not match:
+        return None
+
+    day = int(match.group(1))
+    month_token = match.group(2)[:3]
+    month = CASASAHORITA_MONTHS.get(month_token)
+    year = int(match.group(3))
+    hour = int(match.group(4) or 0)
+    minute = int(match.group(5) or 0)
+    second = int(match.group(6) or 0)
+
+    if not month:
+        return None
+
+    try:
+        return datetime(year, month, day, hour, minute, second)
+    except ValueError:
+        return None
+
+
+def casasahorita_extract_dates(raw_html):
+    """Extract publication and update timestamps from a Casas Ahorita detail page."""
+    soup = BeautifulSoup(raw_html or "", "html.parser")
+    lines = [normalize_source_text(value) for value in soup.stripped_strings]
+    lines = [value for value in lines if value]
+
+    original_raw = ""
+    updated_raw = ""
+    for idx, line in enumerate(lines):
+        normalized = casasahorita_normalize_key(line)
+        if normalized == "fecha original de publicacion" and idx + 1 < len(lines):
+            original_raw = lines[idx + 1]
+        elif normalized == "cambio mas reciente" and idx + 1 < len(lines):
+            updated_raw = lines[idx + 1]
+
+    original_dt = casasahorita_parse_datetime(original_raw)
+    updated_dt = casasahorita_parse_datetime(updated_raw)
+
+    return {
+        "published_raw": original_raw,
+        "updated_raw": updated_raw,
+        "published_date": original_dt.strftime("%d/%m/%Y") if original_dt else "",
+        "updated_iso": updated_dt.isoformat() if updated_dt else "",
+    }
+
+
+def casasahorita_extract_description(soup):
+    """Extract the main description block from a Casas Ahorita detail page."""
+    for heading in soup.select("h3, h4, h5"):
+        heading_text = casasahorita_normalize_key(heading.get_text(" ", strip=True))
+        if "descripcion" in heading_text:
+            sibling = heading.find_next_sibling("div")
+            if sibling:
+                text = normalize_source_text(sibling.get_text("\n", strip=True))
+                return re.sub(r"\n{3,}", "\n\n", text).strip()
+    return ""
+
+
+def casasahorita_extract_specs(soup):
+    """Extract the specs table from a Casas Ahorita detail page."""
+    specs = {}
+    raw_fields = {}
+
+    table = soup.select_one("table.table.table-hover")
+    if not table:
+        return specs, raw_fields
+
+    for row in table.select("tr"):
+        label_el = row.select_one("th")
+        value_cells = row.select("td")
+        if not label_el or not value_cells:
+            continue
+
+        label = normalize_source_text(label_el.get_text(" ", strip=True)).rstrip(":")
+        value = normalize_source_text(" ".join(cell.get_text(" ", strip=True) for cell in value_cells))
+        if not label or not value:
+            continue
+
+        label_key = casasahorita_normalize_key(label)
+        raw_fields[label_key] = value
+
+        if "recamara" in label_key:
+            specs["bedrooms"] = value
+        elif "bano" in label_key:
+            specs["bathrooms"] = value
+        elif "vehiculo" in label_key or "parqueo" in label_key:
+            specs["parking"] = value
+        elif "tamano del lote" in label_key:
+            cleaned = re.sub(r"^\(\s*m[²2]\s*\)\s*", "", value, flags=re.IGNORECASE).strip()
+            specs["terreno"] = f"{cleaned} m2" if cleaned and "m2" not in cleaned.lower() else cleaned
+        elif "tamano de construccion" in label_key:
+            cleaned = re.sub(r"^\(\s*m[²2]\s*\)\s*", "", value, flags=re.IGNORECASE).strip()
+            specs["area"] = f"{cleaned} m2" if cleaned and "m2" not in cleaned.lower() else cleaned
+
+    return specs, raw_fields
+
+
+def casasahorita_extract_contact_details(soup):
+    """Extract contact metadata from the Casas Ahorita detail page."""
+    details = {}
+    for heading in soup.select("h5"):
+        heading_text = casasahorita_normalize_key(heading.get_text(" ", strip=True))
+        if "propiedad por" not in heading_text:
+            continue
+
+        card_body = heading.find_parent(class_="card-body")
+        if not card_body:
+            break
+
+        lines = [
+            normalize_source_text(node.get_text(" ", strip=True))
+            for node in card_body.select("p.card-text")
+        ]
+        lines = [line for line in lines if line]
+        if lines:
+            details["contact_name"] = lines[0]
+
+        for line in lines[1:]:
+            if re.search(r"@[\w.-]+", line):
+                details["contact_email"] = line.strip()
+            elif re.search(r"\d", line):
+                details["contact_phone"] = line.strip()
+        break
+
+    return details
+
+
+def scrape_casasahorita_listing(url, listing_type="auto"):
+    """Scrape one Casas Ahorita listing page."""
+    session = get_casasahorita_session()
+
+    try:
+        resp = session.get(url, timeout=30)
+        if resp.status_code in (404, 410):
+            return None
+
+        raw_html = resp.text or ""
+        soup = BeautifulSoup(raw_html, "html.parser")
+        if casasahorita_is_placeholder_page(raw_html, soup=soup):
+            return None
+
+        slug_info = casasahorita_slug_info_from_url(url)
+        source_listing_id = slug_info.get("source_listing_id")
+        if not source_listing_id:
+            return None
+
+        header_h1 = normalize_source_text(
+            soup.select_one("div.content.row h1").get_text(" ", strip=True)
+            if soup.select_one("div.content.row h1") else ""
+        )
+        header_h2 = normalize_source_text(
+            soup.select_one("div.content.row h2.lead").get_text(" ", strip=True)
+            if soup.select_one("div.content.row h2.lead") else ""
+        )
+
+        price_match = re.search(r"\$[\d,]+(?:\.\d+)?", header_h1)
+        price = price_match.group(0) if price_match else ""
+        title = header_h2 or header_h1
+        if not title:
+            return None
+
+        description = casasahorita_extract_description(soup)
+        specs, raw_fields = casasahorita_extract_specs(soup)
+        contact_details = casasahorita_extract_contact_details(soup)
+        date_info = casasahorita_extract_dates(raw_html)
+
+        listing_type = slug_info.get("listing_type") if listing_type == "auto" else listing_type
+        listing_type = correct_listing_type(
+            listing_type,
+            title,
+            description,
+            parse_price(price),
+            url=url
+        )
+
+        property_type_slug = slug_info.get("property_type_slug", "")
+        property_type = CASASAHORITA_PROPERTY_TYPE_MAP.get(property_type_slug, "")
+
+        details = {
+            "source_listing_id": source_listing_id,
+            "source_heading": header_h1,
+            "property_type_slug": property_type_slug,
+        }
+        if property_type:
+            details["property_type"] = property_type
+        if date_info.get("updated_iso"):
+            details["source_modified_at"] = date_info["updated_iso"]
+        if date_info.get("updated_raw"):
+            details["source_modified_label"] = date_info["updated_raw"]
+        if date_info.get("published_raw"):
+            details["source_published_label"] = date_info["published_raw"]
+
+        for key, value in raw_fields.items():
+            details[key] = value
+        details.update(contact_details)
+
+        country = raw_fields.get("pais", "")
+        department = raw_fields.get("departamento", "")
+        city = raw_fields.get("ciudad", "")
+        location_parts = []
+        for part in [city, department, country]:
+            cleaned = normalize_source_text(part)
+            if cleaned and cleaned not in location_parts:
+                location_parts.append(cleaned)
+        location = ", ".join(location_parts)
+
+        images = []
+        for img in soup.select("img[src]"):
+            src = normalize_source_text(img.get("src"))
+            absolute_url = urljoin(CASASAHORITA_BASE_URL, src)
+            if (
+                "/img/user_uploads/" in absolute_url
+                and "/profile_fotos/" not in absolute_url
+                and absolute_url not in images
+            ):
+                images.append(absolute_url)
+
+        municipio_info = detect_municipio(location, description, title)
+        return {
+            "title": title,
+            "price": price,
+            "location": location,
+            "published_date": date_info.get("published_date"),
+            "listing_type": listing_type,
+            "url": url.rstrip("/"),
+            "external_id": str(slug_to_external_id(f"casasahorita:{source_listing_id}")),
+            "specs": normalize_listing_specs(specs),
+            "details": details,
+            "description": description,
+            "images": images,
+            "source": CASASAHORITA_SOURCE,
+            "active": True,
+            "municipio_detectado": municipio_info["municipio_detectado"],
+            "departamento": municipio_info["departamento"],
+            "latitude": None,
+            "longitude": None,
+            "last_updated": datetime.now().isoformat(),
+        }
+    except Exception as e:
+        print(f"  Error scraping Casas Ahorita {url}: {e}")
+        return None
+
+
+def scrape_casasahorita_listings_concurrent(urls, listing_type="auto", max_workers=5, max_days=None):
+    """Scrape multiple Casas Ahorita listings concurrently."""
+    results = []
+    old_listing_count = 0
+    total_urls = len(urls)
+    completed_count = 0
+    started_at = time.time()
+    progress_every = 10 if total_urls >= 50 else 5
+
+    print(f"  Scraping {total_urls} Casas Ahorita listings with {max_workers} workers...")
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_url = {
+            executor.submit(scrape_casasahorita_listing, url, listing_type): url
+            for url in urls
+        }
+        for future in as_completed(future_to_url):
+            completed_count += 1
+            url = future_to_url[future]
+            try:
+                listing = future.result()
+                if listing:
+                    if max_days and max_days > 0:
+                        is_recent, _ = is_listing_within_date_range(listing.get("published_date"), max_days)
+                        if not is_recent:
+                            old_listing_count += 1
+                            continue
+                    results.append(listing)
+            except Exception as e:
+                print(f"  Error processing Casas Ahorita {url}: {e}")
+            finally:
+                if completed_count % progress_every == 0 or completed_count == total_urls:
+                    elapsed = time.time() - started_at
+                    print(
+                        f"    Casas Ahorita progress: {completed_count}/{total_urls} "
+                        f"(ok: {len(results)}, old-skipped: {old_listing_count}, elapsed: {elapsed:.1f}s)"
+                    )
+
+    return results, old_listing_count
+
+
+def main_casasahorita(limit=None, max_days=None):
+    """Main scraper function for Casas Ahorita."""
+    if limit:
+        print(f"\n*** LIMIT MODE: Scraping up to {limit} total listings from Casas Ahorita ***")
+    if max_days and max_days > 0:
+        print(f"*** DATE FILTER: Only listings from last {max_days} days ***")
+
+    urls = get_casasahorita_listing_urls(max_listings=limit)
+    if not urls:
+        print("  No Casas Ahorita URLs found to scrape")
+        return [], [], []
+
+    all_listings, old_count = scrape_casasahorita_listings_concurrent(
+        urls,
+        listing_type="auto",
+        max_workers=5,
+        max_days=max_days
+    )
+
+    sale_data = [listing for listing in all_listings if listing.get("listing_type") == "sale"]
+    rent_data = [listing for listing in all_listings if listing.get("listing_type") == "rent"]
+
+    print(
+        f"  Casas Ahorita total: {len(all_listings)} "
+        f"({len(sale_data)} sales, {len(rent_data)} rentals)"
+    )
+    if old_count > 0:
+        print(f"  Skipped {old_count} old listings (>{max_days} days)")
+
+    return all_listings, sale_data, rent_data
+
 # ============== PROPILATAM FUNCTIONS ==============
 
 def infer_propilatam_property_type(slug):
@@ -5367,7 +6491,22 @@ def main_vivolatam(limit=None, url_file=None, max_days=None):
     return all_listings, sale_data, rent_data
 
 
-def main(encuentra24=True, micasasv=False, nexo=False, realtor=False, camarabienesraices=False, vivolatam=False, propilatam=False, limit=None, vivolatam_urls=None, propilatam_urls=None, skip_validation=False, max_days=None):
+def main(
+    encuentra24=True,
+    micasasv=False,
+    nexo=False,
+    realtor=False,
+    realtyelsalvador=False,
+    casasahorita=False,
+    camarabienesraices=False,
+    vivolatam=False,
+    propilatam=False,
+    limit=None,
+    vivolatam_urls=None,
+    propilatam_urls=None,
+    skip_validation=False,
+    max_days=None
+):
     """
     Main scraper function that orchestrates scraping from multiple sources.
     
@@ -5376,6 +6515,8 @@ def main(encuentra24=True, micasasv=False, nexo=False, realtor=False, camarabien
         micasasv: If True, scrape from MiCasaSV
         nexo: If True, scrape from Nexo
         realtor: If True, scrape from Realtor.com International
+        realtyelsalvador: If True, scrape from Realty El Salvador
+        casasahorita: If True, scrape from Casas Ahorita
         camarabienesraices: If True, scrape from Camara Bienes Raices
         vivolatam: If True, scrape from Vivo Latam
         propilatam: If True, scrape from Propi Latam
@@ -5444,6 +6585,28 @@ def main(encuentra24=True, micasasv=False, nexo=False, realtor=False, camarabien
         total_sale += len(sale_data)
         total_rent += len(rent_data)
 
+    # --- REALTY EL SALVADOR ---
+    if realtyelsalvador:
+        active_sources.append(REALTYELSALVADOR_SOURCE)
+        print("\n" + "="*60)
+        print("SCRAPING SOURCE: Realty El Salvador")
+        print("="*60)
+        listings, sale_data, rent_data = main_realtyelsalvador(limit, max_days=max_days)
+        all_listings.extend(listings)
+        total_sale += len(sale_data)
+        total_rent += len(rent_data)
+
+    # --- CASAS AHORITA ---
+    if casasahorita:
+        active_sources.append(CASASAHORITA_SOURCE)
+        print("\n" + "="*60)
+        print("SCRAPING SOURCE: Casas Ahorita")
+        print("="*60)
+        listings, sale_data, rent_data = main_casasahorita(limit, max_days=max_days)
+        all_listings.extend(listings)
+        total_sale += len(sale_data)
+        total_rent += len(rent_data)
+
     # --- CAMARA BIENES RAICES ---
     if camarabienesraices:
         active_sources.append(CAMARABIENESRAICES_SOURCE)
@@ -5485,7 +6648,15 @@ def main(encuentra24=True, micasasv=False, nexo=False, realtor=False, camarabien
     # --- MATCH LOCATIONS ---
     # Use the raw scraped data (title, location, details, description) to match to sv_loc_group
     print("\n=== Matching Locations ===")
-    loc_matched, loc_errors = match_scraped_listings(all_listings, SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    try:
+        loc_matched, loc_errors = get_match_scraped_listings()(
+            all_listings,
+            SUPABASE_URL,
+            SUPABASE_SERVICE_KEY,
+        )
+    except Exception as e:
+        loc_matched, loc_errors = 0, len(all_listings)
+        print(f"  Warning: Location matching skipped due to error: {e}")
     print(f"  Location matches: {loc_matched} | Errors: {loc_errors}")
 
     # --- ALSO SAVE JSON (backup) ---
@@ -5540,7 +6711,7 @@ def main(encuentra24=True, micasasv=False, nexo=False, realtor=False, camarabien
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Multi-source real estate scraper (Encuentra24, MiCasaSV, Nexo, Realtor.com, Camara Bienes Raices, Vivo Latam, Propi Latam)"
+        description="Multi-source real estate scraper (Encuentra24, MiCasaSV, Nexo, Realtor.com, Realty El Salvador, Casas Ahorita, Camara Bienes Raices, Vivo Latam, Propi Latam)"
     )
     parser.add_argument(
         "--Encuentra24",
@@ -5561,6 +6732,16 @@ if __name__ == "__main__":
         "--Realtor",
         action="store_true",
         help="Scrape listings from Realtor.com International (El Salvador)"
+    )
+    parser.add_argument(
+        "--RealtyElSalvador",
+        action="store_true",
+        help="Scrape listings from Realty El Salvador"
+    )
+    parser.add_argument(
+        "--CasasAhorita",
+        action="store_true",
+        help="Scrape listings from Casas Ahorita"
     )
     parser.add_argument(
         "--CamaraBienesRaices",
@@ -5631,6 +6812,8 @@ if __name__ == "__main__":
     micasasv = args.MiCasaSV
     nexo = args.Nexo
     realtor = args.Realtor
+    realtyelsalvador = args.RealtyElSalvador
+    casasahorita = args.CasasAhorita
     camarabienesraices = args.CamaraBienesRaices
     vivolatam = args.VivoLatam
     propilatam = args.PropiLatam
@@ -5645,6 +6828,10 @@ if __name__ == "__main__":
         sources.append(NEXO_SOURCE)
     if realtor:
         sources.append("Realtor")
+    if realtyelsalvador:
+        sources.append(REALTYELSALVADOR_SOURCE)
+    if casasahorita:
+        sources.append(CASASAHORITA_SOURCE)
     if camarabienesraices:
         sources.append(CAMARABIENESRAICES_SOURCE)
     if vivolatam:
@@ -5665,21 +6852,25 @@ if __name__ == "__main__":
     else:
         # Normal scrape mode
         # Default behavior: scrape from ALL sources if no source is specified
-        if not encuentra24 and not micasasv and not nexo and not realtor and not camarabienesraices and not vivolatam and not propilatam:
+        if not encuentra24 and not micasasv and not nexo and not realtor and not realtyelsalvador and not casasahorita and not camarabienesraices and not vivolatam and not propilatam:
             encuentra24 = True
             micasasv = True
             nexo = True
             realtor = True
+            realtyelsalvador = True
+            casasahorita = True
             camarabienesraices = True
             vivolatam = True
             propilatam = True
-            print("No source specified. Scraping from ALL sources: Encuentra24, MiCasaSV, Nexo, Realtor, CamaraBienesRaices, VivoLatam, PropiLatam")
+            print("No source specified. Scraping from ALL sources: Encuentra24, MiCasaSV, Nexo, Realtor, RealtyElSalvador, CasasAhorita, CamaraBienesRaices, VivoLatam, PropiLatam")
         
         main(
             encuentra24=encuentra24, 
             micasasv=micasasv, 
             nexo=nexo,
             realtor=realtor, 
+            realtyelsalvador=realtyelsalvador,
+            casasahorita=casasahorita,
             camarabienesraices=camarabienesraices,
             vivolatam=vivolatam,
             propilatam=propilatam,
