@@ -26,6 +26,7 @@ import time
 import os
 import hashlib
 import random
+import traceback
 import unicodedata
 from html import unescape
 from urllib.parse import unquote, urlparse, urljoin
@@ -460,160 +461,177 @@ def run_update_mode(sources=None, limit=None, skip_validation=False):
     total_updated = 0
     total_errors = 0
     total_deactivated = 0
+    source_failures = []
+    successful_sources = []
     
     for source in sources_to_update:
         print(f"\n--- Processing {source} ---")
-        
-        # Fetch active listings for this source
-        active_listings = get_active_listings_from_db(source=source, limit=limit)
-        
-        if not active_listings:
-            print(f"  No active listings found for {source}")
-            continue
-        
-        print(f"  Found {len(active_listings)} listings to re-scrape")
-        
-        # Build URL -> external_id mapping to track which listings fail to scrape
-        url_to_id = {l['url']: l['external_id'] for l in active_listings}
-        original_urls = set(url_to_id.keys())
-        
-        # Group by listing_type
-        sale_urls = [(l['url'], l['external_id']) for l in active_listings if l.get('listing_type') == 'sale']
-        rent_urls = [(l['url'], l['external_id']) for l in active_listings if l.get('listing_type') == 'rent']
-        
-        scraped_listings = []
-        
-        # Re-scrape based on source
-        if source == "Encuentra24":
-            if sale_urls:
-                print(f"  Re-scraping {len(sale_urls)} sale listings...")
-                scraped, _ = scrape_listings_concurrent([u[0] for u in sale_urls], "sale", max_workers=10)
-                scraped_listings.extend(scraped)
-            if rent_urls:
-                print(f"  Re-scraping {len(rent_urls)} rent listings...")
-                scraped, _ = scrape_listings_concurrent([u[0] for u in rent_urls], "rent", max_workers=10)
-                scraped_listings.extend(scraped)
+        try:
+            # Fetch active listings for this source
+            active_listings = get_active_listings_from_db(source=source, limit=limit)
+            
+            if not active_listings:
+                print(f"  No active listings found for {source}")
+                continue
+            
+            print(f"  Found {len(active_listings)} listings to re-scrape")
+            
+            # Build URL -> external_id mapping to track which listings fail to scrape
+            url_to_id = {l['url']: l['external_id'] for l in active_listings}
+            original_urls = set(url_to_id.keys())
+            
+            # Group by listing_type
+            sale_urls = [(l['url'], l['external_id']) for l in active_listings if l.get('listing_type') == 'sale']
+            rent_urls = [(l['url'], l['external_id']) for l in active_listings if l.get('listing_type') == 'rent']
+            
+            scraped_listings = []
+            
+            # Re-scrape based on source
+            if source == "Encuentra24":
+                if sale_urls:
+                    print(f"  Re-scraping {len(sale_urls)} sale listings...")
+                    scraped, _ = scrape_listings_concurrent([u[0] for u in sale_urls], "sale", max_workers=10)
+                    scraped_listings.extend(scraped)
+                if rent_urls:
+                    print(f"  Re-scraping {len(rent_urls)} rent listings...")
+                    scraped, _ = scrape_listings_concurrent([u[0] for u in rent_urls], "rent", max_workers=10)
+                    scraped_listings.extend(scraped)
+                    
+            elif source == "MiCasaSV":
+                if sale_urls:
+                    print(f"  Re-scraping {len(sale_urls)} sale listings...")
+                    scraped, _ = scrape_micasasv_listings_concurrent([u[0] for u in sale_urls], "sale", max_workers=5)
+                    scraped_listings.extend(scraped)
+                if rent_urls:
+                    print(f"  Re-scraping {len(rent_urls)} rent listings...")
+                    scraped, _ = scrape_micasasv_listings_concurrent([u[0] for u in rent_urls], "rent", max_workers=5)
+                    scraped_listings.extend(scraped)
+
+            elif source == NEXO_SOURCE:
+                all_urls = [u[0] for u in sale_urls + rent_urls]
+                all_urls = list(dict.fromkeys(all_urls))
+                if all_urls:
+                    print(f"  Re-scraping {len(all_urls)} listings...")
+                    scraped, _ = scrape_nexo_listings_concurrent(all_urls, "auto", max_workers=4)
+                    scraped_listings.extend(scraped)
+                    
+            elif source == "Realtor":
+                # Realtor uses page-based scraping - re-fetch all from paginated pages
+                print(f"  Re-fetching Realtor listings from pages (page-based scraping)...")
                 
-        elif source == "MiCasaSV":
-            if sale_urls:
-                print(f"  Re-scraping {len(sale_urls)} sale listings...")
-                scraped, _ = scrape_micasasv_listings_concurrent([u[0] for u in sale_urls], "sale", max_workers=5)
-                scraped_listings.extend(scraped)
-            if rent_urls:
-                print(f"  Re-scraping {len(rent_urls)} rent listings...")
-                scraped, _ = scrape_micasasv_listings_concurrent([u[0] for u in rent_urls], "rent", max_workers=5)
+                # Fetch sale listings
+                sale_listings = get_realtor_all_listings(REALTOR_SALE_URL, max_listings=limit, listing_type="sale")
+                if sale_listings:
+                    print(f"  Fetched {len(sale_listings)} sale listings")
+                    scraped_listings.extend(sale_listings)
+                
+                # Fetch rent listings
+                rent_listings = get_realtor_all_listings(REALTOR_RENT_URL, max_listings=limit, listing_type="rent")
+                if rent_listings:
+                    print(f"  Fetched {len(rent_listings)} rent listings")
+                    scraped_listings.extend(rent_listings)
+                
+                # Disabled: update mode now uses the same stale-listing validation pass as regular mode
+                # after all upserts complete (see validate_and_deactivate_listings below).
+                if False and len(scraped_listings) >= len(active_listings) * 0.5:
+                    scraped_external_ids = {str(l.get('external_id')) for l in scraped_listings if l.get('external_id')}
+                    db_external_ids = {str(l['external_id']) for l in active_listings}
+                    missing_ids = db_external_ids - scraped_external_ids
+                    
+                    if missing_ids:
+                        print(f"  [WARN] {len(missing_ids)} Realtor listings no longer on site, deactivating...")
+                        deactivated = deactivate_listings([int(eid) for eid in missing_ids])
+                        total_deactivated += deactivated
+                        print(f"  Deactivated {deactivated} Realtor listings")
+                elif False:
+                    print(f"  [WARN] Scrape returned too few results ({len(scraped_listings)}/{len(active_listings)}), skipping deactivation to prevent data loss")
+
+            elif source == REALTYELSALVADOR_SOURCE:
+                print(f"  Re-fetching Realty El Salvador listings from the WP REST API...")
+                scraped, _, _ = main_realtyelsalvador(limit=limit, max_days=None)
                 scraped_listings.extend(scraped)
 
-        elif source == NEXO_SOURCE:
-            all_urls = [u[0] for u in sale_urls + rent_urls]
-            all_urls = list(dict.fromkeys(all_urls))
-            if all_urls:
-                print(f"  Re-scraping {len(all_urls)} listings...")
-                scraped, _ = scrape_nexo_listings_concurrent(all_urls, "auto", max_workers=4)
+            elif source == CASASAHORITA_SOURCE:
+                print(f"  Re-fetching Casas Ahorita listings from current search results...")
+                scraped, _, _ = main_casasahorita(limit=limit, max_days=None)
                 scraped_listings.extend(scraped)
+
+            elif source == CAMARABIENESRAICES_SOURCE:
+                property_ids = [l["external_id"] for l in active_listings if l.get("external_id")]
+                if property_ids:
+                    print(f"  Re-fetching {len(property_ids)} Camara Bienes Raices listings via REST API...")
+                    scraped_listings.extend(get_cbr_properties_by_ids(property_ids))
+
+            elif source == "VivoLatam":
+                all_urls = [u[0] for u in sale_urls + rent_urls]
+                if all_urls:
+                    print(f"  Re-scraping {len(all_urls)} listings...")
+                    scraped, _ = scrape_vivolatam_listings_concurrent(all_urls, "sale", max_workers=5)
+                    scraped_listings.extend(scraped)
+
+            elif source == "PropiLatam":
+                all_urls = [u[0] for u in sale_urls + rent_urls]
+                all_urls = list(dict.fromkeys(all_urls))  # de-duplicate while preserving order
+                if all_urls:
+                    print(f"  Re-scraping {len(all_urls)} listings...")
+                    scraped, _ = scrape_propilatam_listings_concurrent(all_urls, "auto", max_workers=5)
+                    scraped_listings.extend(scraped)
+            
+            # Determine which listings failed to scrape
+            scraped_urls = {l.get('url') for l in scraped_listings if l.get('url')}
+            failed_urls = original_urls - scraped_urls
+            
+            # Disabled: per-source deactivation is handled by the shared validation phase below.
+            if False and failed_urls:
+                print(f"  [WARN] {len(failed_urls)} listings failed to scrape, verifying if truly inactive...")
+                # Verify each failed URL to confirm it's actually 404/sold (not just rate limited)
+                confirmed_inactive_ids = []
+                for url in failed_urls:
+                    is_active, reason = check_listing_still_active(url, source)
+                    if not is_active:
+                        confirmed_inactive_ids.append(url_to_id[url])
+                        print(f"    X Confirmed inactive: {url[:60]}... ({reason})")
+                    else:
+                        print(f"    ? Skipping (may be transient): {url[:60]}... ({reason})")
                 
-        elif source == "Realtor":
-            # Realtor uses page-based scraping - re-fetch all from paginated pages
-            print(f"  Re-fetching Realtor listings from pages (page-based scraping)...")
-            
-            # Fetch sale listings
-            sale_listings = get_realtor_all_listings(REALTOR_SALE_URL, max_listings=limit, listing_type="sale")
-            if sale_listings:
-                print(f"  Fetched {len(sale_listings)} sale listings")
-                scraped_listings.extend(sale_listings)
-            
-            # Fetch rent listings  
-            rent_listings = get_realtor_all_listings(REALTOR_RENT_URL, max_listings=limit, listing_type="rent")
-            if rent_listings:
-                print(f"  Fetched {len(rent_listings)} rent listings")
-                scraped_listings.extend(rent_listings)
-            
-            # Disabled: update mode now uses the same stale-listing validation pass as regular mode
-            # after all upserts complete (see validate_and_deactivate_listings below).
-            if False and len(scraped_listings) >= len(active_listings) * 0.5:
-                scraped_external_ids = {str(l.get('external_id')) for l in scraped_listings if l.get('external_id')}
-                db_external_ids = {str(l['external_id']) for l in active_listings}
-                missing_ids = db_external_ids - scraped_external_ids
-                
-                if missing_ids:
-                    print(f"  [WARN] {len(missing_ids)} Realtor listings no longer on site, deactivating...")
-                    deactivated = deactivate_listings([int(eid) for eid in missing_ids])
+                if confirmed_inactive_ids:
+                    deactivated = deactivate_listings(confirmed_inactive_ids)
                     total_deactivated += deactivated
-                    print(f"  Deactivated {deactivated} Realtor listings")
-            elif False:
-                print(f"  [WARN] Scrape returned too few results ({len(scraped_listings)}/{len(active_listings)}), skipping deactivation to prevent data loss")
-
-        elif source == REALTYELSALVADOR_SOURCE:
-            print(f"  Re-fetching Realty El Salvador listings from the WP REST API...")
-            scraped, _, _ = main_realtyelsalvador(limit=limit, max_days=None)
-            scraped_listings.extend(scraped)
-
-        elif source == CASASAHORITA_SOURCE:
-            print(f"  Re-fetching Casas Ahorita listings from current search results...")
-            scraped, _, _ = main_casasahorita(limit=limit, max_days=None)
-            scraped_listings.extend(scraped)
-
-        elif source == CAMARABIENESRAICES_SOURCE:
-            property_ids = [l["external_id"] for l in active_listings if l.get("external_id")]
-            if property_ids:
-                print(f"  Re-fetching {len(property_ids)} Camara Bienes Raices listings via REST API...")
-                scraped_listings.extend(get_cbr_properties_by_ids(property_ids))
-
-        elif source == "VivoLatam":
-            all_urls = [u[0] for u in sale_urls + rent_urls]
-            if all_urls:
-                print(f"  Re-scraping {len(all_urls)} listings...")
-                scraped, _ = scrape_vivolatam_listings_concurrent(all_urls, "sale", max_workers=5)
-                scraped_listings.extend(scraped)
-
-        elif source == "PropiLatam":
-            all_urls = [u[0] for u in sale_urls + rent_urls]
-            all_urls = list(dict.fromkeys(all_urls))  # de-duplicate while preserving order
-            if all_urls:
-                print(f"  Re-scraping {len(all_urls)} listings...")
-                scraped, _ = scrape_propilatam_listings_concurrent(all_urls, "auto", max_workers=5)
-                scraped_listings.extend(scraped)
-        
-        # Determine which listings failed to scrape
-        scraped_urls = {l.get('url') for l in scraped_listings if l.get('url')}
-        failed_urls = original_urls - scraped_urls
-        
-        # Disabled: per-source deactivation is handled by the shared validation phase below.
-        if False and failed_urls:
-            print(f"  [WARN] {len(failed_urls)} listings failed to scrape, verifying if truly inactive...")
-            # Verify each failed URL to confirm it's actually 404/sold (not just rate limited)
-            confirmed_inactive_ids = []
-            for url in failed_urls:
-                is_active, reason = check_listing_still_active(url, source)
-                if not is_active:
-                    confirmed_inactive_ids.append(url_to_id[url])
-                    print(f"    X Confirmed inactive: {url[:60]}... ({reason})")
-                else:
-                    print(f"    ? Skipping (may be transient): {url[:60]}... ({reason})")
+                    print(f"  Deactivated {deactivated} confirmed inactive listings")
             
-            if confirmed_inactive_ids:
-                deactivated = deactivate_listings(confirmed_inactive_ids)
-                total_deactivated += deactivated
-                print(f"  Deactivated {deactivated} confirmed inactive listings")
-        
-        if scraped_listings:
-            print(f"  Successfully scraped {len(scraped_listings)} listings")
-            print(f"  Inserting/updating database (DB trigger handles upsert)...")
-            success, errors = insert_listings_batch(scraped_listings)
-            total_updated += success
-            total_errors += errors
-            print(f"  {source}: {success} upserted, {errors} errors")
-        else:
-            print(f"  No listings scraped for {source}")
+            if scraped_listings:
+                print(f"  Successfully scraped {len(scraped_listings)} listings")
+                print(f"  Inserting/updating database (DB trigger handles upsert)...")
+                success, errors = insert_listings_batch(scraped_listings)
+                total_updated += success
+                total_errors += errors
+                successful_sources.append(source)
+                print(f"  {source}: {success} upserted, {errors} errors")
+            else:
+                successful_sources.append(source)
+                print(f"  No listings scraped for {source}")
+        except Exception as e:
+            source_failures.append({"source": source, "error": str(e)})
+            total_errors += 1
+            log_source_failure("update", source, e)
+            continue
+
+    if source_failures:
+        print("\n=== Update Source Failures ===")
+        for failure in source_failures:
+            print(f"  - {failure['source']}: {failure['error']}")
 
     # Match regular mode deactivation behavior: validate stale listings after upserts
     validated_count = 0
     if not skip_validation and limit is None:
-        validated_count, deactivated_count = validate_and_deactivate_listings(
-            run_start_time,
-            sources=sources_to_update
-        )
-        total_deactivated += deactivated_count
+        if successful_sources:
+            validated_count, deactivated_count = validate_and_deactivate_listings(
+                run_start_time,
+                sources=successful_sources
+            )
+            total_deactivated += deactivated_count
+        else:
+            print("\n=== Skipping validation phase (no update sources completed successfully) ===")
     else:
         skip_reason = "--limit flag" if limit is not None else "--skip-validation flag"
         print(f"\n=== Skipping validation phase ({skip_reason}) ===")
@@ -644,6 +662,8 @@ def run_update_mode(sources=None, limit=None, skip_validation=False):
         print(f"Validation: {validated_count} checked, {total_deactivated} deactivated")
     print(f"Total deactivated: {total_deactivated}")
     print(f"Total errors: {total_errors}")
+    if source_failures:
+        print(f"Sources failed but update continued: {len(source_failures)}")
     
     return total_updated, total_deactivated, total_errors
 
@@ -1851,6 +1871,11 @@ def get_realtyelsalvador_session():
             "User-Agent": HEADERS["User-Agent"],
             "Accept": "application/json,text/plain,*/*",
             "Accept-Language": "es-SV,es;q=0.9,en;q=0.8",
+            "Referer": f"{REALTYELSALVADOR_BASE_URL}/",
+            "Origin": REALTYELSALVADOR_BASE_URL,
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+            "DNT": "1",
         })
     return REALTYELSALVADOR_SESSION
 
@@ -4611,9 +4636,22 @@ def realtyelsalvador_build_location_text(term_names, property_meta):
     return ", ".join(parts)
 
 
+def realtyelsalvador_describe_error_response(resp):
+    """Build a readable error summary for blocked or failed Realty responses."""
+    body_preview = normalize_source_text((resp.text or "")[:200])
+    lowered = body_preview.lower()
+    if resp.status_code == 403 and "just a moment" in lowered:
+        return "403 Cloudflare anti-bot challenge"
+    if resp.status_code == 403 and "attention required" in lowered:
+        return "403 Cloudflare access challenge"
+    if resp.status_code == 429:
+        return "429 rate limited"
+    return f"{resp.status_code}: {body_preview or 'empty response'}"
+
+
 def realtyelsalvador_get_properties_page(page=1, active_only=True):
     """Fetch one page of Realty El Salvador properties from the public WP REST API."""
-    session = get_realtyelsalvador_session()
+    global REALTYELSALVADOR_SESSION
     params = {
         "page": page,
         "per_page": REALTYELSALVADOR_PER_PAGE,
@@ -4627,15 +4665,33 @@ def realtyelsalvador_get_properties_page(page=1, active_only=True):
     if active_only and available_status_id:
         params["estado-de-propiedad"] = available_status_id
 
-    resp = session.get(REALTYELSALVADOR_PROPERTIES_URL, params=params, timeout=45)
-    if resp.status_code != 200:
-        raise RuntimeError(
-            f"Realty property page fetch failed ({resp.status_code}): {resp.text[:200]}"
-        )
+    last_error = None
+    for attempt in range(1, 4):
+        session = get_realtyelsalvador_session()
+        try:
+            resp = session.get(REALTYELSALVADOR_PROPERTIES_URL, params=params, timeout=45)
+        except requests.exceptions.RequestException as e:
+            last_error = f"request exception on attempt {attempt}/3: {e}"
+        else:
+            if resp.status_code == 200:
+                total_pages = int(resp.headers.get("X-WP-TotalPages", "1") or "1")
+                total_items = int(resp.headers.get("X-WP-Total", "0") or "0")
+                return resp.json(), total_pages, total_items
 
-    total_pages = int(resp.headers.get("X-WP-TotalPages", "1") or "1")
-    total_items = int(resp.headers.get("X-WP-Total", "0") or "0")
-    return resp.json(), total_pages, total_items
+            last_error = (
+                f"Realty property page fetch failed on attempt {attempt}/3: "
+                f"{realtyelsalvador_describe_error_response(resp)}"
+            )
+
+            if resp.status_code not in (403, 429, 500, 502, 503, 504):
+                break
+
+        if attempt < 3:
+            print(f"  Warning: {last_error}. Retrying...")
+            time.sleep(attempt * 1.5)
+            REALTYELSALVADOR_SESSION = None
+
+    raise RuntimeError(last_error or "Realty property page fetch failed with unknown error")
 
 
 def normalize_realtyelsalvador_property(property_data):
@@ -6491,6 +6547,40 @@ def main_vivolatam(limit=None, url_file=None, max_days=None):
     return all_listings, sale_data, rent_data
 
 
+def log_source_failure(context, source_label, exc):
+    """Log a source failure without aborting the entire scraper run."""
+    print(f"  ERROR: {context} failed for {source_label}: {exc}")
+    traceback.print_exc(limit=6)
+
+
+def scrape_source_safely(source_label, source_key, scraper_func, *args, **kwargs):
+    """Run one source scraper and convert exceptions into a structured result."""
+    print("\n" + "=" * 60)
+    print(f"SCRAPING SOURCE: {source_label}")
+    print("=" * 60)
+
+    try:
+        listings, sale_data, rent_data = scraper_func(*args, **kwargs)
+        return {
+            "source_key": source_key,
+            "source_label": source_label,
+            "listings": listings or [],
+            "sale_data": sale_data or [],
+            "rent_data": rent_data or [],
+            "error": None,
+        }
+    except Exception as e:
+        log_source_failure("scraper", source_label, e)
+        return {
+            "source_key": source_key,
+            "source_label": source_label,
+            "listings": [],
+            "sale_data": [],
+            "rent_data": [],
+            "error": str(e),
+        }
+
+
 def main(
     encuentra24=True,
     micasasv=False,
@@ -6539,106 +6629,46 @@ def main(
     
     # Track which sources we're scraping (for targeted validation)
     active_sources = []
-    
-    # --- ENCUENTRA24 ---
+    failed_sources = []
+    source_jobs = []
+
     if encuentra24:
-        active_sources.append("Encuentra24")
-        print("\n" + "="*60)
-        print("SCRAPING SOURCE: Encuentra24")
-        print("="*60)
-
-        listings, sale_data, rent_data = main_encuentra24(limit, max_days=max_days)
-        all_listings.extend(listings)
-        total_sale += len(sale_data)
-        total_rent += len(rent_data)
-    
-    # --- MICASASV ---
+        source_jobs.append(("Encuentra24", "Encuentra24", main_encuentra24, (limit,), {"max_days": max_days}))
     if micasasv:
-        active_sources.append("MiCasaSV")
-        print("\n" + "="*60)
-        print("SCRAPING SOURCE: MiCasaSV")
-        print("="*60)
-        listings, sale_data, rent_data = main_micasasv(limit, max_days=max_days)
-        all_listings.extend(listings)
-        total_sale += len(sale_data)
-        total_rent += len(rent_data)
-
-    # --- NEXO ---
+        source_jobs.append(("MiCasaSV", "MiCasaSV", main_micasasv, (limit,), {"max_days": max_days}))
     if nexo:
-        active_sources.append(NEXO_SOURCE)
-        print("\n" + "="*60)
-        print("SCRAPING SOURCE: Nexo")
-        print("="*60)
-        listings, sale_data, rent_data = main_nexo(limit, max_days=max_days)
-        all_listings.extend(listings)
-        total_sale += len(sale_data)
-        total_rent += len(rent_data)
-    
-    # --- REALTOR.COM ---
+        source_jobs.append(("Nexo", NEXO_SOURCE, main_nexo, (limit,), {"max_days": max_days}))
     if realtor:
-        active_sources.append("Realtor")
-        print("\n" + "="*60)
-        print("SCRAPING SOURCE: Realtor.com International")
-        print("="*60)
-        listings, sale_data, rent_data = main_realtor(limit, max_days=max_days)
-        all_listings.extend(listings)
-        total_sale += len(sale_data)
-        total_rent += len(rent_data)
-
-    # --- REALTY EL SALVADOR ---
+        source_jobs.append(("Realtor.com International", "Realtor", main_realtor, (limit,), {"max_days": max_days}))
     if realtyelsalvador:
-        active_sources.append(REALTYELSALVADOR_SOURCE)
-        print("\n" + "="*60)
-        print("SCRAPING SOURCE: Realty El Salvador")
-        print("="*60)
-        listings, sale_data, rent_data = main_realtyelsalvador(limit, max_days=max_days)
-        all_listings.extend(listings)
-        total_sale += len(sale_data)
-        total_rent += len(rent_data)
-
-    # --- CASAS AHORITA ---
+        source_jobs.append(("Realty El Salvador", REALTYELSALVADOR_SOURCE, main_realtyelsalvador, (limit,), {"max_days": max_days}))
     if casasahorita:
-        active_sources.append(CASASAHORITA_SOURCE)
-        print("\n" + "="*60)
-        print("SCRAPING SOURCE: Casas Ahorita")
-        print("="*60)
-        listings, sale_data, rent_data = main_casasahorita(limit, max_days=max_days)
-        all_listings.extend(listings)
-        total_sale += len(sale_data)
-        total_rent += len(rent_data)
-
-    # --- CAMARA BIENES RAICES ---
+        source_jobs.append(("Casas Ahorita", CASASAHORITA_SOURCE, main_casasahorita, (limit,), {"max_days": max_days}))
     if camarabienesraices:
-        active_sources.append(CAMARABIENESRAICES_SOURCE)
-        print("\n" + "="*60)
-        print("SCRAPING SOURCE: Camara Bienes Raices")
-        print("="*60)
-        listings, sale_data, rent_data = main_camarabienesraices(limit, max_days=max_days)
-        all_listings.extend(listings)
-        total_sale += len(sale_data)
-        total_rent += len(rent_data)
-
-    # --- VIVOLATAM ---
+        source_jobs.append(("Camara Bienes Raices", CAMARABIENESRAICES_SOURCE, main_camarabienesraices, (limit,), {"max_days": max_days}))
     if vivolatam:
-        active_sources.append("VivoLatam")
-        print("\n" + "="*60)
-        print("SCRAPING SOURCE: Vivo Latam")
-        print("="*60)
-        listings, sale_data, rent_data = main_vivolatam(limit, url_file=vivolatam_urls, max_days=max_days)
-        all_listings.extend(listings)
-        total_sale += len(sale_data)
-        total_rent += len(rent_data)
-
-    # --- PROPILATAM ---
+        source_jobs.append(("Vivo Latam", "VivoLatam", main_vivolatam, (limit,), {"url_file": vivolatam_urls, "max_days": max_days}))
     if propilatam:
-        active_sources.append("PropiLatam")
-        print("\n" + "="*60)
-        print("SCRAPING SOURCE: Propi Latam")
-        print("="*60)
-        listings, sale_data, rent_data = main_propilatam(limit, url_file=propilatam_urls, max_days=max_days)
-        all_listings.extend(listings)
-        total_sale += len(sale_data)
-        total_rent += len(rent_data)
+        source_jobs.append(("Propi Latam", "PropiLatam", main_propilatam, (limit,), {"url_file": propilatam_urls, "max_days": max_days}))
+
+    for source_label, source_key, scraper_func, args, kwargs in source_jobs:
+        result = scrape_source_safely(source_label, source_key, scraper_func, *args, **kwargs)
+        if result["error"]:
+            failed_sources.append({
+                "source": source_label,
+                "error": result["error"],
+            })
+            continue
+
+        active_sources.append(source_key)
+        all_listings.extend(result["listings"])
+        total_sale += len(result["sale_data"])
+        total_rent += len(result["rent_data"])
+
+    if failed_sources:
+        print("\n=== Source Failures ===")
+        for failure in failed_sources:
+            print(f"  - {failure['source']}: {failure['error']}")
 
     # --- INSERT TO SUPABASE ---
     print("\n=== Inserting to Supabase ===")
@@ -6670,10 +6700,13 @@ def main(
     validated_count = 0
     deactivated_count = 0
     if not skip_validation and limit is None:
-        validated_count, deactivated_count = validate_and_deactivate_listings(
-            run_start_time, 
-            sources=active_sources if active_sources else None
-        )
+        if active_sources:
+            validated_count, deactivated_count = validate_and_deactivate_listings(
+                run_start_time,
+                sources=active_sources
+            )
+        else:
+            print("\n=== Skipping validation phase (no sources completed successfully) ===")
     else:
         skip_reason = "--limit flag" if limit else "--skip-validation flag"
         print(f"\n=== Skipping validation phase ({skip_reason}) ===")
@@ -6706,6 +6739,8 @@ def main(
     print(f"Supabase: {success} inserted, {errors} errors")
     if not skip_validation:
         print(f"Validation: {validated_count} checked, {deactivated_count} deactivated")
+    if failed_sources:
+        print(f"Sources failed but run continued: {len(failed_sources)}")
     print(f"JSON backup: {output_file}")
 
 
