@@ -68,6 +68,13 @@ export default function RootLayout({
 }) {
   return (
     <html lang="es" suppressHydrationWarning>
+      {/* ── PWA / Mobile (cambio aditivo — no modifica metadata existente) ── */}
+      <head>
+        <link rel="manifest" href="/manifest.json" />
+        <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+        <meta name="theme-color" content="#1e3a5f" />
+      </head>
+      {/* ─────────────────────────────────────────────────────────────────── */}
       <body className={inter.className}>
         <Providers>
           {children}

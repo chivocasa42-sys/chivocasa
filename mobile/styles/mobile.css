@@ -1,0 +1,101 @@
+/* mobile/styles/mobile.css */
+/*
+ * Estilos exclusivos para la experiencia nativa en la app móvil (Capacitor).
+ * ⚠️  NO importar desde globals.css ni desde ningún componente del webapp web.
+ * Solo importar desde componentes dentro de mobile/components/.
+ */
+
+/* =============================================
+   SAFE AREAS — iPhone Notch / Dynamic Island
+   ============================================= */
+
+.mobile-safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+
+.mobile-safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.mobile-safe-full {
+  padding-top:    env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left:   env(safe-area-inset-left);
+  padding-right:  env(safe-area-inset-right);
+}
+
+/* =============================================
+   INPUTS — Evitar zoom automático en iOS
+   El sistema iOS hace zoom en inputs con font-size < 16px
+   ============================================= */
+
+.mobile-input,
+.mobile-input input,
+.mobile-input select,
+.mobile-input textarea {
+  font-size: 16px;
+}
+
+/* =============================================
+   SCROLL SUAVE — iOS WebKit
+   ============================================= */
+
+.mobile-scroll {
+  -webkit-overflow-scrolling: touch;
+  overflow-y: auto;
+}
+
+/* =============================================
+   TAP — Limpiar overlay gris en Android
+   y reducir delay de tap a 0ms
+   ============================================= */
+
+.mobile-tap {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* Aplicar globalmente dentro de la app nativa */
+.capacitor-app * {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* =============================================
+   SELECCIÓN DE TEXTO — Deshabilitar en UI
+   ============================================= */
+
+.mobile-no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* =============================================
+   NAVBAR NATIVA — Espacio para status bar
+   ============================================= */
+
+.mobile-navbar {
+  padding-top: calc(env(safe-area-inset-top) + 8px);
+}
+
+/* =============================================
+   BOTTOM TAB BAR — Espacio para home bar
+   ============================================= */
+
+.mobile-tabbar {
+  padding-bottom: calc(env(safe-area-inset-bottom) + 4px);
+}
+
+/* =============================================
+   BOTONES TÁCTILES — Target mínimo de 44px
+   Recomendación de Apple HIG y Material Design
+   ============================================= */
+
+.mobile-btn {
+  min-height: 44px;
+  min-width: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
