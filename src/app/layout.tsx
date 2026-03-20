@@ -1,14 +1,20 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import Providers from "./Providers";
+import ServiceWorkerRegistrar from "@/components/ServiceWorkerRegistrar";
+import PWAInstallPrompt from "@/components/PWAInstallPrompt";
 import "./globals.css";
 
 const inter = Inter({
   subsets: ["latin"],
   display: "swap",
 });
+
+export const viewport: Viewport = {
+  themeColor: '#10b981',
+};
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://sivarcasas.com'),
@@ -32,6 +38,20 @@ export const metadata: Metadata = {
       'max-image-preview': 'large',
       'max-snippet': -1,
     },
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'sivarcasas',
+  },
+  icons: {
+    icon: [
+      { url: '/icons/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
+      { url: '/icons/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
+    ],
+    apple: [
+      { url: '/icons/apple-touch-icon.png', sizes: '180x180', type: 'image/png' },
+    ],
   },
   openGraph: {
     type: 'website',
@@ -79,6 +99,10 @@ export default function RootLayout({
         <Providers>
           {children}
         </Providers>
+
+        {/* PWA */}
+        <ServiceWorkerRegistrar />
+        <PWAInstallPrompt />
 
         {/* Performance */}
         <SpeedInsights />
