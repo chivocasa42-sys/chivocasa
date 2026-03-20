@@ -6,7 +6,15 @@ const emptyPolyfill = path.resolve(
   'src/empty-polyfills.js'
 );
 
-const nextConfig: NextConfig = {
+// ─── PWA / Mobile ────────────────────────────────────────────────────────────
+// El Service Worker solo se activa cuando ENABLE_PWA=true en .env.local.
+// Si la variable no está definida, el comportamiento del webapp es idéntico al original.
+// Para activar: agregar ENABLE_PWA=true en .env.local y ejecutar npm run build
+const ENABLE_PWA = process.env.ENABLE_PWA === 'true';
+// ─────────────────────────────────────────────────────────────────────────────
+
+const baseConfig: NextConfig = {
+  // ✅ output NO cambia — se mantiene SSR (sin static export)
   experimental: {
     optimizePackageImports: ['react-leaflet', 'leaflet', 'echarts'],
     cssChunking: 'strict',
@@ -59,4 +67,17 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+// Aplicar wrapper PWA solo si ENABLE_PWA=true en .env.local
+// De lo contrario, exportar el config base sin cambios
+let exportedConfig: NextConfig = baseConfig;
+
+if (ENABLE_PWA) {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { withSerwist } = require("@serwist/next");
+  exportedConfig = withSerwist({
+    swSrc: "mobile/sw.ts",   // Service Worker fuente (en carpeta mobile/)
+    swDest: "public/sw.js",  // Destino compilado (servido por Next.js)
+  })(baseConfig);
+}
+
+export default exportedConfig;
