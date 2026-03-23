@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import path from "path";
+import { withSerwist } from "@serwist/next";
 
 const emptyPolyfill = path.resolve(
   import.meta.dirname ?? __dirname,
@@ -69,15 +70,11 @@ const baseConfig: NextConfig = {
 
 // Aplicar wrapper PWA solo si ENABLE_PWA=true en .env.local
 // De lo contrario, exportar el config base sin cambios
-let exportedConfig: NextConfig = baseConfig;
-
-if (ENABLE_PWA) {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { withSerwist } = require("@serwist/next");
-  exportedConfig = withSerwist({
-    swSrc: "mobile/sw.ts",   // Service Worker fuente (en carpeta mobile/)
-    swDest: "public/sw.js",  // Destino compilado (servido por Next.js)
-  })(baseConfig);
-}
+const exportedConfig = ENABLE_PWA
+  ? withSerwist({
+      swSrc: "mobile/sw.ts",   // Service Worker fuente (en carpeta mobile/)
+      swDest: "public/sw.js",  // Destino compilado (servido por Next.js)
+    })(baseConfig)
+  : baseConfig;
 
 export default exportedConfig;
