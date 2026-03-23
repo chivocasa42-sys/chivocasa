@@ -1,7 +1,7 @@
 # SIVARCASAS — Comprehensive Repository Architecture
 
 > **Documento vivo** que describe la arquitectura, flujos de datos y dependencias del proyecto **SivarCasas** (alias *chivocasa*).  
-> Última actualización manual: **2026-02-18**
+> Última actualización manual: **2026-03-20**
 
 ---
 
@@ -25,6 +25,7 @@
 16. [Deployment & Infrastructure](#16-deployment--infrastructure)
 17. [End-to-End Critical Flows](#17-end-to-end-critical-flows)
 18. [Environment Variables](#18-environment-variables)
+19. [PWA — Progressive Web App](#19-pwa--progressive-web-app)
 
 ---
 
@@ -845,6 +846,363 @@ Every page includes:
 | `NEXT_PUBLIC_*` | — | None currently (all API calls server-side) |
 
 **Note:** The scraper (`scraper_encuentra24.py`) has hardcoded Supabase credentials (not recommended for production). GitHub Actions workflows use repository secrets for the same values.
+
+---
+
+## 19. PWA — Progressive Web App
+
+> **Fecha de implementación:** 2026-03-19  
+> **Dependencias agregadas:** Ninguna (implementación 100% nativa)
+
+### 19.1 Resumen Ejecutivo
+
+SivarCasas es ahora una **Progressive Web App instalable** en Android (Chrome/Chromium) e iPhone (Safari). La implementación prioriza la seguridad de los datos en tiempo real sobre la experiencia offline: **nunca cachea endpoints dinámicos** de Supabase ni datos sensibles. Se construyó exclusivamente con capacidades nativas de Next.js App Router y vanilla JavaScript, sin `next-pwa`, `workbox` ni ninguna dependencia adicional.
+
+### 19.2 Arquitectura PWA
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                         BROWSER (Client)                             │
+│                                                                      │
+│  ┌─────────────┐   ┌──────────────────┐   ┌─────────────────────┐   │
+│  │   App Shell  │   │  PWAInstallPrompt │   │  ServiceWorker      │   │
+│  │  (Next.js)   │   │  (client comp.)  │   │  Registrar          │   │
+│  └──────┬───────┘   └────────┬─────────┘   └──────────┬──────────┘   │
+│         │                    │                         │              │
+│         │    ┌───────────────┤                         │              │
+│         │    │               │                         │              │
+│         │    ▼               ▼                         ▼              │
+│         │  beforeinstallprompt          navigator.serviceWorker       │
+│         │  (Android Chrome)             .register('/sw.js')           │
+│         │                               (solo producción)            │
+│         │  iOS detection                                             │
+│         │  (User-Agent + standalone)                                  │
+│         │                                                            │
+└─────────┼────────────────────────────────────────────────────────────┘
+          │
+          ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                     SERVICE WORKER (sw.js)                            │
+│                     Scope: / (raíz)                                  │
+│                                                                      │
+│  ┌──────────────┐  ┌──────────────┐  ┌────────────────────────────┐  │
+│  │   INSTALL     │  │   ACTIVATE    │  │         FETCH               │  │
+│  │               │  │               │  │                            │  │
+│  │ Pre-cache:    │  │ Clean old     │  │  /api/*    → NETWORK ONLY  │  │
+│  │ • offline.html│  │ caches        │  │  POST/PUT  → SKIP          │  │
+│  │               │  │               │  │  tiles/OSM → SKIP          │  │
+│  │ skipWaiting() │  │ clients.claim │  │  /_next/s  → CACHE-FIRST   │  │
+│  │               │  │               │  │  /icons/*  → CACHE-FIRST   │  │
+│  └──────────────┘  └──────────────┘  │  fonts.*   → CACHE-FIRST   │  │
+│                                       │  navigate  → NETWORK→OFFL  │  │
+│                                       │  other     → NETWORK ONLY  │  │
+│                                       └────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────────┘
+          │
+          ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                      CACHE STORAGE                                   │
+│                      Name: 'sivarcasas-v1'                           │
+│                                                                      │
+│  Contenido (runtime):                                                │
+│  • /offline.html (pre-cacheada en install)                           │
+│  • /_next/static/**  (JS/CSS bundles, on-demand)                     │
+│  • /icons/**  (PWA icons, on-demand)                                 │
+│  • fonts.googleapis.com/**  (Google Fonts, on-demand)                │
+│  • fonts.gstatic.com/**  (font files, on-demand)                     │
+│                                                                      │
+│  Tamaño estimado: ~2-5 MB (depende de bundles cargados)              │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+### 19.3 Inventario de Archivos PWA
+
+```
+src/
+├── app/
+│   ├── manifest.ts              # [NEW] Genera /manifest.webmanifest (Next.js nativo)
+│   └── layout.tsx               # [MODIFIED] +appleWebApp, +icons, +viewport, +PWA components
+│
+├── components/
+│   ├── ServiceWorkerRegistrar.tsx  # [NEW] Registra SW en producción (0 UI)
+│   └── PWAInstallPrompt.tsx        # [NEW] Banner Android + instrucciones iOS
+│
+public/
+├── sw.js                        # [NEW] Service worker (~88 LOC vanilla JS)
+├── offline.html                 # [NEW] Fallback offline (branded)
+└── icons/                       # [NEW] Directorio de íconos PWA
+    ├── android-chrome-192x192.png   (55 KB)
+    ├── android-chrome-512x512.png   (298 KB)
+    ├── apple-touch-icon.png         (49 KB)
+    ├── favicon-16x16.png            (0.9 KB)
+    ├── favicon-32x32.png            (2.6 KB)
+    └── favicon.ico                  (15 KB)
+```
+
+### 19.4 Web App Manifest (`src/app/manifest.ts`)
+
+Utiliza la API nativa de Next.js App Router (`MetadataRoute.Manifest`). Next.js se encarga automáticamente de:
+- Generar el archivo JSON en la ruta `/manifest.webmanifest`
+- Inyectar `<link rel="manifest">` en el `<head>` de todas las páginas
+- Servir con el MIME type correcto (`application/manifest+json`)
+
+**Configuración:**
+
+| Campo | Valor | Justificación |
+|---|---|---|
+| `name` | "sivarcasas – Propiedades en El Salvador" | Nombre completo para diálogos de instalación |
+| `short_name` | "sivarcasas" | Nombre bajo el ícono en home screen |
+| `start_url` | `/` | Abre siempre en homepage |
+| `display` | `standalone` | Sin barra de navegación del browser |
+| `background_color` | `#0a0a0a` | Coincide con el background oscuro del body |
+| `theme_color` | `#10b981` | Esmeralda — color de acento del proyecto |
+| `icons` | 192px, 512px, 512px maskable | Cubre todos los requisitos de Android/PWA |
+
+**Decisión arquitectónica:** Se eligió `manifest.ts` sobre un archivo estático `site.webmanifest` porque:
+1. Se genera en build time y Next.js maneja el linking automático
+2. Permite usar TypeScript y detectar errores de schema en compilación
+3. No requiere configuración manual de `<link>` tags en el layout
+
+### 19.5 Service Worker — Análisis Detallado (`public/sw.js`)
+
+~88 líneas de vanilla JavaScript. Colocado en `public/` para ser servido en el **scope raíz** (`/`).
+
+#### 19.5.1 Ciclo de vida
+
+```
+┌────────┐      ┌──────────┐      ┌────────┐
+│ INSTALL │ ───▶ │ ACTIVATE  │ ───▶ │ FETCH   │
+│         │      │           │      │ (loop)  │
+│ cache   │      │ limpiar   │      │         │
+│ offline │      │ caches    │      │ routing │
+│ .html   │      │ antiguos  │      │ por URL │
+│         │      │           │      │         │
+│ skip    │      │ clients   │      │         │
+│ Waiting │      │ .claim()  │      │         │
+└────────┘      └──────────┘      └────────┘
+```
+
+- **`skipWaiting()`**: El nuevo SW toma control inmediatamente sin esperar que se cierren tabs existentes. Decisión conservadora: dado que solo cacheamos assets estáticos, no hay riesgo de inconsistencia de datos.
+- **`clients.claim()`**: El SW controla todas las tabs abiertas inmediatamente después de activarse.
+
+#### 19.5.2 Estrategia de routing por fetch
+
+| Condición | Estrategia | Razón |
+|---|---|---|
+| `method !== 'GET'` | **Skip** (bypass SW) | POST del valuador, etc. — nunca interceptar |
+| `pathname.startsWith('/api/')` | **Network-only** | 13 rutas API → Supabase en tiempo real |
+| `hostname` incluye `tile`, `nominatim` | **Network-only** | Tiles OSM + geocoding externo |
+| `pathname.startsWith('/_next/static/')` | **Cache-first** | JS/CSS bundles con hash (inmutables) |
+| `pathname.startsWith('/icons/')` | **Cache-first** | Íconos PWA estáticos |
+| `hostname` es `fonts.googleapis.com` o `fonts.gstatic.com` | **Cache-first** | Google Fonts (Inter) |
+| `request.mode === 'navigate'` | **Network-first** → `/offline.html` | Páginas HTML: siempre frescas, offline como fallback |
+| Cualquier otro | **Network-only** (fall-through) | Sin caché por defecto |
+
+#### 19.5.3 Qué NUNCA se cachea (y por qué)
+
+| Recurso excluido | Razón técnica |
+|---|---|
+| `/api/listings`, `/api/listing/[id]` | Datos cambian cada hora (scraper cron) |
+| `/api/department/*/listings` | Paginados con filtros dinámicos |
+| `/api/valuador` | POST con cálculos en tiempo real (AVM) |
+| `/api/nearby-listings` | Depende de lat/lng del usuario |
+| `/api/department-stats` | Materialized view con revalidación de 5 min |
+| `/api/colonias`, `/api/geocode` | Autocompletado y geocoding en vivo |
+| `/api/tags` | Catálogo dinámico de tags |
+| Tiles OSM (`tile.openstreetmap.org`) | Volumen alto + política de uso OSM |
+| Nominatim | Servicio externo con rate-limiting |
+
+**Principio rector:** En una plataforma inmobiliaria donde los precios y disponibilidad cambian constantemente, servir datos desactualizados desde caché es **peor** que no tener datos. La estrategia es: **frescura de datos > disponibilidad offline**.
+
+#### 19.5.4 Versioning y migración de caché
+
+El cache se identifica como `sivarcasas-v1`. Al actualizar el SW:
+1. Cambiar `CACHE_NAME` a `sivarcasas-v2`
+2. El evento `activate` automáticamente elimina `sivarcasas-v1`
+3. Los nuevos assets se cachean on-demand con la nueva versión
+
+### 19.6 Registro del Service Worker (`ServiceWorkerRegistrar.tsx`)
+
+Componente `'use client'` que:
+
+```typescript
+// Solo en producción (evita conflictos con HMR en dev)
+if (process.env.NODE_ENV === 'production') {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js');
+  });
+}
+```
+
+**Decisiones de diseño:**
+- **Solo producción:** En desarrollo, el Hot Module Replacement de Turbopack entra en conflicto con el SW interceptando requests de `/_next/`.
+- **`window.load`:** Registra después del render inicial para no competir por bandwidth durante la carga.
+- **Render null:** Cero impacto en el DOM.
+- **Fuera de Providers:** No depende de `FavoritesProvider` ni ningún contexto React.
+
+### 19.7 UX de Instalación (`PWAInstallPrompt.tsx`)
+
+~230 LOC. Maneja dos plataformas con estrategias distintas:
+
+#### Android (Chrome/Chromium)
+
+```
+beforeinstallprompt event
+        │
+        ▼
+  ┌─────────────────┐
+  │ e.preventDefault │  ← Captura el prompt nativo
+  │ deferredPrompt   │  ← Guarda referencia en useRef
+  │ setShowAndroid() │  ← Muestra banner custom
+  └────────┬────────┘
+           │
+    Click "Instalar"
+           │
+           ▼
+  ┌─────────────────┐
+  │ prompt.prompt()  │  ← Dispara diálogo nativo de Chrome
+  │ prompt.userChoice│  ← Espera aceptar/rechazar
+  └────────┬────────┘
+           │
+     accepted ─── ocultar banner
+     dismissed ── mantener para próxima visita
+```
+
+#### iOS (Safari)
+
+Safari no soporta `beforeinstallprompt`. La detección es por User-Agent:
+
+```typescript
+function isIOS(): boolean {
+  return (
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.userAgent.includes('Mac') && 'ontouchend' in document)
+  );
+}
+```
+
+La segunda condición cubre **iPad con iPadOS 13+** que reporta User-Agent de Mac desktop.
+
+**Detección de standalone:**
+```typescript
+window.matchMedia('(display-mode: standalone)').matches
+// fallback iOS:
+navigator.standalone === true
+```
+
+**Dismissal:** Se guarda en `localStorage` con timestamp. El banner no vuelve a aparecer durante 7 días (`DISMISS_DAYS = 7`).
+
+**Estilo visual:** Inline CSS con glassmorfismo (background semi-transparente + backdrop-filter blur) que coincide con el design system del proyecto (fondo oscuro #171717 al 95% opacidad, borde esmeralda, esquinas redondeadas 16px).
+
+### 19.8 Integración con Apple / iOS
+
+Metadata agregada en `layout.tsx` vía la API `Metadata` de Next.js:
+
+```typescript
+appleWebApp: {
+  capable: true,           // <meta name="apple-mobile-web-app-capable" content="yes">
+  statusBarStyle: 'black-translucent',  // Status bar sobre el contenido
+  title: 'sivarcasas',     // Nombre sugerido al agregar a home screen
+},
+icons: {
+  apple: [
+    { url: '/icons/apple-touch-icon.png', sizes: '180x180', type: 'image/png' },
+  ],
+},
+```
+
+**`black-translucent`** se eligió sobre `default` o `black` porque permite que el contenido de la app se extienda debajo de la status bar, creando una experiencia más inmersiva que es consistente con el hero section full-bleed de la homepage.
+
+### 19.9 Viewport y Theme Color
+
+Se exporta `viewport` como objeto separado de `metadata` (requerido en Next.js 14+):
+
+```typescript
+export const viewport: Viewport = {
+  themeColor: '#10b981',  // Esmeralda — colorea la barra de navegación en Android
+};
+```
+
+Esto genera `<meta name="theme-color" content="#10b981">` que colorea la barra de estado/navegación del browser en Android cuando el sitio aún no está instalado como PWA.
+
+### 19.10 Offline Fallback (`public/offline.html`)
+
+Página HTML autónoma (sin dependencia de Next.js, React, ni CSS externo) que se muestra cuando:
+1. El usuario no tiene conexión a internet
+2. La página solicitada no está en caché
+3. El service worker está activo
+
+**Diseño:** Coincide con el tema visual del proyecto (background `#0a0a0a`, texto `#e5e5e5`, botón esmeralda `#10b981`, tipografía Inter). Incluye botón "Reintentar" que ejecuta `location.reload()`.
+
+### 19.11 Integración con la Arquitectura Existente
+
+| Componente existente | Impacto PWA | Detalle |
+|---|---|---|
+| **SSR / RSC** | ✅ Sin impacto | SW no intercepta rendering del servidor |
+| **SEO (sitemap, robots, JSON-LD, canonical)** | ✅ Sin impacto | Archivos no modificados |
+| **MapExplorer (Leaflet)** | ✅ Sin impacto | Tiles OSM excluidos del caché |
+| **ListingModal** | ✅ Sin impacto | Datos siempre desde red |
+| **Favoritos (cookies)** | ✅ Sin impacto | Navigation es network-first; cookies pasan al servidor |
+| **Valuador (AVM)** | ✅ Sin impacto | POST excluido del SW por método |
+| **Vercel Analytics / Speed Insights** | ✅ Sin impacto | Scripts de analytics no interferidos |
+| **`unstable_cache` (Tendencias)** | ✅ Sin impacto | Caché del servidor, no del SW |
+| **Redirects (next.config.ts)** | ✅ Sin impacto | Redirects son server-side |
+| **`critters` (CSS crítico)** | ✅ Sin impacto | Inlining ocurre en build, no en runtime |
+
+### 19.12 Flujo de Instalación End-to-End
+
+#### Android
+
+```
+1. Usuario abre https://sivarcasas.com en Chrome
+2. → Next.js sirve HTML con <link rel="manifest" href="/manifest.webmanifest">
+3. → Chrome lee manifest: display=standalone, icons, start_url
+4. → Chrome dispara evento 'beforeinstallprompt'
+5. → PWAInstallPrompt.tsx intercepta, muestra banner
+6. → Usuario toca "Instalar"
+7. → prompt.prompt() → diálogo nativo de Chrome
+8. → Usuario acepta → Chrome instala web app
+9. → Acceso directo aparece en home screen/app drawer
+10. → Al abrir: Chrome carga sivarcasas.com en modo standalone
+    (sin barra de URL, con theme_color en status bar)
+```
+
+#### iPhone
+
+```
+1. Usuario abre https://sivarcasas.com en Safari
+2. → Safari lee apple-mobile-web-app-capable=yes
+3. → PWAInstallPrompt.tsx detecta iOS + no-standalone
+4. → Muestra instrucciones: "Tocá Compartir → Agregar a pantalla de inicio"
+5. → Usuario sigue las instrucciones en Safari
+6. → iOS crea ícono con apple-touch-icon.png (180×180)
+7. → Al abrir: Safari WebKit carga en modo standalone
+    (status bar style: black-translucent)
+```
+
+### 19.13 Verificación y Resultados
+
+| Prueba | Resultado |
+|---|---|
+| `npm run build` — compilación | ✅ Sin errores, 20 páginas |
+| `/manifest.webmanifest` — contenido JSON | ✅ Válido, todos los campos correctos |
+| `/sw.js` — servido con MIME type correcto | ✅ `application/javascript` |
+| `/offline.html` — renderizado | ✅ Página branded con tema oscuro |
+| `/icons/*` — 6 archivos accesibles | ✅ Todos cargan (192, 512, apple-touch, favicons) |
+| Banner de instalación Android | ✅ `beforeinstallprompt` capturado, banner visible |
+| Instrucciones iOS | ✅ Detección por UA funcional |
+| Navegación existente | ✅ Home, departamentos, listings, favoritos, valuador, tendencias |
+| API endpoints no cacheados | ✅ Verificado en código: 13 rutas excluidas |
+
+### 19.14 Limitaciones Conocidas
+
+| Limitación | Detalle | Severidad |
+|---|---|---|
+| **iOS: Sin install prompt nativo** | Safari no soporta `beforeinstallprompt`; se muestran instrucciones manuales | Baja (limitación del OS) |
+| **Push notifications** | No implementadas | Baja (no necesarias para el caso de uso) |
+| **Offline completo** | Solo fallback; páginas individuales no se cachean | Diseñado así (datos frescos > offline) |
+| **Ícono maskable** | Usa el mismo PNG 512×512; debería tener safe zone dedicada | Cosmético |
+| **SW solo producción** | No se puede probar en `npm run dev` (conflicto HMR) | Diseñado así |
 
 ---
 
