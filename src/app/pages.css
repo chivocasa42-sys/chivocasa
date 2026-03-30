@@ -168,7 +168,7 @@
 }
 
 .hero-search--cta .hero-search-title {
-  margin-bottom: 0.75rem;
+  margin-bottom: 1.5rem;
 }
 
 .hero-search-actions {
@@ -210,18 +210,18 @@
 }
 
 .hero-search-cta--primary {
-  background: linear-gradient(135deg, #4fe3c9 0%, #37cfd0 52%, #2c8fd6 100%);
+  background: linear-gradient(135deg, #1ea8a3 0%, #188ea5 52%, #226fb8 100%);
   color: #ffffff;
   border: 1px solid rgba(255, 255, 255, 0.3);
   box-shadow:
-    0 16px 34px rgba(40, 185, 191, 0.34),
+    0 16px 34px rgba(24, 126, 162, 0.34),
     inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
 
 .hero-search-cta--primary:hover {
-  background: linear-gradient(135deg, #5ae9d0 0%, #43d9d8 52%, #339ce3 100%);
+  background: linear-gradient(135deg, #28b5af 0%, #2099b2 52%, #2c7bc6 100%);
   box-shadow:
-    0 20px 40px rgba(40, 185, 191, 0.42),
+    0 20px 40px rgba(24, 126, 162, 0.42),
     inset 0 1px 0 rgba(255, 255, 255, 0.32);
 }
 

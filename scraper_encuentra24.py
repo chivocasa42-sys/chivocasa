@@ -765,6 +765,12 @@ def check_listing_still_active(url, source):
         'ya no esta disponible',
     ]
     
+    REALTOR_INACTIVE_PHRASES = [
+        'listing not exist',
+        'property was deleted, sold or offlined by agent',
+        'not available',
+    ]
+
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -871,6 +877,14 @@ def check_listing_still_active(url, source):
         title_text = (soup.title.get_text(" ", strip=True).lower() if soup.title else "")
         h1_el = soup.select_one("h1")
         h1_text = h1_el.get_text(" ", strip=True).lower() if h1_el else ""
+
+        if source == "Realtor":
+            realtor_deleted_marker = 'property was deleted, sold or offlined by agent'
+            realtor_soft_404_markers = ['listing not exist', 'not available']
+            if realtor_deleted_marker in page_text:
+                return False, f"Realtor unavailable page ('{realtor_deleted_marker}')"
+            if all(marker in page_text for marker in realtor_soft_404_markers):
+                return False, "Realtor unavailable page ('listing not exist' + 'not available')"
 
         # Check for exact inactive phrases in visible content
         for phrase in INACTIVE_PHRASES:
