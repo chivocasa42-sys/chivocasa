@@ -9,7 +9,6 @@ import { departamentoToSlug } from '@/lib/slugify';
 import type { DepartmentStats } from '@/lib/departmentStats';
 
 type ViewType = 'all' | 'sale' | 'rent';
-type OrderType = 'activity' | 'price' | 'variation';
 
 interface DepartmentMarketClientProps {
     initialData?: DepartmentStats[];
@@ -20,7 +19,6 @@ export default function DepartmentMarketClient({ initialData }: DepartmentMarket
     const [isLoading, setIsLoading] = useState(!initialData || initialData.length === 0);
     const [error, setError] = useState<string | null>(null);
     const [view, setView] = useState<ViewType>('all');
-    const orderBy: OrderType = 'activity';
 
     useEffect(() => {
         if (initialData && initialData.length > 0) return;
@@ -58,20 +56,10 @@ export default function DepartmentMarketClient({ initialData }: DepartmentMarket
             filtered = filtered.filter((d) => d.rent && d.rent.count > 0);
         }
 
-        switch (orderBy) {
-            case 'activity':
-                filtered.sort((a, b) => b.total_count - a.total_count);
-                break;
-            case 'price':
-                filtered.sort((a, b) => (b.sale?.avg || 0) - (a.sale?.avg || 0));
-                break;
-            case 'variation':
-                filtered.sort((a, b) => b.total_count - a.total_count);
-                break;
-        }
+        filtered.sort((a, b) => b.total_count - a.total_count);
 
         return filtered;
-    }, [departments, view, orderBy]);
+    }, [departments, view]);
 
     const getDisplayStats = (dept: DepartmentStats) => {
         if (view === 'sale' && dept.sale) {
