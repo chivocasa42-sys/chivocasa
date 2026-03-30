@@ -5,7 +5,6 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import Navbar from '@/components/Navbar';
 import ListingCard from '@/components/ListingCard';
-import BestOpportunitySection from '@/components/BestOpportunitySection';
 import DepartmentFilterBar from '@/components/DepartmentFilterBar';
 import ActiveFilterChips from '@/components/ActiveFilterChips';
 import ListingModal from '@/components/ListingModal';
@@ -36,19 +35,6 @@ interface Municipality {
     municipio_id: number;
     municipio_name: string;
     listing_count: number;
-}
-
-interface TopScoredListing {
-    external_id: string | number;
-    title: string;
-    price: number;
-    mt2: number;
-    bedrooms: number;
-    bathrooms: number;
-    price_per_m2: number;
-    score: number;
-    url: string;
-    first_image?: string | null;
 }
 
 interface PaginationState {
@@ -116,10 +102,6 @@ export default function DepartmentPage() {
         hasMore: false
     });
 
-    // Best opportunities - only show relevant ones based on filter
-    const [bestSale, setBestSale] = useState<TopScoredListing | null>(null);
-    const [bestRent, setBestRent] = useState<TopScoredListing | null>(null);
-
     // Available municipalities in this department
     const [municipalities, setMunicipalities] = useState<Municipality[]>([]);
 
@@ -181,26 +163,16 @@ export default function DepartmentPage() {
             setError(null);
             setListings([]); // Clear listings when filter changes
             try {
-                // Fetch listings and best opportunities in parallel
-                const [listingsData, topScoredRes] = await Promise.all([
-                    fetchListings(
-                        0,
-                        filters.listingType,
-                        filters.sort,
-                        filters.municipios,
-                        filters.categories,
-                        false,
-                        filters.priceMin,
-                        filters.priceMax
-                    ),
-                    fetch(`/api/department/${slug}/top-scored?type=all&limit=1`)
-                ]);
-
-                if (topScoredRes.ok) {
-                    const topScoredData = await topScoredRes.json();
-                    setBestSale(topScoredData.sale?.[0] || null);
-                    setBestRent(topScoredData.rent?.[0] || null);
-                }
+                await fetchListings(
+                    0,
+                    filters.listingType,
+                    filters.sort,
+                    filters.municipios,
+                    filters.categories,
+                    false,
+                    filters.priceMin,
+                    filters.priceMax
+                );
             } catch (err) {
                 setError(err instanceof Error ? err.message : 'No pudimos cargar los datos. Intentá de nuevo.');
                 console.error(err);
@@ -282,22 +254,6 @@ export default function DepartmentPage() {
         });
     }, [listings]);
 
-    // Handle view listing from best opportunity - open in modal
-    const handleViewBestListing = (topScored: TopScoredListing) => {
-        setSelectedListingId(topScored.external_id);
-    };
-
-    // Determine which best opportunities to show based on filter
-    const showBestSale = filters.listingType === 'all' || filters.listingType === 'sale';
-    const showBestRent = filters.listingType === 'all' || filters.listingType === 'rent';
-
-    const featuredIds = useMemo(() => {
-        const ids = new Set<string>();
-        if (bestSale?.external_id !== undefined && bestSale?.external_id !== null) ids.add(String(bestSale.external_id));
-        if (bestRent?.external_id !== undefined && bestRent?.external_id !== null) ids.add(String(bestRent.external_id));
-        return ids;
-    }, [bestSale?.external_id, bestRent?.external_id]);
-
     const resultsCount = pagination.total;
 
     return (
@@ -367,9 +323,6 @@ export default function DepartmentPage() {
                 {/* Content */}
                 {isLoading ? (
                     <div className="mb-8">
-                        {/* Skeleton: Best Opportunity */}
-                        <div className="skeleton-pulse skeleton-opportunity" />
-
                         {/* Skeleton: Filter bar */}
                         <div className="skeleton-pulse skeleton-filter-bar" />
 
@@ -405,13 +358,6 @@ export default function DepartmentPage() {
                     </div>
                 ) : (
                     <>
-                        <BestOpportunitySection
-                            saleListing={showBestSale ? bestSale : null}
-                            rentListing={showBestRent ? bestRent : null}
-                            onViewListing={handleViewBestListing}
-                            departamentoName={departamento}
-                        />
-
                         <div className="mb-8">
                             <div className="text-center mb-6 pb-4 border-b border-slate-200">
                                 <h2 className="text-2xl md:text-3xl font-black text-[var(--text-primary)] tracking-tight mb-2">
@@ -436,7 +382,6 @@ export default function DepartmentPage() {
                                                 key={listing.external_id}
                                                 listing={listing}
                                                 onClick={() => setSelectedListingId(listing.external_id)}
-                                                isFeatured={featuredIds.has(String(listing.external_id))}
                                             />
                                         ))}
                                     </div>

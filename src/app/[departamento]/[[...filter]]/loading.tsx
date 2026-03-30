@@ -28,9 +28,6 @@ export default function Loading() {
                 </div>
             </div>
 
-            {/* Best Opportunity skeleton */}
-            <div className="skeleton-pulse skeleton-opportunity" />
-
             {/* Filter bar skeleton */}
             <div className="skeleton-pulse skeleton-filter-bar" />
 

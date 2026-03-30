@@ -72,7 +72,7 @@ const BENEFITS = [
     { title: 'Comparar más rápido', desc: 'Todas las fuentes en un solo lugar, normalizadas.', href: '/' },
     { title: 'Tendencias del mercado', desc: 'Rankings, precios promedio y actividad por zona.', href: '/tendencias' },
     { title: 'Valuador', desc: 'Estimación automatizada con comparables reales.', href: '/valuador-de-inmuebles' },
-    { title: 'Mapa de precios/m²', desc: 'Visualiza precios por ubicación en el mapa.', href: '/#departamentos' },
+    { title: 'Mapa de precios/m²', desc: 'Visualiza precios por ubicación en el mapa.', href: '/explorar-por-ubicacion' },
     { title: 'Favoritos', desc: 'Guarda hasta 25 propiedades para comparar.', href: '/favoritos' },
     { title: 'Detalle con fuente original', desc: 'Cada propiedad enlaza a su publicación original.', href: null },
 ];
@@ -81,7 +81,7 @@ const TOOLS = [
     { icon: '📊', title: 'Tendencias del mercado', desc: 'Rankings de precios, actividad por departamento y evolución mensual.', href: '/tendencias' },
     { icon: '🏠', title: 'Valuador de propiedades', desc: 'Estimación automatizada basada en comparables cercanos con confianza.', href: '/valuador-de-inmuebles' },
     { icon: '❤️', title: 'Favoritos', desc: 'Guarda propiedades, compara métricas y vuelve cuando quieras.', href: '/favoritos' },
-    { icon: '🗺️', title: 'Mapa interactivo', desc: 'Explora propiedades por ubicación con datos de cada departamento.', href: '/#departamentos' },
+    { icon: '🗺️', title: 'Mapa interactivo', desc: 'Explora propiedades por ubicación con datos de cada departamento.', href: '/explorar-por-ubicacion' },
 ];
 
 const STEPS = [

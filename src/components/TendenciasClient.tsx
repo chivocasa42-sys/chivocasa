@@ -4,10 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import Navbar from '@/components/Navbar';
 import HomeHeader from '@/components/HomeHeader';
-import KPIStrip from '@/components/KPIStrip';
-import SectionHeader from '@/components/SectionHeader';
 
-// Dynamic import — keep ECharts out of initial bundle
 const MarketRankingCharts = dynamic(() => import('@/components/MarketRankingCharts'), {
     ssr: false,
     loading: () => (
@@ -47,7 +44,6 @@ export default function TendenciasClient({ initialData }: TendenciasClientProps)
     const [view, setView] = useState<ViewType>('all');
 
     useEffect(() => {
-        // Skip fetch if we already have server-provided data
         if (initialData && initialData.length > 0) return;
 
         async function fetchStats() {
@@ -59,47 +55,25 @@ export default function TendenciasClient({ initialData }: TendenciasClientProps)
                 const data = await res.json();
                 setDepartments(data);
             } catch (err) {
-                setError('No pudimos cargar los datos. Verificá tu conexión e intentá de nuevo.');
+                setError('No pudimos cargar los datos. Verifica tu conexion e intenta de nuevo.');
                 console.error(err);
             } finally {
                 setIsLoading(false);
             }
         }
+
         fetchStats();
     }, [initialData]);
 
-    // Calcular KPI stats
-    const kpiStats = useMemo(() => {
-        let sumSalePrice = 0, sumRentPrice = 0;
-        let saleCount = 0, rentCount = 0;
-        let totalActive = 0;
-
-        departments.forEach(dept => {
-            if (dept.sale) {
-                sumSalePrice += dept.sale.avg * dept.sale.count;
-                saleCount += dept.sale.count;
-            }
-            if (dept.rent) {
-                sumRentPrice += dept.rent.avg * dept.rent.count;
-                rentCount += dept.rent.count;
-            }
-            totalActive += dept.total_count;
-        });
-
-        return {
-            medianSale: saleCount > 0 ? sumSalePrice / saleCount : 0,
-            medianRent: rentCount > 0 ? sumRentPrice / rentCount : 0,
-            totalActive,
-            new7d: Math.round(totalActive * 0.05),
-            saleTrend: 2.3,
-            rentTrend: 1.8,
-        };
-    }, [departments]);
+    const totalActive = useMemo(
+        () => departments.reduce((sum, dept) => sum + dept.total_count, 0),
+        [departments]
+    );
 
     return (
         <>
             <Navbar
-                totalListings={kpiStats.totalActive}
+                totalListings={totalActive}
                 onRefresh={() => window.location.reload()}
             />
 
@@ -120,47 +94,20 @@ export default function TendenciasClient({ initialData }: TendenciasClientProps)
                         </button>
                     </div>
                 ) : (
-
-
-                    <>
-                        {/* ══════════════════════════════════════════════
-                            SECTION 1 — Panorama (KPI cards)
-                           ══════════════════════════════════════════════ */}
-                        <section className="pt-10 pb-4">
-                            <SectionHeader
-                                title={['Panorama del mercado inmobiliario', 'en El Salvador']}
-                                subtitle="Precios promedio, rentas mensuales y nuevas oportunidades inmobiliarias, actualizadas para ayudarte a tomar decisiones con mayor confianza."
-                                asH1
+                    <section className="pt-10 pb-12">
+                        <div id="rankings" className="scroll-mt-20">
+                            <MarketRankingCharts
+                                departments={departments}
+                                activeFilter={view}
+                                filterSlot={
+                                    <HomeHeader
+                                        view={view}
+                                        onViewChange={setView}
+                                    />
+                                }
                             />
-
-                            {/* KPI Strip */}
-                            <KPIStrip stats={kpiStats} />
-
-                        </section>
-
-                        {/* ── Subtle divider between sections ── */}
-                        <hr className="border-t border-slate-200/70 my-0" />
-
-                        {/* ══════════════════════════════════════════════
-                            SECTION 2 — Ranking Charts
-                           ══════════════════════════════════════════════ */}
-                        <section className="pt-10 pb-12">
-                            <div id="rankings" className="scroll-mt-20">
-                                <MarketRankingCharts
-                                    departments={departments}
-                                    activeFilter={view}
-                                    filterSlot={
-                                        <HomeHeader
-                                            view={view}
-                                            onViewChange={setView}
-                                        />
-                                    }
-                                />
-                            </div>
-                        </section>
-
-
-                    </>
+                        </div>
+                    </section>
                 )}
             </main>
         </>

@@ -4,7 +4,6 @@ import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import Providers from "./Providers";
 import ServiceWorkerRegistrar from "@/components/ServiceWorkerRegistrar";
-import PWAInstallPrompt from "@/components/PWAInstallPrompt";
 import "./globals.css";
 
 const inter = Inter({
@@ -102,7 +101,7 @@ export default function RootLayout({
 
         {/* PWA */}
         <ServiceWorkerRegistrar />
-        <PWAInstallPrompt />
+        {/* Install prompt intentionally hidden for now. */}
 
         {/* Performance */}
         <SpeedInsights />

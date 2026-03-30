@@ -5995,11 +5995,32 @@ def scrape_propilatam_listing(url, listing_type="sale"):
         page_text = soup.get_text()
         raw_html = selected_html
 
-        # Price extraction - prefer structured values from embedded JSON when available.
+        # Price extraction - prefer Propi's explicit minimum/base price fields.
+        # Project pages often include many unrelated prices (similar projects,
+        # calculators, unit variants), so generic "$123,456" regexes can drift.
         price = None
-        
-        # Try multiple patterns for embedded JSON data
+
         # NOTE: PropiLatam/VivoLatam HTML often uses escaped quotes like \".
+        if not price:
+            structured_price_patterns = [
+                r'\\"min_base_price\\"\s*:\s*(\d+)',
+                r'"min_base_price"\s*:\s*(\d+)',
+                r'\\"min_unit_price\\":\\"\$\$?([\d,.]+)\\"',
+                r'"min_unit_price"\s*:\s*"\$\$?([\d,.]+)"',
+                r'\\"base_price\\":\\"\$\$?([\d,.]+)\\"',
+                r'"base_price"\s*:\s*"\$\$?([\d,.]+)"',
+                r'\\"base_price\\"\s*:\s*(\d+)',
+                r'"base_price"\s*:\s*(\d+)',
+            ]
+            for pattern in structured_price_patterns:
+                match = re.search(pattern, raw_html)
+                if not match:
+                    continue
+                parsed = parse_price(match.group(1))
+                if parsed:
+                    price = int(parsed)
+                    break
+
         if not price:
             # Pattern 0: direct escaped price string used by PropiLatam:
             # \"price\":\"$$1,500.00\"
@@ -6020,18 +6041,18 @@ def scrape_propilatam_listing(url, listing_type="sale"):
             sale_price_match = re.search(r'\\"sale\\":\{\\"value\\":(\d+)', raw_html)
             # For rent, skip over the "period" field to find "value"
             rent_price_match = re.search(r'\\"rent\\":\{[^}]*\\"value\\":(\d+)', raw_html)
-            
+
             if sale_price_match:
                 price = int(sale_price_match.group(1))
             elif rent_price_match:
                 price = int(rent_price_match.group(1))
-        
+
         # Pattern 2: Non-escaped JSON (fallback for other formats)
         if not price:
             sale_match_alt = re.search(r'"sale"\s*:\s*\{\s*"value"\s*:\s*(\d+)', raw_html)
             # For rent, use flexible pattern to skip over period field
             rent_match_alt = re.search(r'"rent"\s*:\s*\{[^}]*"value"\s*:\s*(\d+)', raw_html)
-            
+
             if sale_match_alt:
                 price = int(sale_match_alt.group(1))
             elif rent_match_alt:
@@ -6111,8 +6132,8 @@ def scrape_propilatam_listing(url, listing_type="sale"):
         
         # Specs from text
         specs = {}
-        bedroom_match = re.search(r'(\d+)\s*(?:dormitorio|habitaci)', page_text, re.I)
-        bathroom_match = re.search(r'(\d+)\s*(?:baño|bath)', page_text, re.I)
+        bedroom_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:dormitorio|habitaci)', page_text, re.I)
+        bathroom_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:baño|bath)', page_text, re.I)
         parking_match = re.search(r'(\d+)\s*(?:parqueo|parking|estacionamiento|garaje|cochera)', page_text, re.I)
         area_match = re.search(r'([\d.,]+)\s*(m2|metros?\s*cuadrados?|m²|ft2|sqft|sq\s*ft|pies?\s*cuadrados?|v2|varas?\s*cuadradas?|varas?)', page_text, re.I)
         

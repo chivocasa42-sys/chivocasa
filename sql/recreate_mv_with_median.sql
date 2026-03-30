@@ -2,6 +2,7 @@
 -- MATERIALIZED VIEW: mv_sd_depto_stats (WITH MEDIAN)
 -- =====================================================
 -- This recreates the materialized view to use MEDIAN instead of AVG
+-- and only includes residential listings tagged as Casa or Apartamento.
 -- Run this in your Supabase SQL Editor
 
 -- Drop existing view if it exists
@@ -18,11 +19,12 @@ SELECT
     COUNT(*) as count
 FROM scrappeddata_ingest
 WHERE 
-    active = true 
+    active = true
     AND price IS NOT NULL
     AND listing_type IN ('sale', 'rent')
     AND (location->>'departamento') IS NOT NULL
     AND (location->>'departamento') != ''
+    AND COALESCE(tags, '[]'::jsonb) ?| ARRAY['Casa', 'Apartamento']
 GROUP BY 
     (location->>'departamento'),
     listing_type
