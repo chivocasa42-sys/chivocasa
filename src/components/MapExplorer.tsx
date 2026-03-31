@@ -122,6 +122,15 @@ function mergeListings(current: NearbyListing[], next: NearbyListing[]) {
 }
 
 function toListingCardData(listing: NearbyListing, locationName: string): Listing {
+    const normalizedSpecs = listing.specs
+        ? {
+              bedrooms: listing.specs.bedrooms ?? undefined,
+              bathrooms: listing.specs.bathrooms ?? undefined,
+              area_m2: listing.specs.area_m2 ?? undefined,
+              parking: listing.specs.parking ?? undefined,
+          }
+        : undefined;
+
     return {
         external_id: listing.external_id,
         title: listing.title,
@@ -136,7 +145,7 @@ function toListingCardData(listing: NearbyListing, locationName: string): Listin
             latitude: listing.lat,
             longitude: listing.lng,
         },
-        specs: listing.specs ?? undefined,
+        specs: normalizedSpecs,
         published_date: listing.published_date ?? undefined,
         last_updated: listing.last_updated ?? undefined,
     };
@@ -338,12 +347,12 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
                                                 )
                                             }
                                         />
-                                        {false && (
+                                        {/* legacy explorer footer removed
                                             <div className="px-1 text-sm font-medium text-slate-500">
                                             {parseFloat(listing.distance_km).toFixed(parseFloat(listing.distance_km) < 10 ? 1 : 0)} km
                                                 {[listing.specs?.area_m2 ? `${Number(listing.specs.area_m2).toLocaleString('en-US')} m²` : null, listing.specs?.bedrooms !== undefined && listing.specs?.bedrooms !== null ? `${listing.specs.bedrooms} hab` : null, listing.specs?.bathrooms !== undefined && listing.specs?.bathrooms !== null ? `${listing.specs.bathrooms} baños` : null, listing.specs?.parking !== undefined && listing.specs?.parking !== null ? `${listing.specs.parking} parqueos` : null].filter(Boolean).join(' · ')}
                                             </div>
-                                        )}
+                                        */}
                                         <div className="px-1 text-sm font-medium text-slate-500">
                                             {parseFloat(
                                                 listing.distance_km
