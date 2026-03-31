@@ -60,7 +60,7 @@ const SB_HEADERS = {
 };
 
 // Small in-memory cache for repeated valuation requests (same coords/specs)
-let memCache = new Map<string, { ts: number; status: number; payload: unknown }>();
+const memCache = new Map<string, { ts: number; status: number; payload: unknown }>();
 const MEM_CACHE_TTL = 120_000; // 2 minutes
 
 function buildCacheKey(body: ValuationInput): string {
@@ -153,20 +153,24 @@ export async function POST(request: NextRequest) {
             p_parking: body.parking ?? null,
         };
 
-        // Run sale valuation, rent valuation, and top comps in parallel
-        const [saleRows, rentRows, compRows] = await Promise.all([
+        // Sale valuation and sale comparables are required. Rent is optional because
+        // some sparse rental markets can trigger RPC underflow/insufficient-data errors.
+        const [saleRows, compRows, rentResult] = await Promise.all([
             callRpc<AvmValueRow[]>('avm_value_point', {
                 ...commonParams,
                 p_listing_type: 'sale',
-            }),
-            callRpc<AvmValueRow[]>('avm_value_point', {
-                ...commonParams,
-                p_listing_type: 'rent',
             }),
             callRpc<AvmCompRow[]>('avm_nearest_matches', {
                 ...commonParams,
                 p_listing_type: 'sale',
                 p_limit: 5,
+            }),
+            callRpc<AvmValueRow[]>('avm_value_point', {
+                ...commonParams,
+                p_listing_type: 'rent',
+            }).catch((error) => {
+                console.warn('Valuador rent RPC fallback:', error);
+                return null;
             }),
         ]);
 
@@ -187,7 +191,7 @@ export async function POST(request: NextRequest) {
         const estimatedValue = sale.est_price;
 
         // Rent estimate: use SQL result or fallback to 0.6% of value
-        const rent = rentRows[0];
+        const rent = rentResult?.[0];
         let estimatedRent: number | null = null;
         let rentPercentage: number | null = null;
         let rentSampleCount = 0;

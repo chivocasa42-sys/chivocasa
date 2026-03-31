@@ -1468,6 +1468,32 @@ def generate_location_tags(listing):
     return tags
 
 
+def map_explicit_property_type(raw_value):
+    """
+    Map an explicit source-side property/category label to a normalized tag.
+
+    Accepts English and Spanish variants from source-specific metadata such as:
+    - details.property_type
+    - details.categorias
+    - details.property_type_label
+    """
+    if not raw_value:
+        return None
+
+    value = str(raw_value).strip().lower()
+
+    if any(token in value for token in ["land", "lot", "lots", "terreno", "terrenos", "lote", "lotes", "solar", "parcela", "parcelas", "finca"]):
+        return "Terreno"
+    if any(token in value for token in ["apartment", "apartamento", "apartamentos", "condo", "condominium", "flat", "penthouse"]):
+        return "Apartamento"
+    if any(token in value for token in ["commercial", "office", "retail", "warehouse", "oficina", "oficinas", "local", "locales", "bodega", "bodegas", "galera", "nave industrial"]):
+        return "Local"
+    if any(token in value for token in ["house", "home", "single family", "townhouse", "casa", "casas", "residencia", "residencias", "vivienda"]):
+        return "Casa"
+
+    return None
+
+
 def detect_property_subtype(title, description="", details=None, url=""):
     """
     Detect property subtype from listing content.
@@ -1492,17 +1518,16 @@ def detect_property_subtype(title, description="", details=None, url=""):
     """
     # First, check explicit property_type from source (most reliable)
     if details and isinstance(details, dict):
-        property_type = str(details.get("property_type", "")).lower()
-        
-        # Map explicit property types to our categories
-        if property_type in ["land", "lot", "lots"]:
-            return "Terreno"
-        elif property_type in ["apartment", "condo", "condominium", "flat"]:
-            return "Apartamento"
-        elif property_type in ["house", "home", "single family", "townhouse"]:
-            return "Casa"
-        elif property_type in ["commercial", "office", "retail", "warehouse"]:
-            return "Local"
+        explicit_type = map_explicit_property_type(details.get("property_type"))
+        if explicit_type:
+            return explicit_type
+
+        # Some sources expose the real property class in category labels instead
+        # of a canonical property_type field (for example MiCasaSV: "Lotes y terrenos").
+        for key in ["categorias", "category", "categories", "property_type_label"]:
+            explicit_category_type = map_explicit_property_type(details.get(key))
+            if explicit_category_type:
+                return explicit_category_type
     
     # Check URL for category hints (very reliable for Encuentra24)
     url_lower = (url or "").lower()
@@ -3371,6 +3396,16 @@ def scrape_micasasv_listing(url, listing_type):
         # Detect municipality from location, description and title
         municipio_info = detect_municipio(location, description, title)
         
+        property_tag = detect_property_subtype(title, description, details, url)
+        normalized_specs = normalize_listing_specs(specs)
+
+        # MiCasaSV land listings often expose bogus quick-spec bedroom/bathroom values.
+        # Once the source category confirms this is land, avoid preserving those fields.
+        if property_tag == "Terreno":
+            normalized_specs.pop("bedrooms", None)
+            normalized_specs.pop("bathrooms", None)
+            normalized_specs.pop("parking", None)
+
         return {
             "title": title,
             "price": price,
@@ -3379,12 +3414,13 @@ def scrape_micasasv_listing(url, listing_type):
             "listing_type": listing_type,
             "url": url,
             "external_id": str(external_id),
-            "specs": normalize_listing_specs(specs),  # Normalize specs (area, beds, baths, etc.)
+            "specs": normalized_specs,  # Normalize specs (area, beds, baths, etc.)
             "details": details,
             "description": description,
             "images": images,
             "source": "MiCasaSV",
             "active": True,
+            "tags": [property_tag] if property_tag else [],
             "municipio_detectado": municipio_info["municipio_detectado"],
             "departamento": municipio_info["departamento"],
             "latitude": latitude,
