@@ -171,7 +171,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 1rem;
+  gap: 1.15rem;
   flex-wrap: wrap;
   margin-top: 0.25rem;
 }
@@ -206,36 +206,36 @@
 }
 
 .hero-search-cta--primary {
-  background: linear-gradient(135deg, #1ea8a3 0%, #188ea5 52%, #226fb8 100%);
+  background: linear-gradient(135deg, #24c5bb 0%, #1ea8c9 55%, #2793dd 100%);
   color: #ffffff;
   border: 1px solid rgba(255, 255, 255, 0.3);
   box-shadow:
-    0 16px 34px rgba(24, 126, 162, 0.34),
+    0 16px 34px rgba(26, 153, 196, 0.36),
     inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
 
 .hero-search-cta--primary:hover {
-  background: linear-gradient(135deg, #28b5af 0%, #2099b2 52%, #2c7bc6 100%);
+  background: linear-gradient(135deg, #2fd4c9 0%, #29b5d7 55%, #339fe8 100%);
   box-shadow:
-    0 20px 40px rgba(24, 126, 162, 0.42),
+    0 20px 40px rgba(26, 153, 196, 0.44),
     inset 0 1px 0 rgba(255, 255, 255, 0.32);
 }
 
 .hero-search-cta--secondary {
-  background: linear-gradient(135deg, rgba(75, 118, 185, 0.95) 0%, rgba(41, 82, 151, 0.94) 100%);
+  background: linear-gradient(135deg, rgba(20, 48, 98, 0.97) 0%, rgba(28, 69, 131, 0.96) 100%);
   color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.24);
+  border: 1px solid rgba(167, 200, 255, 0.34);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   box-shadow:
-    0 16px 34px rgba(31, 74, 138, 0.3),
+    0 16px 34px rgba(17, 42, 84, 0.4),
     inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
 .hero-search-cta--secondary:hover {
-  background: linear-gradient(135deg, rgba(89, 134, 205, 0.98) 0%, rgba(52, 98, 172, 0.96) 100%);
+  background: linear-gradient(135deg, rgba(26, 58, 115, 0.98) 0%, rgba(37, 86, 160, 0.97) 100%);
   box-shadow:
-    0 20px 40px rgba(31, 74, 138, 0.38),
+    0 20px 40px rgba(17, 42, 84, 0.48),
     inset 0 1px 0 rgba(255, 255, 255, 0.26);
 }
 
@@ -450,6 +450,12 @@
   margin-bottom: 20px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
 }
+.dept-filter-bar--inline {
+  position: static;
+  top: auto;
+  width: 100%;
+  margin-bottom: 0;
+}
 .dept-filter-bar__row {
   display: flex;
   align-items: center;
@@ -527,7 +533,7 @@
 
 /* ===== MOBILE (≤768px) ===== */
 @media (max-width: 768px) {
-  .dept-filter-bar { padding: 10px 12px; border-radius: 12px; }
+  .dept-filter-bar { padding: 8px 10px; border-radius: 12px; }
 
   /* Switch row to vertical stacking */
   .dept-filter-bar__row { flex-direction: column; gap: 0; align-items: stretch; }
@@ -542,7 +548,7 @@
     gap: 8px;
     justify-content: space-between;
     width: 100%;
-    margin-bottom: 8px;
+    margin-bottom: 4px;
   }
 
   /* Row 2: Precio + Sort compact */

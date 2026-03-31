@@ -12,6 +12,8 @@ interface Municipality {
 }
 
 interface DepartmentFilterBarProps {
+    className?: string;
+    inline?: boolean;
     listingType: FilterType;
     sort: SortOption;
     priceLabel: string;
@@ -34,6 +36,8 @@ interface DepartmentFilterBarProps {
 }
 
 export default function DepartmentFilterBar({
+    className = '',
+    inline = false,
     listingType,
     sort,
     priceLabel,
@@ -77,7 +81,13 @@ export default function DepartmentFilterBar({
     };
 
     return (
-        <div className="dept-filter-bar">
+        <div
+            className={[
+                'dept-filter-bar',
+                inline ? 'dept-filter-bar--inline' : '',
+                className,
+            ].filter(Boolean).join(' ')}
+        >
             <div className="dept-filter-bar__row">
                 {/* Group 1: Segmented + Filtros(N) — mobile row 1 */}
                 <div className="dept-filter-bar__row1">

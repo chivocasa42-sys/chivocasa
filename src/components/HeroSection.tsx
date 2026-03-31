@@ -26,24 +26,29 @@ export default function HeroSection({ variant = 'cta' }: HeroSectionProps) {
                 </h1>
 
                 <div className="hero-search-actions">
-                    <Link href="/tendencias" className="hero-search-cta hero-search-cta--primary">
-                        <span>Ver Tendencias</span>
+                    <Link href="/departamentos" className="hero-search-cta hero-search-cta--secondary">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path d="M8 5H5V8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+                            <path d="M16 19H19V16" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+                            <path d="M19 8V5H16" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+                            <path d="M5 16V19H8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+                            <path d="M8 8L16 16" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+                            <path d="M16 8L8 16" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+                        </svg>
+                        <span>Comparar zonas</span>
+                    </Link>
+
+                    <Link href="/explorar-por-ubicacion" className="hero-search-cta hero-search-cta--primary">
+                        <span>Explorar mapa</span>
                         <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
                             <path d="M4.5 9H13.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
                             <path d="M9.75 5.25L13.5 9L9.75 12.75" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                         </svg>
                     </Link>
-
-                    <Link href="/valuador-de-inmuebles" className="hero-search-cta hero-search-cta--secondary">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                            <path d="M9 7H15M15 17V14M12 17H12.01M9 17H9.01M9 14H9.01M12 14H12.01M15 11H15.01M12 11H12.01M9 11H9.01M7 21H17A2 2 0 0 0 19 19V5A2 2 0 0 0 17 3H7A2 2 0 0 0 5 5V19A2 2 0 0 0 7 21Z" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                        <span>Valuar Propiedad</span>
-                    </Link>
                 </div>
 
                 <p className="hero-search-slogan">
-                    Mas casa por tu dinero.
+                    Más casa por tu dinero.
                 </p>
             </div>
         </section>

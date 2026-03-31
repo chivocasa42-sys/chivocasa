@@ -5,6 +5,7 @@ type ViewType = 'all' | 'sale' | 'rent';
 interface HomeHeaderProps {
     view: ViewType;
     onViewChange: (view: ViewType) => void;
+    className?: string;
 }
 
 const viewLabels: Record<ViewType, string> = {
@@ -15,10 +16,11 @@ const viewLabels: Record<ViewType, string> = {
 
 export default function HomeHeader({
     view,
-    onViewChange
+    onViewChange,
+    className = '',
 }: HomeHeaderProps) {
     return (
-        <div className="mb-6">
+        <div className={['mb-6', className].filter(Boolean).join(' ')}>
             {/* Control Bar - Centered */}
             <div className="flex justify-center">
                 {/* Mercado Filter */}

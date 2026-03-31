@@ -56,7 +56,7 @@ export default function KPIStrip({
                 />
 
                 <KPICard
-                    label="NUEVOS (7 DIAS)"
+                    label="NUEVOS (7 DÍAS)"
                     value={stats.new7d > 0 ? stats.new7d.toLocaleString() : 'N/A'}
                     trendDirection={stats.new7d > 0 ? 'up' : 'neutral'}
                     variant={variant}

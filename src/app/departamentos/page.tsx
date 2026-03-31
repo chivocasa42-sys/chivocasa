@@ -12,7 +12,7 @@ export const metadata: Metadata = {
     openGraph: {
         title: 'Precios y oferta por departamento | sivarcasas',
         description:
-            'Compara el mercado inmobiliario por departamento y descubre donde conviene buscar en El Salvador.',
+            'Compara el mercado inmobiliario por departamento y descubre dónde conviene buscar en El Salvador.',
         url: 'https://sivarcasas.com/departamentos',
         type: 'website',
     },
@@ -20,7 +20,7 @@ export const metadata: Metadata = {
         card: 'summary_large_image',
         title: 'Precios y oferta por departamento | sivarcasas',
         description:
-            'Compara el mercado inmobiliario por departamento y descubre donde conviene buscar en El Salvador.',
+            'Compara el mercado inmobiliario por departamento y descubre dónde conviene buscar en El Salvador.',
     },
 };
 

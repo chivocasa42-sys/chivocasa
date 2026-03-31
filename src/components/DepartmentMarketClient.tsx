@@ -18,7 +18,7 @@ export default function DepartmentMarketClient({ initialData }: DepartmentMarket
     const [departments, setDepartments] = useState<DepartmentStats[]>(initialData ?? []);
     const [isLoading, setIsLoading] = useState(!initialData || initialData.length === 0);
     const [error, setError] = useState<string | null>(null);
-    const [view, setView] = useState<ViewType>('all');
+    const [view, setView] = useState<ViewType>('sale');
 
     useEffect(() => {
         if (initialData && initialData.length > 0) return;
@@ -115,7 +115,7 @@ export default function DepartmentMarketClient({ initialData }: DepartmentMarket
                     <section className="pt-10 pb-12">
                         <SectionHeader
                             title={['Precios y oferta', 'por departamento']}
-                            subtitle="Comparativo de precios y oferta inmobiliaria para decidir donde conviene buscar en El Salvador."
+                            subtitle="Compara precios y oferta inmobiliaria para decidir dónde conviene buscar en El Salvador."
                             asH1
                         />
 

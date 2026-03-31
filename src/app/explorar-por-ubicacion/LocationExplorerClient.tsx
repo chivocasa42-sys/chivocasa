@@ -17,7 +17,7 @@ export default function LocationExplorerClient() {
     <>
       <Navbar onRefresh={() => window.location.reload()} />
 
-      <main className="container mx-auto px-4 max-w-7xl pt-8 pb-8">
+      <main className="mx-auto w-full max-w-[1800px] px-4 pb-6 pt-6 sm:px-6 xl:px-8">
         <MapExplorer />
       </main>
     </>

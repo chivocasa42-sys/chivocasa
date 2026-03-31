@@ -48,10 +48,10 @@ function MapIcon() {
 const TOOLS = [
     {
         href: '/departamentos',
-        badge: 'Analisis',
-        title: 'Comparador por Departamento',
+        badge: 'Análisis',
+        title: 'Comparar Precios por Zona',
         description: 'Compara zonas lado a lado con precios medios, rangos y volumen de oferta activa.',
-        cta: 'Comparar departamentos',
+        cta: 'Comparar zonas',
         accent: '#d49434',
         textAccent: '#8a5a10',
         chipBg: 'rgba(212, 148, 52, 0.12)',
@@ -61,10 +61,10 @@ const TOOLS = [
     },
     {
         href: '/tendencias',
-        badge: 'Dashboard',
-        title: 'Tendencias del Mercado',
-        description: 'Graficos de evolucion mensual de precios, rentas y actividad por departamento.',
-        cta: 'Ver tendencias',
+        badge: 'Mercado',
+        title: 'Ver Precios del Mercado',
+        description: 'Gráficos de evolución mensual de precios, rentas y actividad por departamento.',
+        cta: 'Ver precios',
         accent: '#3f7fe0',
         textAccent: '#2557a8',
         chipBg: 'rgba(63, 127, 224, 0.12)',
@@ -75,9 +75,9 @@ const TOOLS = [
     {
         href: '/valuador-de-inmuebles',
         badge: 'Herramienta',
-        title: 'Valuador de Propiedades',
+        title: 'Calcular Valor de Propiedad',
         description: 'Estima el valor de cualquier propiedad con comparables y datos reales del mercado.',
-        cta: 'Abrir valuador',
+        cta: 'Calcular valor',
         accent: '#26b786',
         textAccent: '#0f7d59',
         chipBg: 'rgba(38, 183, 134, 0.12)',
@@ -88,9 +88,9 @@ const TOOLS = [
     {
         href: '/explorar-por-ubicacion',
         badge: 'Mapa',
-        title: 'Mapa de Precios',
-        description: 'Explora ubicaciones, propiedades cercanas y senales de precio en el mapa interactivo.',
-        cta: 'Explorar mapa',
+        title: 'Ver Propiedades en el Mapa',
+        description: 'Explora ubicaciones, propiedades cercanas y señales de precio en el mapa interactivo.',
+        cta: 'Ver en el mapa',
         accent: '#e66774',
         textAccent: '#b33d4a',
         chipBg: 'rgba(230, 103, 116, 0.12)',
@@ -105,7 +105,7 @@ export default function HomeToolsSection() {
         <section className="mb-14">
             <SectionHeader
                 title={['Herramientas que nos', 'hacen diferentes']}
-                subtitle="Funcionalidades que ningun otro portal inmobiliario en El Salvador ofrece"
+                subtitle="Funcionalidades que ningún otro portal inmobiliario en El Salvador ofrece."
             />
 
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">

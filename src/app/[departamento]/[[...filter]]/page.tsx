@@ -255,6 +255,14 @@ export default function DepartmentPage() {
     }, [listings]);
 
     const resultsCount = pagination.total;
+    const listingHeading = filters.listingType === 'sale'
+        ? `Inmuebles en venta en ${departamento}`
+        : filters.listingType === 'rent'
+            ? `Inmuebles en renta en ${departamento}`
+            : `Inmuebles en ${departamento}`;
+    const listingSummary = isLoading
+        ? 'Cargando...'
+        : `${pagination.total} propiedades${getFilterDisplayText(filters.listingType) ? ` ${getFilterDisplayText(filters.listingType)}` : ''} · Mostrando ${listings.length}`;
 
     return (
         <>
@@ -264,10 +272,10 @@ export default function DepartmentPage() {
             />
 
             <main className="container mx-auto px-4 max-w-7xl">
-                <div className="mb-8">
+                <div className="mb-4 md:mb-6">
                     <Link
                         href="/"
-                        className="inline-flex items-center gap-2 text-[var(--primary)] hover:text-[var(--primary-hover)] mb-5 font-medium transition-colors"
+                        className="inline-flex items-center gap-2 text-[var(--primary)] hover:text-[var(--primary-hover)] mb-4 font-medium transition-colors"
                     >
                         <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
                             <path fillRule="evenodd" d="M15 8a.5.5 0 0 0-.5-.5H2.707l3.147-3.146a.5.5 0 1 0-.708-.708l-4 4a.5.5 0 0 0 0 .708l4 4a.5.5 0 0 0 .708-.708L2.707 8.5H14.5A.5.5 0 0 0 15 8z" />
@@ -276,10 +284,7 @@ export default function DepartmentPage() {
                     </Link>
 
                     <div>
-                        <h1 className="text-4xl md:text-5xl font-black text-[var(--text-primary)] tracking-tight">
-                            {departamento}
-                        </h1>
-                        <p className="status-line">
+                        {false && (<p className="status-line">
                             {isLoading ? (
                                 <span>Cargando…</span>
                             ) : (
@@ -287,32 +292,34 @@ export default function DepartmentPage() {
                                     <span>{pagination.total}</span> propiedades{getFilterDisplayText(filters.listingType) ? ` ${getFilterDisplayText(filters.listingType)}` : ''} · <span>Mostrando {listings.length}</span>
                                 </>
                             )}
-                        </p>
-                    </div>
-                </div>
+                        </p>)}
+                        </div>
 
-                {/* Unified Filter Bar */}
-                <DepartmentFilterBar
-                    listingType={filters.listingType}
-                    sort={filters.sort}
-                    priceLabel={priceLabel}
-                    priceMin={filters.priceMin}
-                    priceMax={filters.priceMax}
-                    activeFiltersCount={activeFiltersCount}
-                    hasActiveFilters={hasActiveFilters}
-                    resultsCount={resultsCount}
-                    municipalities={municipalities}
-                    selectedMunicipios={filters.municipios}
-                    availableCategories={availableCategories}
-                    categories={filters.categories}
-                    onTypeChange={setType}
-                    onSortChange={setSort}
-                    onPriceApply={applyPrice}
-                    onPriceClear={clearPrice}
-                    onMunicipioToggle={toggleMunicipio}
-                    onCategoryToggle={toggleCategory}
-                    onClearAll={clearAll}
-                />
+                        <div>
+                            <DepartmentFilterBar
+                                inline
+                                listingType={filters.listingType}
+                                sort={filters.sort}
+                                priceLabel={priceLabel}
+                                priceMin={filters.priceMin}
+                                priceMax={filters.priceMax}
+                                activeFiltersCount={activeFiltersCount}
+                                hasActiveFilters={hasActiveFilters}
+                                resultsCount={resultsCount}
+                                municipalities={municipalities}
+                                selectedMunicipios={filters.municipios}
+                                availableCategories={availableCategories}
+                                categories={filters.categories}
+                                onTypeChange={setType}
+                                onSortChange={setSort}
+                                onPriceApply={applyPrice}
+                                onPriceClear={clearPrice}
+                                onMunicipioToggle={toggleMunicipio}
+                                onCategoryToggle={toggleCategory}
+                                onClearAll={clearAll}
+                            />
+                        </div>
+                </div>
 
                 {/* Active Filter Chips */}
                 <ActiveFilterChips
@@ -323,13 +330,10 @@ export default function DepartmentPage() {
                 {/* Content */}
                 {isLoading ? (
                     <div className="mb-8">
-                        {/* Skeleton: Filter bar */}
-                        <div className="skeleton-pulse skeleton-filter-bar" />
-
                         {/* Skeleton: Section header */}
-                        <div className="text-center mb-6 pb-4 border-b border-slate-200">
-                            <div className="skeleton-pulse mx-auto mb-2" style={{ height: 32, width: 260 }} />
-                            <div className="skeleton-pulse mx-auto" style={{ height: 18, width: 320 }} />
+                        <div className="text-left mb-4 pb-3 border-b border-slate-200">
+                            <div className="skeleton-pulse mb-2" style={{ height: 32, width: 320, maxWidth: '100%' }} />
+                            <div className="skeleton-pulse" style={{ height: 18, width: 220, maxWidth: '100%' }} />
                         </div>
 
                         {/* Skeleton: Listing cards grid */}
@@ -358,20 +362,23 @@ export default function DepartmentPage() {
                     </div>
                 ) : (
                     <>
-                        <div className="mb-8">
-                            <div className="text-center mb-6 pb-4 border-b border-slate-200">
-                                <h2 className="text-2xl md:text-3xl font-black text-[var(--text-primary)] tracking-tight mb-2">
-                                    Todas las propiedades
-                                </h2>
-                                {hasActiveFilters ? (
-                                    <p className="text-base text-[var(--text-muted)]">
+                    <div className="mb-3 md:mb-5">
+                        <div className="text-left mb-2 md:mb-4 pb-2 md:pb-3 border-b border-slate-200">
+                                    <h1 className="text-xl md:text-3xl font-black text-[var(--text-primary)] tracking-tight mb-1 md:mb-2">
+                                    {listingHeading}
+                                </h1>
+                                <p className="text-sm md:text-base text-[var(--text-muted)]">
+                                    {listingSummary}
+                                </p>
+                                {false && (hasActiveFilters ? (
+                                    <p className="text-sm md:text-base text-[var(--text-muted)]">
                                         Aplicando: <span className="font-semibold text-[var(--text-secondary)]">{activeChips.map(c => c.label).join(' · ')}</span>
                                     </p>
                                 ) : (
-                                    <p className="text-base text-[var(--text-muted)]">
+                                    <p className="text-sm md:text-base text-[var(--text-muted)]">
                                         Explorá el catálogo completo de propiedades en <span className="font-semibold text-[var(--text-secondary)]">{departamento}</span>
                                     </p>
-                                )}
+                                ))}
                             </div>
 
                             {listingsForCard.length > 0 ? (
