@@ -53,6 +53,7 @@ const TOOLS = [
         description: 'Compara zonas lado a lado con precios medios, rangos y volumen de oferta activa.',
         cta: 'Comparar departamentos',
         accent: '#d49434',
+        textAccent: '#8a5a10',
         chipBg: 'rgba(212, 148, 52, 0.12)',
         iconBg: 'rgba(212, 148, 52, 0.12)',
         iconBorder: 'rgba(212, 148, 52, 0.18)',
@@ -65,6 +66,7 @@ const TOOLS = [
         description: 'Graficos de evolucion mensual de precios, rentas y actividad por departamento.',
         cta: 'Ver tendencias',
         accent: '#3f7fe0',
+        textAccent: '#2557a8',
         chipBg: 'rgba(63, 127, 224, 0.12)',
         iconBg: 'rgba(63, 127, 224, 0.12)',
         iconBorder: 'rgba(63, 127, 224, 0.18)',
@@ -77,6 +79,7 @@ const TOOLS = [
         description: 'Estima el valor de cualquier propiedad con comparables y datos reales del mercado.',
         cta: 'Abrir valuador',
         accent: '#26b786',
+        textAccent: '#0f7d59',
         chipBg: 'rgba(38, 183, 134, 0.12)',
         iconBg: 'rgba(38, 183, 134, 0.12)',
         iconBorder: 'rgba(38, 183, 134, 0.18)',
@@ -89,6 +92,7 @@ const TOOLS = [
         description: 'Explora ubicaciones, propiedades cercanas y senales de precio en el mapa interactivo.',
         cta: 'Explorar mapa',
         accent: '#e66774',
+        textAccent: '#b33d4a',
         chipBg: 'rgba(230, 103, 116, 0.12)',
         iconBg: 'rgba(230, 103, 116, 0.12)',
         iconBorder: 'rgba(230, 103, 116, 0.18)',
@@ -123,7 +127,7 @@ export default function HomeToolsSection() {
                         <div className="relative flex h-full flex-col">
                             <span
                                 className="inline-flex w-fit items-center rounded-full px-3 py-1 text-xs font-semibold"
-                                style={{ backgroundColor: tool.chipBg, color: tool.accent }}
+                                style={{ backgroundColor: tool.chipBg, color: tool.textAccent }}
                             >
                                 {tool.badge}
                             </span>
@@ -149,7 +153,7 @@ export default function HomeToolsSection() {
 
                             <div
                                 className="mt-auto pt-6 inline-flex items-center gap-2 text-sm font-semibold transition-transform group-hover:translate-x-1"
-                                style={{ color: tool.accent }}
+                                style={{ color: tool.textAccent }}
                             >
                                 <span>{tool.cta}</span>
                                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">

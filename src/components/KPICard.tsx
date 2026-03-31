@@ -1,12 +1,9 @@
-'use client';
-
 interface KPICardProps {
     label: string;
     value: string;
     trend?: number;
     trendDirection?: 'up' | 'down' | 'neutral';
     subtitle?: string;
-    icon?: React.ReactNode;
     variant?: 'default' | 'home';
 }
 
