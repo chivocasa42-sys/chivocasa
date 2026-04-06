@@ -73,12 +73,143 @@ interface FetchOptions {
     sort?: SortOption;
 }
 
+interface SearchControlsProps {
+    searchQuery: string;
+    isSearching: boolean;
+    searchResults: SearchResult[];
+    isLoading: boolean;
+    disabled: boolean;
+    variant: 'mobile' | 'desktop';
+    onInputChange: (value: string) => void;
+    onSelectResult: (result: SearchResult) => void;
+    onSearch: () => void;
+}
+
 const SORT_OPTIONS: { value: SortOption; label: string }[] = [
     { value: 'distance_asc', label: 'Más cercanas' },
     { value: 'recent', label: 'Más recientes' },
     { value: 'price_asc', label: 'Menor precio' },
     { value: 'price_desc', label: 'Mayor precio' },
 ];
+
+function SearchControls({
+    searchQuery,
+    isSearching,
+    searchResults,
+    isLoading,
+    disabled,
+    variant,
+    onInputChange,
+    onSelectResult,
+    onSearch,
+}: SearchControlsProps) {
+    const isMobile = variant === 'mobile';
+
+    return (
+        <div
+            className={
+                isMobile
+                    ? 'space-y-3 rounded-[24px] border border-slate-200 bg-slate-50 p-4 shadow-sm'
+                    : 'pointer-events-auto space-y-3'
+            }
+        >
+            {isMobile ? (
+                <div className="space-y-1">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        Buscar zona
+                    </p>
+                    <p className="text-sm leading-relaxed text-slate-600">
+                        En movil puedes buscar una colonia o municipio sin abrir
+                        el mapa.
+                    </p>
+                </div>
+            ) : null}
+
+            <div className="relative">
+                <input
+                    value={searchQuery}
+                    onChange={(event) => onInputChange(event.target.value)}
+                    onKeyDown={(event) => {
+                        if (event.key !== 'Enter') return;
+                        event.preventDefault();
+                        if (searchResults.length > 0) {
+                            onSelectResult(searchResults[0]);
+                            return;
+                        }
+                        onSearch();
+                    }}
+                    placeholder="Buscar lugar o colonia"
+                    aria-label="Buscar lugar en el mapa"
+                    autoComplete="off"
+                    name={`${variant}-location-search`}
+                    className={`w-full rounded-2xl border px-4 py-2.5 text-[13px] font-medium text-slate-700 outline-none transition focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary)]/15 ${
+                        isMobile
+                            ? 'border-slate-200 bg-white shadow-sm'
+                            : 'border-white/60 bg-white/95 shadow-lg backdrop-blur-sm'
+                    }`}
+                />
+                {isSearching ? (
+                    <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--primary)] border-t-transparent" />
+                    </div>
+                ) : null}
+                {searchResults.length > 0 ? (
+                    <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-10 max-h-[280px] overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl">
+                        {searchResults.map((result, index) => (
+                            <button
+                                key={`${result.lat}-${result.lon}-${index}`}
+                                type="button"
+                                onClick={() => onSelectResult(result)}
+                                className="block w-full border-b border-slate-100 px-4 py-3 text-left text-sm text-slate-700 transition hover:bg-slate-50 last:border-b-0"
+                            >
+                                {result.display_name}
+                            </button>
+                        ))}
+                    </div>
+                ) : null}
+            </div>
+
+            <div
+                className={
+                    isMobile
+                        ? 'flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'
+                        : 'flex justify-center'
+                }
+            >
+                {isMobile ? (
+                    <p className="text-xs leading-relaxed text-slate-500">
+                        Carga inmuebles alrededor del punto seleccionado.
+                    </p>
+                ) : null}
+                <button
+                    type="button"
+                    onClick={onSearch}
+                    disabled={disabled || isLoading}
+                    className={`inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-[13px] font-semibold text-white shadow-xl transition ${
+                        isMobile ? 'w-full justify-center sm:w-auto' : ''
+                    } ${
+                        disabled || isLoading
+                            ? 'cursor-not-allowed bg-slate-400'
+                            : 'bg-slate-900 hover:-translate-y-0.5 hover:bg-slate-800'
+                    }`}
+                >
+                    <svg
+                        className="h-4 w-4"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        aria-hidden="true"
+                    >
+                        <circle cx="11" cy="11" r="7" />
+                        <path d="m20 20-3-3" strokeLinecap="round" />
+                    </svg>
+                    {isLoading ? 'Buscando...' : 'Buscar en esta zona'}
+                </button>
+            </div>
+        </div>
+    );
+}
 
 function MapClickHandler({ onMapClick }: { onMapClick: (lat: number, lng: number) => void }) {
     useMapEvents({ click: (event: { latlng: { lat: number; lng: number } }) => onMapClick(event.latlng.lat, event.latlng.lng) });
@@ -88,6 +219,7 @@ function MapClickHandler({ onMapClick }: { onMapClick: (lat: number, lng: number
 function MapCenterUpdater({ center }: { center: [number, number] }) {
     const map = useMap();
     useEffect(() => {
+        if (!Number.isFinite(center[0]) || !Number.isFinite(center[1])) return;
         map.flyTo(center, 14, { duration: 1 });
     }, [center, map]);
     return null;
@@ -160,6 +292,7 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
     const [radius, setRadius] = useState(1.5);
     const [mapCenter, setMapCenter] = useState<[number, number]>(DEFAULT_CENTER);
     const [mapReady, setMapReady] = useState(false);
+    const [showDesktopMap, setShowDesktopMap] = useState(false);
     const [nearbyData, setNearbyData] = useState<NearbyData | null>(null);
     const [sortBy, setSortBy] = useState<SortOption>('distance_asc');
     const [activeTab, setActiveTab] = useState<ListingTypeFilter>('sale');
@@ -199,6 +332,24 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
             });
             setMapReady(true);
         });
+    }, []);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+
+        const mediaQuery = window.matchMedia('(min-width: 1024px)');
+        const syncDesktopMap = () => setShowDesktopMap(mediaQuery.matches);
+
+        syncDesktopMap();
+
+        if (typeof mediaQuery.addEventListener === 'function') {
+            mediaQuery.addEventListener('change', syncDesktopMap);
+            return () =>
+                mediaQuery.removeEventListener('change', syncDesktopMap);
+        }
+
+        mediaQuery.addListener(syncDesktopMap);
+        return () => mediaQuery.removeListener(syncDesktopMap);
     }, []);
 
     useEffect(() => {
@@ -305,8 +456,8 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
 
     return (
         <>
-            <div className="rounded-[28px] border border-slate-200 bg-white/78 shadow-[0_24px_80px_rgba(15,23,42,0.08)] backdrop-blur-sm lg:grid lg:h-[calc(100vh-8rem)] lg:grid-cols-[minmax(0,1.1fr)_minmax(420px,0.9fr)] lg:overflow-hidden">
-                <section className="flex min-h-0 flex-col border-b border-slate-200 lg:border-b-0 lg:border-r">
+            <div className="flex flex-col rounded-[28px] border border-slate-200 bg-white/78 shadow-[0_24px_80px_rgba(15,23,42,0.08)] backdrop-blur-sm lg:grid lg:h-[calc(100vh-8rem)] lg:grid-cols-[minmax(0,1.1fr)_minmax(420px,0.9fr)] lg:overflow-hidden">
+                <section className="order-2 flex min-h-0 flex-col lg:order-none lg:border-r">
                     <div className="space-y-4 border-b border-slate-200 px-4 py-5 md:px-6">
                         <div>
                             <h1 className="text-3xl font-black tracking-tight text-slate-900 md:text-[2.2rem]">
@@ -376,9 +527,23 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
                     </div>
                 </section>
 
-                <aside className="flex min-h-[420px] flex-col lg:min-h-0">
-                    <div className="relative h-[48vh] min-h-[420px] lg:min-h-0 lg:flex-1">
-                        {mapReady ? (
+                <aside className="order-1 flex flex-col border-b border-slate-200 lg:order-none lg:min-h-0 lg:border-b-0">
+                    <div className="border-b border-slate-200 px-4 py-4 md:px-5 lg:hidden">
+                        <SearchControls
+                            searchQuery={searchQuery}
+                            isSearching={isSearching}
+                            searchResults={searchResults}
+                            isLoading={isLoading}
+                            disabled={!selectedLocation}
+                            variant="mobile"
+                            onInputChange={handleSearchInput}
+                            onSelectResult={selectSearchResult}
+                            onSearch={() => fetchNearbyListings({ page: 0 })}
+                        />
+                    </div>
+
+                    <div className="relative hidden lg:block lg:h-[48vh] lg:min-h-0 lg:flex-1">
+                        {showDesktopMap && mapReady ? (
                             <MapContainer center={mapCenter} zoom={DEFAULT_ZOOM} style={{ height: '100%', width: '100%' }} scrollWheelZoom={true}>
                                 <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                                 <MapClickHandler onMapClick={(lat, lng) => {
@@ -395,22 +560,20 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
                                     <Circle center={[selectedLocation.lat, selectedLocation.lng]} radius={radius * 1000} pathOptions={{ color: '#2563eb', fillColor: '#60a5fa', fillOpacity: 0.16, weight: 2 }} />
                                 </> : null}
                             </MapContainer>
-                        ) : <div className="h-full w-full skeleton-pulse" />}
+                        ) : showDesktopMap ? <div className="h-full w-full skeleton-pulse" /> : null}
 
                         <div className="pointer-events-none absolute inset-x-0 top-0 z-[500] p-3 md:p-4">
-                            <div className="pointer-events-auto space-y-3">
-                                <div className="relative pl-12 sm:pl-14">
-                                    <input value={searchQuery} onChange={(event) => handleSearchInput(event.target.value)} placeholder="Buscar lugar o colonia" aria-label="Buscar lugar en el mapa" className="w-full rounded-2xl border border-white/60 bg-white/95 px-4 py-2.5 text-[13px] font-medium text-slate-700 shadow-lg backdrop-blur-sm outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary)]/15" />
-                                    {isSearching ? <div className="absolute right-4 top-1/2 -translate-y-1/2"><div className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--primary)] border-t-transparent" /></div> : null}
-                                    {searchResults.length > 0 ? <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">{searchResults.map((result, index) => <button key={`${result.lat}-${result.lon}-${index}`} onClick={() => selectSearchResult(result)} className="block w-full border-b border-slate-100 px-4 py-3 text-left text-sm text-slate-700 transition hover:bg-slate-50 last:border-b-0">{result.display_name}</button>)}</div> : null}
-                                </div>
-                                <div className="flex justify-center">
-                                    <button onClick={() => fetchNearbyListings({ page: 0 })} disabled={!selectedLocation || isLoading} className={`inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-[13px] font-semibold text-white shadow-xl transition ${!selectedLocation || isLoading ? 'cursor-not-allowed bg-slate-400' : 'bg-slate-900 hover:-translate-y-0.5 hover:bg-slate-800'}`}>
-                                        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3-3" strokeLinecap="round" /></svg>
-                                        {isLoading ? 'Buscando...' : 'Buscar en esta zona'}
-                                    </button>
-                                </div>
-                            </div>
+                            <SearchControls
+                                searchQuery={searchQuery}
+                                isSearching={isSearching}
+                                searchResults={searchResults}
+                                isLoading={isLoading}
+                                disabled={!selectedLocation}
+                                variant="desktop"
+                                onInputChange={handleSearchInput}
+                                onSelectResult={selectSearchResult}
+                                onSearch={() => fetchNearbyListings({ page: 0 })}
+                            />
                         </div>
 
                         {false && (
@@ -426,7 +589,7 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
                         )}
                     </div>
 
-                    <div className="border-t border-slate-200 bg-white/92 px-4 py-2.5 md:px-5 lg:px-6">
+                    <div className="bg-white/92 px-4 py-2.5 md:px-5 lg:border-t lg:border-slate-200 lg:px-6">
                         <div className="space-y-2.5">
                             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5">
                                 <div className="mb-2 flex items-center justify-between gap-3">
