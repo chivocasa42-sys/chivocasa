@@ -71,6 +71,7 @@ interface FetchOptions {
     append?: boolean;
     listingType?: ListingTypeFilter;
     sort?: SortOption;
+    scrollToResults?: boolean;
 }
 
 interface SearchControlsProps {
@@ -142,10 +143,10 @@ function SearchControls({
                     aria-label="Buscar lugar en el mapa"
                     autoComplete="off"
                     name={`${variant}-location-search`}
-                    className={`w-full rounded-2xl border px-4 py-2.5 text-[13px] font-medium text-slate-700 outline-none transition focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary)]/15 ${
+                    className={`w-full rounded-2xl border px-4 py-2.5 font-medium text-slate-700 outline-none transition focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary)]/15 ${
                         isMobile
-                            ? 'border-slate-200 bg-white shadow-sm'
-                            : 'border-white/60 bg-white/95 shadow-lg backdrop-blur-sm'
+                            ? 'border-slate-200 bg-white text-base shadow-sm'
+                            : 'border-white/60 bg-white/95 text-[13px] shadow-lg backdrop-blur-sm'
                     }`}
                 />
                 {isSearching ? (
@@ -307,6 +308,15 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
     const listScrollRef = useRef<HTMLDivElement | null>(null);
     const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
+    const blurActiveElement = useCallback(() => {
+        if (typeof document === 'undefined') return;
+
+        const activeElement = document.activeElement;
+        if (activeElement instanceof HTMLElement) {
+            activeElement.blur();
+        }
+    }, []);
+
     const resetResultsViewport = useCallback(() => {
         listScrollRef.current?.scrollTo({ top: 0, behavior: 'auto' });
 
@@ -390,6 +400,7 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
         const lat = parseFloat(result.lat);
         const lng = parseFloat(result.lon);
         const shortName = result.display_name.split(',')[0];
+        blurActiveElement();
         setSelectedLocation({ lat, lng });
         setSelectedLocationName(shortName);
         setSearchQuery(shortName);
@@ -399,19 +410,21 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
         setCurrentPage(0);
         setError(null);
         setAutoFetchTrigger((value) => value + 1);
-    }, []);
+    }, [blurActiveElement]);
 
     const fetchNearbyListings = useCallback(async ({
         page = 0,
         append = false,
         listingType = activeTab,
         sort = sortBy,
+        scrollToResults = true,
     }: FetchOptions = {}) => {
         if (!selectedLocation) return;
         if (append) {
             setIsLoadingMore(true);
         } else {
-            resetResultsViewport();
+            if (scrollToResults) resetResultsViewport();
+            else listScrollRef.current?.scrollTo({ top: 0, behavior: 'auto' });
             setIsLoading(true);
             setNearbyData(null);
         }
@@ -433,7 +446,9 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
     }, [selectedLocation, radius, sortBy, activeTab, resetResultsViewport]);
 
     useEffect(() => {
-        if (selectedLocation && autoFetchTrigger > 0) fetchNearbyListings({ page: 0 });
+        if (selectedLocation && autoFetchTrigger > 0) {
+            fetchNearbyListings({ page: 0, scrollToResults: false });
+        }
     }, [autoFetchTrigger, selectedLocation, fetchNearbyListings]);
 
     useEffect(() => {
@@ -453,6 +468,11 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
     const rentStats = nearbyData?.stats.find((item) => item.listing_type === 'rent');
     const activeStats = activeTab === 'sale' ? saleStats : rentStats;
     const totalCount = nearbyData?.pagination.total_count || 0;
+
+    const triggerSearch = useCallback((options?: FetchOptions) => {
+        blurActiveElement();
+        void fetchNearbyListings({ page: 0, ...options });
+    }, [blurActiveElement, fetchNearbyListings]);
 
     return (
         <>
@@ -528,7 +548,7 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
                 </section>
 
                 <aside className="order-1 flex flex-col border-b border-slate-200 lg:order-none lg:min-h-0 lg:border-b-0">
-                    <div className="border-b border-slate-200 px-4 py-4 md:px-5 lg:hidden">
+                    <div className="sticky top-14 z-30 border-b border-slate-200 bg-white/95 px-4 py-4 backdrop-blur-sm md:px-5 lg:hidden">
                         <SearchControls
                             searchQuery={searchQuery}
                             isSearching={isSearching}
@@ -538,7 +558,7 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
                             variant="mobile"
                             onInputChange={handleSearchInput}
                             onSelectResult={selectSearchResult}
-                            onSearch={() => fetchNearbyListings({ page: 0 })}
+                            onSearch={() => triggerSearch({ scrollToResults: false })}
                         />
                     </div>
 
@@ -572,7 +592,7 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
                                 variant="desktop"
                                 onInputChange={handleSearchInput}
                                 onSelectResult={selectSearchResult}
-                                onSearch={() => fetchNearbyListings({ page: 0 })}
+                                onSearch={() => triggerSearch()}
                             />
                         </div>
 
@@ -628,7 +648,7 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
                                             onClick={() => {
                                                 setActiveTab(tab);
                                                 setCurrentPage(0);
-                                                fetchNearbyListings({ page: 0, listingType: tab });
+                                                void fetchNearbyListings({ page: 0, listingType: tab });
                                             }}
                                             className={`rounded-[14px] px-3 py-1.5 text-[12px] font-semibold transition-all ${activeTab === tab ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
                                         >
@@ -646,7 +666,7 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
                                             const nextSort = event.target.value as SortOption;
                                             setSortBy(nextSort);
                                             setCurrentPage(0);
-                                            fetchNearbyListings({ page: 0, sort: nextSort });
+                                            void fetchNearbyListings({ page: 0, sort: nextSort });
                                         }}
                                         className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-700 shadow-sm outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary)]/15"
                                     >
