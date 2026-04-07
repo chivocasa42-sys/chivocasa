@@ -40,6 +40,8 @@ from scraper_encuentra24 import (
     check_listing_still_active,
     extract_encuentra24_embedded_fallback,
     extract_encuentra24_rendered_fallback,
+    get_propilatam_page_issue,
+    get_propilatam_page_snapshot,
     get_cbr_properties_by_ids,
     get_realtyelsalvador_session,
     has_valid_coordinates,
@@ -456,7 +458,14 @@ def classify_propi_family_empty_response(url: str, source_label: str) -> Optiona
         return None
 
     html = response.text
-    page_text = normalize_source_text(html).lower()
+    page_issue = get_propilatam_page_issue(html)
+    if page_issue == "listing unavailable":
+        return f"inactive_at_source: {source_label} listing page is no longer available"
+    if page_issue == "placeholder page":
+        return f"inactive_at_source: {source_label} placeholder page"
+
+    page_snapshot = get_propilatam_page_snapshot(html)
+    page_text = page_snapshot["body_prefix_lower"]
     title_match = re.search(r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
     page_title = normalize_source_text(title_match.group(1)).lower() if title_match else ""
 

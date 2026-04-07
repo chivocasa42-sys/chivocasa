@@ -621,6 +621,7 @@ def run_update_mode(sources=None, limit=None, skip_validation=False):
     total_deactivated = 0
     source_failures = []
     successful_sources = []
+    run_scraped_external_ids = set()
     
     for source in sources_to_update:
         print(f"\n--- Processing {source} ---")
@@ -759,6 +760,7 @@ def run_update_mode(sources=None, limit=None, skip_validation=False):
             
             if scraped_listings:
                 print(f"  Successfully scraped {len(scraped_listings)} listings")
+                run_scraped_external_ids.update(collect_listing_external_ids(scraped_listings))
                 print(f"  Inserting/updating database (DB trigger handles upsert)...")
                 success, errors = insert_listings_batch(scraped_listings)
                 total_updated += success
@@ -785,7 +787,8 @@ def run_update_mode(sources=None, limit=None, skip_validation=False):
         if successful_sources:
             validated_count, deactivated_count = validate_and_deactivate_listings(
                 run_start_time,
-                sources=successful_sources
+                sources=successful_sources,
+                exclude_external_ids=run_scraped_external_ids,
             )
             total_deactivated += deactivated_count
         else:
@@ -889,6 +892,17 @@ def get_stale_active_listings(run_start_time, source=None, page_size=1000):
             break
     
     return all_listings
+
+
+def collect_listing_external_ids(listings):
+    """Return normalized external_id strings for listings touched in the current run."""
+    external_ids = set()
+    for listing in listings or []:
+        external_id = listing.get("external_id")
+        if external_id in ("", None):
+            continue
+        external_ids.add(str(external_id))
+    return external_ids
 
 
 def check_listing_still_active(url, source):
@@ -1066,7 +1080,7 @@ def check_listing_still_active(url, source):
         return True, f"Error: {str(e)[:50]} (assumed active)"
 
 
-def validate_and_deactivate_listings(run_start_time, sources=None, max_workers=5):
+def validate_and_deactivate_listings(run_start_time, sources=None, max_workers=5, exclude_external_ids=None):
     """
     Validate all active listings that weren't updated in the current run.
     Marks listings as inactive if they return 404 or are sold/expired.
@@ -1075,6 +1089,7 @@ def validate_and_deactivate_listings(run_start_time, sources=None, max_workers=5
         run_start_time: ISO timestamp of when the scrape run started
         sources: Optional list of sources to validate (None = all sources)
         max_workers: Number of concurrent validation requests
+        exclude_external_ids: Optional iterable of external_ids already scraped in this run
     
     Returns:
         Tuple of (validated_count, deactivated_count)
@@ -1089,6 +1104,17 @@ def validate_and_deactivate_listings(run_start_time, sources=None, max_workers=5
     if sources:
         # Filter to only specified sources
         stale_listings = [l for l in stale_listings if l.get('source') in sources]
+
+    excluded_ids = {str(external_id) for external_id in (exclude_external_ids or []) if external_id not in ("", None)}
+    if excluded_ids:
+        before_exclusion = len(stale_listings)
+        stale_listings = [
+            listing for listing in stale_listings
+            if str(listing.get("external_id")) not in excluded_ids
+        ]
+        excluded_count = before_exclusion - len(stale_listings)
+        if excluded_count:
+            print(f"  Excluded {excluded_count} listings already scraped in this run")
     
     if not stale_listings:
         print("  No stale active listings to validate.")
@@ -2045,6 +2071,105 @@ def extract_meta_content(page_html, meta_name):
         return ""
 
     return normalize_source_text(unescape(match.group(1)))
+
+
+PROPILATAM_UNAVAILABLE_MARKERS = (
+    "pagina no encontrada",
+    "no se encontro este anuncio",
+    "no se encuentra disponible",
+)
+
+
+def clean_propilatam_heading_text(value):
+    """Normalize Propi/Vivo heading text and strip brand/ID suffixes."""
+    cleaned = normalize_source_text(value)
+    if not cleaned:
+        return ""
+
+    if " | " in cleaned:
+        cleaned = cleaned.split(" | ", 1)[0]
+
+    return cleaned.strip(" |")
+
+
+def get_propilatam_page_snapshot(raw_html, soup=None):
+    """Extract high-signal title/state fields from a Propi/Vivo detail page."""
+    snapshot = {
+        "page_title": "",
+        "og_title": "",
+        "h1_text": "",
+        "meta_description": "",
+        "body_prefix": "",
+        "body_prefix_lower": "",
+        "high_signal_text": "",
+        "display_title": "",
+        "has_listing_signal": False,
+    }
+    if not raw_html:
+        return snapshot
+
+    soup = soup or BeautifulSoup(raw_html, "html.parser")
+    page_title = clean_propilatam_heading_text(
+        soup.title.get_text(" ", strip=True) if soup.title else extract_meta_content(raw_html, "title")
+    )
+    og_title = clean_propilatam_heading_text(extract_meta_content(raw_html, "og:title"))
+    h1_el = soup.find("h1")
+    h1_text = clean_propilatam_heading_text(h1_el.get_text(" ", strip=True) if h1_el else "")
+    meta_description = normalize_source_text(
+        extract_meta_content(raw_html, "og:description") or extract_meta_content(raw_html, "description")
+    )
+    main_el = soup.find("main") or soup.body or soup
+    body_text = normalize_source_text(main_el.get_text(" ", strip=True) if main_el else "")
+    body_prefix = body_text[:1600]
+    high_signal_parts = [page_title, og_title, h1_text, meta_description]
+    high_signal_text = " | ".join(part for part in high_signal_parts if part).lower()
+
+    snapshot.update(
+        {
+            "page_title": page_title,
+            "og_title": og_title,
+            "h1_text": h1_text,
+            "meta_description": meta_description,
+            "body_prefix": body_prefix,
+            "body_prefix_lower": body_prefix.lower(),
+            "high_signal_text": high_signal_text,
+            "display_title": h1_text or og_title or page_title,
+            "has_listing_signal": bool(h1_text or og_title),
+        }
+    )
+    return snapshot
+
+
+def get_propilatam_page_issue(raw_html, soup=None):
+    """Classify high-signal Propi/Vivo page states without scanning the whole app shell."""
+    snapshot = get_propilatam_page_snapshot(raw_html, soup=soup)
+    high_signal_text = snapshot["high_signal_text"]
+    body_prefix_lower = snapshot["body_prefix_lower"]
+
+    if any(
+        "undefined" in field.lower()
+        for field in (snapshot["page_title"], snapshot["og_title"], snapshot["h1_text"])
+        if field
+    ):
+        return "placeholder page"
+
+    if any(marker in high_signal_text for marker in PROPILATAM_UNAVAILABLE_MARKERS):
+        return "listing unavailable"
+
+    if not snapshot["has_listing_signal"] and any(
+        marker in body_prefix_lower for marker in PROPILATAM_UNAVAILABLE_MARKERS
+    ):
+        return "listing unavailable"
+
+    if (
+        not snapshot["h1_text"]
+        and "precio desde" in body_prefix_lower
+        and "programar asesor" in body_prefix_lower
+        and "elegir unidad" in body_prefix_lower
+    ):
+        return "placeholder page"
+
+    return None
 
 
 def decode_escaped_json_string(raw_value):
@@ -6885,12 +7010,14 @@ def get_propilatam_listing_status(url, headers):
         for tag in soup(["script", "style", "template"]):
             tag.decompose()
 
-        page_text = soup.get_text(" ", strip=True).lower()
-        title_text = (soup.title.get_text(" ", strip=True).lower() if soup.title else "")
-        h1_el = soup.select_one("h1")
-        h1_text = h1_el.get_text(" ", strip=True).lower() if h1_el else ""
+        page_snapshot = get_propilatam_page_snapshot(raw_html, soup=soup)
+        title_text = page_snapshot["page_title"].lower()
+        h1_text = page_snapshot["h1_text"].lower()
+        challenge_text = " ".join(
+            part for part in (title_text, h1_text, page_snapshot["body_prefix_lower"]) if part
+        )
 
-        if any(sig in page_text or sig in title_text for sig in challenge_signals):
+        if any(sig in challenge_text for sig in challenge_signals):
             return {
                 "is_active": True,
                 "reason": "Challenge/blocked page (assumed active)",
@@ -6898,13 +7025,17 @@ def get_propilatam_listing_status(url, headers):
                 "resolved_listing_type": None,
             }
 
-        if "no se encuentra disponible" in page_text:
+        page_issue = get_propilatam_page_issue(raw_html, soup=soup)
+        if page_issue == "listing unavailable":
             last_unavailable_reason = "Page says listing is unavailable"
+            continue
+        if page_issue == "placeholder page":
+            last_unavailable_reason = "Placeholder page"
             continue
 
         has_embedded_code = bool(re.search(r'\\\\?"code\\\\?"\s*:\s*\d+', raw_html))
         has_embedded_name = bool(re.search(r'\\\\?"name\\\\?"\s*:\s*\\\\?"[^"]+', raw_html))
-        if not h1_text and not (has_embedded_code and has_embedded_name):
+        if not page_snapshot["display_title"] and not (has_embedded_code and has_embedded_name):
             last_unavailable_reason = "No title/content found (likely inactive)"
             continue
 
@@ -7237,9 +7368,13 @@ def scrape_propilatam_listing(url, listing_type="sale"):
                 continue
 
             candidate_soup = BeautifulSoup(candidate_html, "html.parser")
-            candidate_text_lower = candidate_soup.get_text(" ", strip=True).lower()
-            title_el = candidate_soup.find("h1")
-            candidate_title = title_el.get_text(strip=True) if title_el else ""
+            page_issue = get_propilatam_page_issue(candidate_html, soup=candidate_soup)
+            if page_issue:
+                continue
+
+            page_snapshot = get_propilatam_page_snapshot(candidate_html, soup=candidate_soup)
+            candidate_title = page_snapshot["display_title"]
+            candidate_text_lower = page_snapshot["body_prefix_lower"]
 
             if any(
                 marker in candidate_text_lower
@@ -7970,6 +8105,7 @@ def main(
     all_listings = []
     total_sale = 0
     total_rent = 0
+    run_scraped_external_ids = set()
     
     # Track which sources we're scraping (for targeted validation)
     active_sources = []
@@ -8006,6 +8142,7 @@ def main(
 
         active_sources.append(source_key)
         all_listings.extend(result["listings"])
+        run_scraped_external_ids.update(collect_listing_external_ids(result["listings"]))
         total_sale += len(result["sale_data"])
         total_rent += len(result["rent_data"])
 
@@ -8047,7 +8184,8 @@ def main(
         if active_sources:
             validated_count, deactivated_count = validate_and_deactivate_listings(
                 run_start_time,
-                sources=active_sources
+                sources=active_sources,
+                exclude_external_ids=run_scraped_external_ids,
             )
         else:
             print("\n=== Skipping validation phase (no sources completed successfully) ===")
