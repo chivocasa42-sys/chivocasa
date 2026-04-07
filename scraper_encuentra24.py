@@ -159,6 +159,161 @@ def normalize_published_date_for_db(pub_date):
     return None
 
 
+def has_nonempty_mapping(value):
+    """Return True when a mapping contains at least one meaningful value."""
+    return isinstance(value, dict) and any(item not in ("", None, [], {}) for item in value.values())
+
+
+def has_valid_coordinates(latitude, longitude):
+    """Return True for plausible, non-zero coordinates."""
+    try:
+        lat = float(latitude)
+        lng = float(longitude)
+    except (TypeError, ValueError):
+        return False
+
+    if abs(lat) < 0.000001 and abs(lng) < 0.000001:
+        return False
+
+    return -90 <= lat <= 90 and -180 <= lng <= 180
+
+
+def listing_signal_score(listing):
+    """Estimate how complete a scraped listing is using core user-visible fields."""
+    score = 0
+
+    price_value = parse_price(listing.get("price"))
+    if price_value and price_value > 0:
+        score += 1
+
+    if normalize_source_text(listing.get("location")):
+        score += 1
+
+    if has_nonempty_mapping(listing.get("specs")):
+        score += 1
+
+    if has_nonempty_mapping(listing.get("details")):
+        score += 1
+
+    if len(normalize_source_text(listing.get("description"))) >= 40:
+        score += 1
+
+    if has_valid_coordinates(listing.get("latitude"), listing.get("longitude")):
+        score += 1
+
+    return score
+
+
+def fetch_existing_records_map(external_ids):
+    """Fetch existing listings from Supabase so partial scrapes do not wipe good data."""
+    ids = []
+    for external_id in external_ids:
+        try:
+            ids.append(int(external_id))
+        except (TypeError, ValueError):
+            continue
+
+    ids = list(dict.fromkeys(ids))
+    if not ids:
+        return {}
+
+    headers = {
+        "apikey": SUPABASE_SERVICE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+        "Content-Type": "application/json",
+    }
+    params = {
+        "select": "external_id,title,price,location,specs,details,description,images,tags,published_date",
+        "external_id": f"in.({','.join(str(external_id) for external_id in ids)})",
+    }
+    url = f"{SUPABASE_URL}/rest/v1/{TABLE_NAME}"
+
+    try:
+        resp = requests.get(url, headers=headers, params=params, timeout=30)
+        if resp.status_code != 200:
+            print(f"  Warning: could not fetch existing listings for merge ({resp.status_code})")
+            return {}
+
+        rows = resp.json()
+        return {
+            int(row["external_id"]): row
+            for row in rows
+            if row.get("external_id") is not None
+        }
+    except Exception as e:
+        print(f"  Warning: failed to fetch existing listings for merge: {e}")
+        return {}
+
+
+def merge_listing_with_existing(listing, existing):
+    """
+    Preserve prior good data when a new scrape comes back obviously incomplete.
+
+    This keeps transient parser regressions or anti-bot challenge pages from
+    overwriting rich rows with empty dicts, blank descriptions, or null prices.
+    """
+    if not existing:
+        return listing
+
+    merged = dict(listing)
+    incoming_score = listing_signal_score(merged)
+
+    existing_details = existing.get("details") if isinstance(existing.get("details"), dict) else {}
+    existing_specs = existing.get("specs") if isinstance(existing.get("specs"), dict) else {}
+    existing_location = existing.get("location") if isinstance(existing.get("location"), dict) else {}
+
+    if not normalize_source_text(merged.get("title")) and existing.get("title"):
+        merged["title"] = existing["title"]
+
+    if not normalize_source_text(merged.get("description")) and existing.get("description"):
+        merged["description"] = existing["description"]
+
+    incoming_specs = merged.get("specs") if isinstance(merged.get("specs"), dict) else {}
+    if existing_specs:
+        merged_specs = dict(existing_specs)
+        for key, value in incoming_specs.items():
+            if value not in ("", None, [], {}):
+                merged_specs[key] = value
+        merged["specs"] = merged_specs
+
+    incoming_details = merged.get("details") if isinstance(merged.get("details"), dict) else {}
+    if existing_details:
+        merged_details = dict(existing_details)
+        for key, value in incoming_details.items():
+            if value not in ("", None, [], {}):
+                merged_details[key] = value
+        merged["details"] = merged_details
+
+    if not normalize_source_text(merged.get("location")):
+        for key, value in existing_details.items():
+            normalized_key = normalize_source_text(key).lower()
+            if any(marker in normalized_key for marker in ("ubicacion", "localizacion", "city", "municipio")):
+                if normalize_source_text(value):
+                    merged["location"] = value
+                    break
+
+    if not merged.get("images") and existing.get("images"):
+        merged["images"] = existing["images"]
+
+    if not merged.get("tags") and existing.get("tags"):
+        merged["tags"] = existing["tags"]
+
+    if not normalize_source_text(merged.get("published_date")) and existing.get("published_date"):
+        merged["published_date"] = existing["published_date"]
+
+    if not has_valid_coordinates(merged.get("latitude"), merged.get("longitude")) and has_valid_coordinates(
+        existing_location.get("latitude"),
+        existing_location.get("longitude"),
+    ):
+        merged["latitude"] = existing_location.get("latitude")
+        merged["longitude"] = existing_location.get("longitude")
+
+    if parse_price(merged.get("price")) is None and existing.get("price") is not None and incoming_score <= 1:
+        merged["price"] = existing["price"]
+
+    return merged
+
+
 def insert_listings_batch(listings, batch_size=50):
     """Insert multiple listings to Supabase in batches."""
     if not listings:
@@ -178,6 +333,7 @@ def insert_listings_batch(listings, batch_size=50):
     for i in range(0, len(listings), batch_size):
         batch = listings[i:i + batch_size]
         batch_data = []
+        existing_records = fetch_existing_records_map([listing.get("external_id") for listing in batch])
         
         for listing in batch:
             # Parse external_id to bigint
@@ -187,6 +343,8 @@ def insert_listings_batch(listings, batch_size=50):
             except (ValueError, TypeError):
                 errors += 1
                 continue
+
+            listing = merge_listing_with_existing(listing, existing_records.get(external_id))
             
             # Normalize published_date for PostgreSQL while preserving ISO-like values.
             parsed_date = normalize_published_date_for_db(listing.get("published_date"))
@@ -1787,6 +1945,396 @@ def normalize_source_text(text):
     return cleaned.strip()
 
 
+def is_probable_bot_block_page(page_html, soup=None):
+    """Detect common anti-bot challenge pages without flagging normal listing pages."""
+    if not page_html:
+        return False
+
+    lowered = page_html.lower()
+    strong_markers = [
+        "attention required",
+        "just a moment",
+        "verify you are human",
+        "please enable cookies",
+        "cf-browser-verification",
+        "/cdn-cgi/challenge-platform/",
+        "__cf_chl_tk",
+    ]
+    if not any(marker in lowered for marker in strong_markers):
+        return False
+
+    soup = soup or BeautifulSoup(page_html, "html.parser")
+    title_text = normalize_source_text(soup.title.get_text(" ", strip=True) if soup.title else "").lower()
+    h1_el = soup.select_one("h1")
+    h1_text = normalize_source_text(h1_el.get_text(" ", strip=True) if h1_el else "").lower()
+
+    blocking_titles = ("attention required", "just a moment", "access denied", "verify you are human")
+    if any(marker in title_text for marker in blocking_titles):
+        return True
+    if any(marker in h1_text for marker in blocking_titles):
+        return True
+
+    has_listing_signals = bool(h1_text) and "og:title" in lowered
+    return not has_listing_signals
+
+
+def extract_meta_content(page_html, meta_name):
+    """Extract a meta tag content value by property/name."""
+    if not page_html or not meta_name:
+        return ""
+
+    pattern = rf'<meta[^>]+(?:property|name)="{re.escape(meta_name)}"[^>]+content="([^"]*)"'
+    match = re.search(pattern, page_html, re.IGNORECASE)
+    if not match:
+        return ""
+
+    return normalize_source_text(unescape(match.group(1)))
+
+
+def decode_escaped_json_string(raw_value):
+    """Decode a JSON-escaped string fragment from Next.js flight payloads."""
+    if raw_value is None:
+        return ""
+
+    try:
+        decoded = json.loads(f'"{raw_value}"')
+    except json.JSONDecodeError:
+        decoded = raw_value.replace('\\"', '"').replace("\\\\", "\\")
+
+    decoded = normalize_source_text(decoded)
+
+    if not decoded or decoded == "$undefined" or re.fullmatch(r"\$[0-9a-f]+", decoded):
+        return ""
+
+    return decoded
+
+
+def extract_escaped_string_value(blob, key):
+    """Extract a string value from an escaped JSON fragment."""
+    pattern = rf'\\"{re.escape(key)}\\":\\"((?:\\\\.|[^"\\\\])*)\\"'
+    match = re.search(pattern, blob)
+    if not match:
+        return ""
+    return decode_escaped_json_string(match.group(1))
+
+
+def extract_escaped_number_value(blob, key):
+    """Extract a numeric value from an escaped JSON fragment."""
+    pattern = rf'\\"{re.escape(key)}\\":(-?\d+(?:\.\d+)?)'
+    match = re.search(pattern, blob)
+    if not match:
+        return None
+
+    raw_value = match.group(1)
+    try:
+        return float(raw_value)
+    except (TypeError, ValueError):
+        return None
+
+
+def extract_encuentra24_rendered_fallback(page_html, url):
+    """
+    Extract listing fields from Encuentra24's rendered React/Tailwind layout.
+
+    Some current listing pages no longer expose the old `.d3-*` blocks or an
+    easily anchored flight payload, but the rendered `main` content still
+    contains the primary price/spec/description data.
+    """
+    fallback = {
+        "price": "",
+        "location": "",
+        "published_date": "",
+        "description": "",
+        "specs": {},
+        "details": {},
+        "latitude": None,
+        "longitude": None,
+    }
+
+    if not page_html:
+        return fallback
+
+    soup = BeautifulSoup(page_html, "html.parser")
+    main_el = soup.find("main")
+    main_text = normalize_source_text(main_el.get_text(" ", strip=True) if main_el else soup.get_text(" ", strip=True))
+    title_el = soup.find("h1")
+    title_text = normalize_source_text(title_el.get_text(" ", strip=True) if title_el else "")
+    meta_title = extract_meta_content(page_html, "og:title") or extract_meta_content(page_html, "title")
+    meta_description = extract_meta_content(page_html, "og:description") or extract_meta_content(page_html, "description")
+
+    after_title = main_text
+    if title_text and title_text.lower() in main_text.lower():
+        title_index = main_text.lower().find(title_text.lower())
+        after_title = main_text[title_index + len(title_text):].strip()
+
+    # The location appears immediately after the title and before the first main
+    # price. Ignore country-only placeholders like "El Salvador".
+    location_segment = re.split(r"\$\s*[\d,.]+", after_title, maxsplit=1)[0]
+    location_segment = normalize_source_text(location_segment.replace(" ,", ",").strip(" ,|-"))
+    if location_segment:
+        location_parts = []
+        for part in [normalize_source_text(piece) for piece in location_segment.split(",")]:
+            if not part or part.lower() == "el salvador":
+                continue
+            if part.lower() not in [existing.lower() for existing in location_parts]:
+                location_parts.append(part)
+        fallback["location"] = ", ".join(location_parts[:2])
+
+    price_segment = after_title
+    spec_anchor = re.search(r"\brec[áa]maras\b|\bba[ñn]os\b|\bparking\b|\bdetalles adicionales\b", price_segment, re.IGNORECASE)
+    if spec_anchor:
+        price_segment = price_segment[:spec_anchor.start()]
+
+    price_candidates = re.findall(r"\$\s*[\d,.]+", price_segment)
+    if price_candidates:
+        if "% off" in price_segment.lower():
+            fallback["price"] = price_candidates[-1]
+        else:
+            fallback["price"] = price_candidates[0]
+
+    if not fallback["price"] and meta_title:
+        price_match = re.search(r"por\s+(?:USD\s+)?([\d,.]+)", meta_title, re.IGNORECASE)
+        if price_match:
+            fallback["price"] = f"${price_match.group(1)}"
+
+    if fallback["price"] and not parse_price(fallback["price"]):
+        fallback["price"] = ""
+
+    if not fallback["location"] and meta_title:
+        location_match = re.search(r"\ben\s+([^|]+)$", meta_title, re.IGNORECASE)
+        if location_match:
+            inferred_location = normalize_source_text(location_match.group(1))
+            if inferred_location and inferred_location.lower() != "el salvador":
+                fallback["location"] = inferred_location
+
+    updated_match = re.search(r"Actualizado el:\s*(\d{2}/\d{2}/\d{4})", main_text, re.IGNORECASE)
+    if updated_match:
+        fallback["published_date"] = updated_match.group(1)
+
+    bedrooms_match = re.search(r"\brec[áa]maras\s+(\d+(?:[.,]\d+)?)", main_text, re.IGNORECASE)
+    bathrooms_match = re.search(r"\bba[ñn]os\s+(\d+(?:[.,]\d+)?)", main_text, re.IGNORECASE)
+    parking_match = re.search(r"\bparking\s+(\d+(?:[.,]\d+)?)", main_text, re.IGNORECASE)
+    area_match = re.search(r"[áa]rea construida\s+([\d,.]+)\s*m[²2]", main_text, re.IGNORECASE)
+    total_area_match = re.search(r"[áa]rea total\s+([\d,.]+)\s*m[²2]", main_text, re.IGNORECASE)
+
+    if bedrooms_match:
+        fallback["specs"]["bedrooms"] = bedrooms_match.group(1).replace(",", ".")
+    if bathrooms_match:
+        fallback["specs"]["bathrooms"] = bathrooms_match.group(1).replace(",", ".")
+    if parking_match:
+        fallback["specs"]["parking"] = parking_match.group(1).replace(",", ".")
+    if area_match:
+        fallback["specs"]["area_m2"] = area_match.group(1).replace(",", "")
+    if total_area_match:
+        fallback["specs"]["Área total"] = f'{total_area_match.group(1)} m²'
+
+    details_heading = next(
+        (
+            h2 for h2 in soup.find_all("h2")
+            if "detalles adicionales" in normalize_source_text(h2.get_text(" ", strip=True)).lower()
+        ),
+        None,
+    )
+    if details_heading:
+        details_grid = details_heading.find_next(
+            lambda tag: tag.name == "div" and {"grid", "gap-2"}.issubset(set(tag.get("class", [])))
+        )
+        if details_grid:
+            for container in details_grid.select("div.flex-1.min-w-0"):
+                label_el = container.select_one("p.text-xs.text-muted-foreground")
+                value_el = container.select_one("p.text-sm.font-medium.text-foreground")
+                if not label_el or not value_el:
+                    continue
+
+                label = normalize_source_text(label_el.get_text(" ", strip=True))
+                value = normalize_source_text(value_el.get_text(" ", strip=True))
+                if not label or not value or value.lower() == "consultar":
+                    continue
+
+                label_lower = label.lower()
+                if "tipo de propiedad" in label_lower:
+                    fallback["details"]["property_type"] = value
+                elif "niveles" in label_lower:
+                    fallback["details"]["Niveles"] = value
+                elif "área construida" in label_lower or "area construida" in label_lower:
+                    area_value = re.search(r"([\d,.]+)", value)
+                    if area_value:
+                        fallback["specs"]["area_m2"] = area_value.group(1).replace(",", "")
+                elif "área total" in label_lower or "area total" in label_lower:
+                    fallback["specs"]["Área total"] = value
+                else:
+                    fallback["details"][label] = value
+
+    description_heading = next(
+        (
+            h2 for h2 in soup.find_all("h2")
+            if normalize_source_text(h2.get_text(" ", strip=True)).lower() == "descripción"
+        ),
+        None,
+    )
+    if description_heading:
+        description_el = description_heading.find_next(
+            lambda tag: tag.name == "p" and normalize_source_text(tag.get_text(" ", strip=True)).lower() not in ("", "descripción")
+        )
+        if description_el:
+            description_text = remove_emojis(description_el.get_text(separator="\n", strip=True))
+            description_text = re.sub(r"\n{3,}", "\n\n", description_text).strip()
+            if description_text and "encuentra24 nunca solicita" not in description_text.lower():
+                fallback["description"] = description_text
+
+    if not fallback["description"]:
+        fallback["description"] = meta_description
+
+    if fallback["location"]:
+        fallback["details"].setdefault("Ubicación", fallback["location"])
+
+    title_region_match = re.search(r"\ben\s+([^|]+)$", meta_title, re.IGNORECASE) if meta_title else None
+    if title_region_match:
+        inferred_region = normalize_source_text(title_region_match.group(1))
+        if inferred_region and inferred_region.lower() != "el salvador":
+            fallback["details"].setdefault("Región", inferred_region)
+
+    return fallback
+
+
+def extract_encuentra24_embedded_fallback(page_html, url):
+    """
+    Extract listing fields from Encuentra24's embedded Next.js flight payload.
+
+    The newer page format keeps the listing data in escaped JSON within script
+    tags instead of the older `.d3-*` HTML blocks. This fallback anchors on the
+    current listing path so we do not accidentally parse a related listing card.
+    """
+    fallback = {
+        "price": "",
+        "location": "",
+        "description": "",
+        "specs": {},
+        "details": {},
+        "latitude": None,
+        "longitude": None,
+    }
+
+    if not page_html or not url:
+        return fallback
+
+    path = urlparse(url).path
+    anchor = page_html.find(f'\\"link\\":\\"{path}\\"')
+
+    # Most of the current listing object lives after the `link` field. Keep a
+    # smaller prefix for fields like description that appear before it.
+    if anchor != -1:
+        blob_before = page_html[max(0, anchor - 4000):anchor]
+        blob_after = page_html[anchor:min(len(page_html), anchor + 10000)]
+    else:
+        blob_before = ""
+        blob_after = ""
+
+    region_name = extract_escaped_string_value(blob_after, "regionName")
+    exact_address = extract_escaped_string_value(blob_after, "exactAddress")
+    address = extract_escaped_string_value(blob_after, "address")
+    city = extract_escaped_string_value(blob_after, "city")
+    locality = extract_escaped_string_value(blob_after, "locality")
+
+    location_parts = []
+    for value in [exact_address, address, region_name, city, locality]:
+        cleaned = normalize_source_text(value)
+        if not cleaned or cleaned.lower() == "el salvador" or cleaned in location_parts:
+            continue
+        location_parts.append(cleaned)
+    location_text = ", ".join(location_parts[:2])
+
+    price_value = extract_escaped_number_value(blob_after, "price_value")
+    if price_value is None:
+        price_value = extract_escaped_number_value(blob_after, "propertyPrice")
+
+    latitude = extract_escaped_number_value(blob_after, "lat")
+    longitude = extract_escaped_number_value(blob_after, "lon")
+    if latitude is not None and longitude is not None and abs(latitude) < 0.000001 and abs(longitude) < 0.000001:
+        latitude = None
+        longitude = None
+
+    bedrooms = extract_escaped_string_value(blob_after, "rooms")
+    bathrooms = extract_escaped_string_value(blob_after, "bathrooms")
+    parking = extract_escaped_string_value(blob_after, "parking")
+    square = extract_escaped_string_value(blob_after, "square")
+    lot_size = extract_escaped_string_value(blob_after, "lotSize")
+    age = extract_escaped_string_value(blob_after, "age")
+    stories = extract_escaped_string_value(blob_after, "stories")
+    floor_type = extract_escaped_string_value(blob_after, "floorType")
+    property_type = extract_escaped_string_value(blob_after, "subCategoryType")
+
+    description = extract_escaped_string_value(blob_before, "description")
+    if description:
+        description = (
+            description.replace("<br />", "\n")
+            .replace("<br/>", "\n")
+            .replace("<br>", "\n")
+        )
+        description = re.sub(r"\n{3,}", "\n\n", description).strip()
+
+    if price_value:
+        fallback["price"] = f"${price_value:,.2f}"
+
+    fallback["location"] = location_text
+    fallback["description"] = description
+    fallback["latitude"] = latitude
+    fallback["longitude"] = longitude
+
+    if bedrooms:
+        fallback["specs"]["bedrooms"] = bedrooms
+    if bathrooms:
+        fallback["specs"]["bathrooms"] = bathrooms
+    if parking:
+        fallback["specs"]["parking"] = parking
+    if square:
+        fallback["specs"]["Área construida (m²)"] = square
+    if lot_size:
+        fallback["specs"]["Área de terreno (m²)"] = lot_size
+
+    if location_text:
+        fallback["details"]["Ubicación"] = location_text
+    if property_type:
+        fallback["details"]["property_type"] = property_type
+    if region_name:
+        fallback["details"]["Región"] = region_name
+    if age:
+        fallback["details"]["Año"] = age
+    if stories:
+        fallback["details"]["Niveles"] = stories
+    if floor_type:
+        fallback["details"]["Tipo de piso"] = floor_type
+
+    # SEO metadata remains stable and provides a good fallback when the embedded
+    # description is compressed or missing.
+    if not fallback["description"]:
+        fallback["description"] = extract_meta_content(page_html, "og:description")
+
+    if not fallback["price"]:
+        meta_title = extract_meta_content(page_html, "og:title") or extract_meta_content(page_html, "title")
+        price_match = re.search(r'por\s+(?:USD\s+)?([\d,.]+)', meta_title, re.IGNORECASE)
+        if price_match:
+            try:
+                if float(price_match.group(1).replace(",", "")) > 0:
+                    fallback["price"] = f"${price_match.group(1)}"
+            except ValueError:
+                pass
+
+    if not fallback["location"]:
+        meta_title = extract_meta_content(page_html, "og:title") or extract_meta_content(page_html, "title")
+        location_match = re.search(r'\ben\s+([^|]+)$', meta_title, re.IGNORECASE)
+        if location_match:
+            fallback["location"] = normalize_source_text(location_match.group(1))
+
+    if "bedrooms" not in fallback["specs"]:
+        meta_title = extract_meta_content(page_html, "og:title") or extract_meta_content(page_html, "title")
+        bedrooms_match = re.search(r'(\d+(?:[.,]\d+)?)\s+recámaras', meta_title, re.IGNORECASE)
+        if bedrooms_match:
+            fallback["specs"]["bedrooms"] = bedrooms_match.group(1).replace(",", ".")
+
+    return fallback
+
+
 # Get data directory from environment or use relative path
 DATA_DIR = os.environ.get("CHIVOFERTON_DATA_DIR", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data"))
 
@@ -2305,12 +2853,31 @@ def fetch_page(url):
     try:
         resp = requests.get(url, headers=HEADERS, timeout=15)
         soup = BeautifulSoup(resp.text, "html.parser")
-        links = soup.select("a.d3-ad-tile__description")
+        if is_probable_bot_block_page(resp.text, soup=soup):
+            print(f"    Warning: probable anti-bot challenge on listing page {url}")
+            return []
+
+        page_path = urlparse(url).path
+        page_path = re.sub(r"\.\d+$", "", page_path).rstrip("/")
         urls = []
-        for link in links:
-            href = link.get("href")
-            if href:
-                urls.append(make_absolute_url(href))
+        seen = set()
+        for link in soup.select("a[href]"):
+            href = normalize_source_text(link.get("href"))
+            if not href:
+                continue
+
+            absolute_url = make_absolute_url(href)
+            href_path = urlparse(absolute_url).path.rstrip("/")
+            if not href_path.startswith(page_path + "/"):
+                continue
+
+            if not re.search(r"/\d+$", href_path):
+                continue
+
+            clean_url = absolute_url.split("?", 1)[0]
+            if clean_url not in seen:
+                seen.add(clean_url)
+                urls.append(clean_url)
         return urls
     except Exception as e:
         return []
@@ -2372,6 +2939,10 @@ def scrape_listing(url, listing_type):
     try:
         resp = requests.get(url, headers=HEADERS, timeout=15)
         soup = BeautifulSoup(resp.text, "html.parser")
+
+        if is_probable_bot_block_page(resp.text, soup=soup):
+            print(f"  Warning: probable anti-bot challenge for {url}")
+            return None
         
         # Check if listing was deleted/removed
         page_text_lower = soup.get_text().lower()
@@ -2549,6 +3120,56 @@ def scrape_listing(url, listing_type):
                 longitude = float(coord_match.group(2))
             except (ValueError, TypeError):
                 pass
+
+        if not price or not location or not specs or latitude is None or longitude is None:
+            fallback = extract_encuentra24_embedded_fallback(resp.text, url)
+
+            if not price:
+                price = fallback.get("price", "") or price
+            if not location:
+                location = fallback.get("location", "") or location
+            if not description:
+                description = fallback.get("description", "") or description
+            if fallback.get("specs"):
+                merged_specs = dict(fallback["specs"])
+                for key, value in specs.items():
+                    if value not in ("", None, [], {}):
+                        merged_specs[key] = value
+                specs = merged_specs or specs
+
+            if fallback.get("details"):
+                merged_details = dict(fallback["details"])
+                merged_details.update(details)
+                details = merged_details
+
+            if latitude is None and fallback.get("latitude") is not None:
+                latitude = fallback["latitude"]
+            if longitude is None and fallback.get("longitude") is not None:
+                longitude = fallback["longitude"]
+
+        if not price or not location or not specs or not details or not description:
+            rendered_fallback = extract_encuentra24_rendered_fallback(resp.text, url)
+
+            if not price:
+                price = rendered_fallback.get("price", "") or price
+            if not location:
+                location = rendered_fallback.get("location", "") or location
+            if not published_date:
+                published_date = rendered_fallback.get("published_date", "") or published_date
+            if not description:
+                description = rendered_fallback.get("description", "") or description
+
+            if rendered_fallback.get("specs"):
+                merged_specs = dict(rendered_fallback["specs"])
+                for key, value in specs.items():
+                    if value not in ("", None, [], {}):
+                        merged_specs[key] = value
+                specs = merged_specs or specs
+
+            if rendered_fallback.get("details"):
+                merged_details = dict(rendered_fallback["details"])
+                merged_details.update(details)
+                details = merged_details
 
         # Correct listing_type based on content analysis (title, description, price)
         # Users sometimes list sale properties in the rent section and vice versa
@@ -5339,6 +5960,50 @@ def casasahorita_extract_specs(soup):
     return specs, raw_fields
 
 
+def casasahorita_extract_inline_summary(text):
+    """Recover price/specs when Casas Ahorita omits the structured table."""
+    cleaned = normalize_source_text(text)
+    if not cleaned:
+        return "", {}, {}
+
+    price = ""
+    specs = {}
+    raw_fields = {}
+
+    price_match = re.search(r'\$\s*([\d,]+(?:\.\d+)?)', cleaned)
+    if price_match:
+        price = f"${price_match.group(1)}"
+
+    bedrooms_match = re.search(r'(\d+(?:[.,]\d+)?)\s*Cuartos?', cleaned, re.IGNORECASE)
+    if bedrooms_match:
+        specs["bedrooms"] = bedrooms_match.group(1).replace(",", ".")
+        raw_fields["recamaras"] = specs["bedrooms"]
+
+    bathrooms_match = re.search(r'(\d+(?:[.,]\d+)?)\s*Ba(?:ñ|n)os?', cleaned, re.IGNORECASE)
+    if bathrooms_match:
+        specs["bathrooms"] = bathrooms_match.group(1).replace(",", ".")
+        raw_fields["banos"] = specs["bathrooms"]
+
+    parking_match = re.search(r'(\d+(?:[.,]\d+)?)\s*(?:Veh[ií]culos?|Parqueos?)', cleaned, re.IGNORECASE)
+    if parking_match:
+        specs["parking"] = parking_match.group(1).replace(",", ".")
+        raw_fields["vehiculos"] = specs["parking"]
+
+    area_match = re.search(r'Tama(?:ñ|n)o de construcci(?:ó|o)n:\s*([\d,]+(?:\.\d+)?)', cleaned, re.IGNORECASE)
+    if area_match:
+        area_value = area_match.group(1)
+        specs["area"] = f"{area_value} m2"
+        raw_fields["tamano de construccion"] = area_value
+
+    lot_match = re.search(r'Tama(?:ñ|n)o del lote:\s*([\d,]+(?:\.\d+)?)', cleaned, re.IGNORECASE)
+    if lot_match:
+        lot_value = lot_match.group(1)
+        specs["terreno"] = f"{lot_value} m2"
+        raw_fields["tamano del lote"] = lot_value
+
+    return price, specs, raw_fields
+
+
 def casasahorita_extract_contact_details(soup):
     """Extract contact metadata from the Casas Ahorita detail page."""
     details = {}
@@ -5405,6 +6070,17 @@ def scrape_casasahorita_listing(url, listing_type="auto"):
 
         description = casasahorita_extract_description(soup)
         specs, raw_fields = casasahorita_extract_specs(soup)
+        inline_price, inline_specs, inline_fields = casasahorita_extract_inline_summary("\n".join(part for part in [header_h2, description] if part))
+        if not price:
+            price = inline_price
+        if inline_specs:
+            merged_specs = dict(inline_specs)
+            merged_specs.update(specs)
+            specs = merged_specs
+        if inline_fields:
+            merged_fields = dict(inline_fields)
+            merged_fields.update(raw_fields)
+            raw_fields = merged_fields
         contact_details = casasahorita_extract_contact_details(soup)
         date_info = casasahorita_extract_dates(raw_html)
 
@@ -5460,6 +6136,15 @@ def scrape_casasahorita_listing(url, listing_type="auto"):
                 images.append(absolute_url)
 
         municipio_info = detect_municipio(location, description, title)
+        if not location or location == "El Salvador":
+            detected_location_parts = []
+            for part in [municipio_info.get("municipio_detectado"), municipio_info.get("departamento")]:
+                cleaned = normalize_source_text(part)
+                if cleaned and cleaned != "No identificado" and cleaned not in detected_location_parts:
+                    detected_location_parts.append(cleaned)
+            location = ", ".join(
+                detected_location_parts
+            )
         return {
             "title": title,
             "price": price,
@@ -5982,6 +6667,104 @@ def extract_propilatam_date_from_html(raw_html):
     return result
 
 
+def normalize_propilatam_location_phrase(location):
+    """Clean generic title-derived phrases like 'venta en X' into just 'X'."""
+    cleaned = normalize_source_text(location)
+    if not cleaned:
+        return ""
+
+    cleaned = re.sub(
+        r'^(?:venta|alquiler|renta|sale|rent)\s+en\s+',
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    return cleaned.strip(" ,|-")
+
+
+def extract_propilatam_main_description(main_text):
+    """Extract the visible description block from a Propi/Vivo main content string."""
+    cleaned = normalize_source_text(main_text)
+    if not cleaned:
+        return ""
+
+    match = re.search(
+        r'Descripci(?:ó|o)n\s+(.*?)(?=Contactar con el vendedor|Solicita m(?:á|a)s informaci(?:ó|o)n|Ubicaci(?:ó|o)n|$)',
+        cleaned,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if not match:
+        return ""
+
+    description = normalize_source_text(match.group(1))
+    return description[:1000]
+
+
+def extract_propilatam_location_context(main_text):
+    """Extract structured location labels from Propi/Vivo visible page content."""
+    cleaned = normalize_source_text(main_text)
+    if not cleaned:
+        return "", {}
+
+    location_blob = cleaned
+    location_markers = list(re.finditer(r'Ubicaci(?:ó|o)n\s+', cleaned, re.IGNORECASE))
+    if location_markers:
+        location_blob = cleaned[location_markers[-1].start():]
+
+    details = {}
+    labels_pattern = re.compile(
+        r'(Ubicaci(?:ó|o)n|Barrio|Distrito urbano|Distrito municipal|Municipio|Departamento|Pa(?:í|i)s)\s+(.*?)(?=(?:Ubicaci(?:ó|o)n|Barrio|Distrito urbano|Distrito municipal|Municipio|Departamento|Pa(?:í|i)s)\s|$)',
+        re.IGNORECASE | re.DOTALL,
+    )
+
+    label_aliases = {
+        "ubicacion": "Ubicación",
+        "barrio": "Barrio",
+        "distrito urbano": "Distrito urbano",
+        "distrito municipal": "Distrito municipal",
+        "municipio": "Municipio",
+        "departamento": "Departamento",
+        "pais": "País",
+    }
+
+    for label, value in labels_pattern.findall(location_blob):
+        normalized_label = unicodedata.normalize("NFKD", label).encode("ascii", "ignore").decode("ascii").lower()
+        canonical_label = label_aliases.get(normalized_label)
+        if not canonical_label:
+            continue
+
+        cleaned_value = normalize_source_text(value)
+        if canonical_label == "Departamento":
+            cleaned_value = re.sub(r"^de\s+", "", cleaned_value, flags=re.IGNORECASE)
+        if not cleaned_value:
+            continue
+        details[canonical_label] = cleaned_value
+
+    explicit_department_match = re.search(
+        r'Departamento\s+de\s+(.+?)\s+Departamento(?:\s+|$)',
+        location_blob,
+        re.IGNORECASE,
+    )
+    if explicit_department_match:
+        details["Departamento"] = normalize_source_text(explicit_department_match.group(1))
+
+    country_match = re.search(r'(El Salvador)\s+Pa(?:í|i)s', location_blob, re.IGNORECASE)
+    if country_match:
+        details["País"] = normalize_source_text(country_match.group(1))
+
+    location_parts = []
+    for key in ("Ubicación", "Departamento", "Distrito municipal", "Municipio", "Barrio"):
+        value = normalize_source_text(details.get(key))
+        if not value or value.lower() == "el salvador":
+            continue
+        if value.lower() not in [existing.lower() for existing in location_parts]:
+            location_parts.append(value)
+        if len(location_parts) >= 2:
+            break
+
+    return ", ".join(location_parts), details
+
+
 def scrape_propilatam_listing(url, listing_type="sale"):
     """Scrape a single Propi Latam listing page."""
     try:
@@ -6044,6 +6827,8 @@ def scrape_propilatam_listing(url, listing_type="sale"):
         soup = selected_soup
         page_text = soup.get_text()
         raw_html = selected_html
+        main_el = soup.find("main")
+        main_text = normalize_source_text(main_el.get_text(" ", strip=True) if main_el else page_text)
 
         # Price extraction - prefer Propi's explicit minimum/base price fields.
         # Project pages often include many unrelated prices (similar projects,
@@ -6215,9 +7000,9 @@ def scrape_propilatam_listing(url, listing_type="sale"):
                 specs["area"] = f"{area_match_structured.group(1)} m2"
         
         # Description - look for content after "Descripción" heading
-        description = ""
+        description = extract_propilatam_main_description(main_text)
         desc_section = soup.find("h2", string=re.compile(r"Descripci[oó]n", re.I))
-        if desc_section:
+        if not description and desc_section:
             # Get next siblings for description content
             next_el = desc_section.find_next_sibling()
             if next_el:
@@ -6234,7 +7019,15 @@ def scrape_propilatam_listing(url, listing_type="sale"):
         if title:
             title_loc_match = re.search(r'\ben\s+([^,]+(?:,\s*[^,]+)?)', title, re.IGNORECASE)
             if title_loc_match:
-                location = title_loc_match.group(1).strip()
+                location = normalize_propilatam_location_phrase(title_loc_match.group(1).strip())
+
+        structured_location, location_details = extract_propilatam_location_context(main_text)
+        if structured_location and (
+            not location
+            or location.lower().startswith(("venta en ", "alquiler en ", "renta en ", "sale in ", "rent in "))
+            or (structured_location.lower().startswith(location.lower()) and len(structured_location) > len(location))
+        ):
+            location = structured_location
 
         if not location:
             loc_links = soup.select('a[href*="/bienes-raices/m/"], a[href*="/sv/venta/"], a[href*="/sv/alquiler/"]')
@@ -6252,7 +7045,7 @@ def scrape_propilatam_listing(url, listing_type="sale"):
                         continue
                     if len(link_text_lc) < 3:
                         continue
-                    location = link_text
+                    location = normalize_propilatam_location_phrase(link_text)
                     break
 
         if not location:
@@ -6270,7 +7063,9 @@ def scrape_propilatam_listing(url, listing_type="sale"):
                     else:
                         municipality_segment = path_parts[2]
 
-                    location = unquote(municipality_segment).replace("-", " ").strip().title()
+                    location = normalize_propilatam_location_phrase(
+                        unquote(municipality_segment).replace("-", " ").strip().title()
+                    )
             except Exception:
                 pass
 
@@ -6381,7 +7176,7 @@ def scrape_propilatam_listing(url, listing_type="sale"):
             "url": url,
             "external_id": str(external_id),
             "specs": normalize_listing_specs(specs),  # Normalize specs (area, beds, baths, etc.)
-            "details": {},
+            "details": location_details,
             "description": remove_emojis(description) if description else "",
             "images": images,
             "source": "PropiLatam",
