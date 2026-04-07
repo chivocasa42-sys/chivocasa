@@ -30,7 +30,7 @@ import traceback
 import unicodedata
 from html import unescape
 from urllib.parse import unquote, urlparse, urljoin
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Import localization plugin for generating searchable tags
@@ -1441,16 +1441,72 @@ def check_listing_status_for_record(listing):
     }
 
 
-def parse_price(price_str):
-    """Parse price string to float."""
-    if not price_str:
+def parse_localized_number(value):
+    """Parse a human-formatted numeric token with either US or ES separators."""
+    if value is None:
         return None
-    # Remove $ and commas, keep only digits and decimal
-    cleaned = re.sub(r'[^\d.]', '', str(price_str))
+
+    cleaned = re.sub(r"[^\d,.\-]", "", str(value)).strip()
+    if not cleaned or cleaned in {"-", ".", ",", "-.", "-,"}:
+        return None
+
+    if "," in cleaned and "." in cleaned:
+        if cleaned.rfind(",") > cleaned.rfind("."):
+            cleaned = cleaned.replace(".", "").replace(",", ".")
+        else:
+            cleaned = cleaned.replace(",", "")
+    elif cleaned.count(",") > 1:
+        cleaned = cleaned.replace(",", "")
+    elif cleaned.count(".") > 1:
+        cleaned = cleaned.replace(".", "")
+    elif "," in cleaned:
+        left, right = cleaned.rsplit(",", 1)
+        if len(right) == 3 and left:
+            cleaned = cleaned.replace(",", "")
+        else:
+            cleaned = cleaned.replace(",", ".")
+    elif "." in cleaned:
+        left, right = cleaned.rsplit(".", 1)
+        if len(right) == 3 and left:
+            cleaned = cleaned.replace(".", "")
+
     try:
         return float(cleaned)
-    except:
+    except (TypeError, ValueError):
         return None
+
+
+def parse_price(price_str):
+    """Parse a property price string into a float, including K/M abbreviations."""
+    if price_str is None or price_str == "":
+        return None
+
+    if isinstance(price_str, (int, float)) and not isinstance(price_str, bool):
+        return float(price_str)
+
+    text = normalize_source_text(str(price_str))
+    if not text:
+        return None
+
+    lowered = text.lower()
+    if "consultar" in lowered and not re.search(r"\d", lowered):
+        return None
+
+    multiplier = 1
+    if re.search(r"\bmill(?:ones?)?\b|\bmillon(?:es)?\b|(?<![a-z0-9])\d[\d.,]*\s*m\b", lowered):
+        multiplier = 1_000_000
+    elif re.search(r"\bmil\b|(?<![a-z0-9])\d[\d.,]*\s*k\b", lowered):
+        multiplier = 1_000
+
+    number_match = re.search(r"-?\d[\d.,]*", lowered)
+    if not number_match:
+        return None
+
+    base_value = parse_localized_number(number_match.group(0))
+    if base_value is None:
+        return None
+
+    return float(base_value) * multiplier
 
 
 def correct_listing_type(listing_type, title, description, price, url=None):
@@ -2032,6 +2088,238 @@ def extract_escaped_number_value(blob, key):
         return None
 
 
+ENCUENTRA24_OFFICE_LOCATION_MARKERS = (
+    "torre futura",
+    "plaza paradiso",
+    "urbanización lomas de altamira",
+    "urbanizacion lomas de altamira",
+    "calle el zenzontle",
+    "avenida bernal y yumury",
+    "bambú city center",
+    "bambu city center",
+    "colonia escalon cp",
+    " cp ",
+)
+
+EL_SALVADOR_DEPARTMENTS = {
+    "ahuachapan",
+    "santa ana",
+    "sonsonate",
+    "chalatenango",
+    "la libertad",
+    "san salvador",
+    "cuscatlan",
+    "la paz",
+    "cabanas",
+    "san vicente",
+    "usulutan",
+    "san miguel",
+    "morazan",
+    "la union",
+}
+
+LOCATION_CONTEXT_STOPWORDS = {
+    "de",
+    "del",
+    "la",
+    "las",
+    "los",
+    "el",
+    "en",
+    "y",
+    "no",
+    "por",
+}
+
+
+def is_suspicious_encuentra24_location_fragment(text):
+    """Detect broker office/location contamination inside Encuentra24 address fields."""
+    cleaned = normalize_source_text(text).lower()
+    if not cleaned:
+        return False
+
+    if encuentra24_location_looks_garbled(cleaned):
+        return True
+
+    if any(marker in cleaned for marker in ENCUENTRA24_OFFICE_LOCATION_MARKERS):
+        return True
+
+    if re.search(r"\b\d{1,2}-\d{2}[a-z]?\b", cleaned):
+        return True
+
+    return False
+
+
+def is_street_level_encuentra24_location_fragment(text):
+    """Detect street-address fragments that are too specific for the compact location field."""
+    cleaned = normalize_source_text(text).lower()
+    if not cleaned:
+        return False
+
+    return bool(
+        re.search(r"\b(calle|avenida|av\.?|boulevard|blvd|pasaje|carretera|km|kil[oó]metro)\b", cleaned)
+    )
+
+
+def is_el_salvador_department(text):
+    """Check whether a location fragment is a Salvadoran department label."""
+    cleaned = normalize_source_text(text)
+    if not cleaned:
+        return False
+    normalized = unicodedata.normalize("NFKD", cleaned.lower())
+    ascii_like = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    ascii_like = re.sub(r"[^a-z0-9\s]", " ", ascii_like)
+    ascii_like = re.sub(r"\s+", " ", ascii_like).strip()
+    return ascii_like in EL_SALVADOR_DEPARTMENTS
+
+
+def simplify_location_text(text):
+    """Normalize location-like text to comparable ASCII tokens."""
+    cleaned = normalize_source_text(text)
+    if not cleaned:
+        return ""
+    normalized = unicodedata.normalize("NFKD", cleaned.lower())
+    ascii_like = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    ascii_like = re.sub(r"[^a-z0-9\s]", " ", ascii_like)
+    ascii_like = re.sub(r"\s+", " ", ascii_like).strip()
+    return ascii_like
+
+
+def location_token_set(text):
+    """Build a compact token set for location-vs-context comparisons."""
+    return {
+        token
+        for token in simplify_location_text(text).split()
+        if token and token not in LOCATION_CONTEXT_STOPWORDS
+    }
+
+
+def encuentra24_location_has_street_level_fragment(text):
+    """Check whether any part of a location string looks like a street address."""
+    return any(
+        is_street_level_encuentra24_location_fragment(part)
+        for part in clean_encuentra24_location_parts(text)
+    )
+
+
+def encuentra24_location_looks_garbled(text):
+    """Detect rendered fallbacks that accidentally include price/spec text."""
+    cleaned = normalize_source_text(text).lower()
+    if not cleaned:
+        return False
+    if any(
+        marker in cleaned
+        for marker in ("recámaras", "recamaras", "baños", "banos", "por usd", "por $")
+    ):
+        return True
+    return bool(
+        re.search(
+            r"\b\d+\s+rec(?:á|a)maras\b|\b\d+\s+ba(?:ñ|n)os\b|\busd\s*\d",
+            cleaned,
+            re.IGNORECASE,
+        )
+    )
+
+
+def encuentra24_location_context_score(location, title, url):
+    """Measure how strongly a location candidate matches the title/URL context."""
+    loc_tokens = location_token_set(location)
+    if not loc_tokens:
+        return 0
+
+    url_path = unquote(urlparse(url).path.replace("-", " ")) if url else ""
+    context_tokens = location_token_set(f"{title or ''} {url_path}")
+    return len(loc_tokens & context_tokens)
+
+
+def should_prefer_rendered_encuentra24_location(current, rendered, title="", url=""):
+    """Choose rendered location when it aligns better with the listing context."""
+    current_text = normalize_source_text(current)
+    rendered_text = normalize_source_text(rendered)
+    if not rendered_text or encuentra24_location_looks_garbled(rendered_text):
+        return False
+    if not current_text:
+        return True
+
+    current_tokens = location_token_set(current_text)
+    rendered_tokens = location_token_set(rendered_text)
+    if rendered_tokens and len(rendered_tokens) <= 2 and rendered_tokens.issubset(current_tokens):
+        return False
+
+    if (
+        (is_suspicious_encuentra24_location_fragment(current_text) or encuentra24_location_has_street_level_fragment(current_text))
+        and not is_suspicious_encuentra24_location_fragment(rendered_text)
+    ):
+        return True
+
+    current_score = encuentra24_location_context_score(current_text, title, url)
+    rendered_score = encuentra24_location_context_score(rendered_text, title, url)
+
+    if rendered_score > current_score:
+        return True
+
+    if (
+        not any(is_el_salvador_department(part) for part in clean_encuentra24_location_parts(current_text))
+        and any(is_el_salvador_department(part) for part in clean_encuentra24_location_parts(rendered_text))
+        and rendered_score >= current_score
+    ):
+        return True
+
+    return False
+
+
+def clean_encuentra24_location_parts(raw_value):
+    """Split a location field into clean geographic parts, stopping before office noise."""
+    cleaned = normalize_source_text(raw_value)
+    if not cleaned:
+        return []
+
+    parts = []
+    for piece in cleaned.split(","):
+        part = normalize_source_text(piece).strip(" ,|-.")
+        if not part or part.lower() == "el salvador":
+            continue
+        if is_suspicious_encuentra24_location_fragment(part):
+            break
+        if part.lower() not in [existing.lower() for existing in parts]:
+            parts.append(part)
+
+    if not parts and not is_suspicious_encuentra24_location_fragment(cleaned):
+        return [cleaned]
+
+    return parts
+
+
+def build_encuentra24_location_text(exact_address="", address="", region_name="", city="", locality=""):
+    """Build a cleaner location string from Encuentra24 embedded fields."""
+    parts = []
+
+    primary_parts = clean_encuentra24_location_parts(exact_address)
+    if not primary_parts:
+        primary_parts = clean_encuentra24_location_parts(address)
+    while primary_parts and is_street_level_encuentra24_location_fragment(primary_parts[0]):
+        primary_parts = primary_parts[1:]
+
+    has_department = any(is_el_salvador_department(part) for part in primary_parts)
+
+    for part in primary_parts:
+        if part.lower() not in [existing.lower() for existing in parts]:
+            parts.append(part)
+
+    for value in [locality, city, region_name]:
+        for part in clean_encuentra24_location_parts(value):
+            if part.lower() not in [existing.lower() for existing in parts]:
+                if has_department and len(primary_parts) >= 2:
+                    continue
+                parts.append(part)
+
+    compact_location = ", ".join(parts[:3])
+    compact_location = re.sub(r",?\s*el salvador\s*(?=,|$)", "", compact_location, flags=re.IGNORECASE)
+    compact_location = re.sub(r"\s+,", ",", compact_location)
+    compact_location = re.sub(r",\s*,+", ", ", compact_location)
+    return compact_location.strip(" ,|-")
+
+
 def extract_encuentra24_rendered_fallback(page_html, url):
     """
     Extract listing fields from Encuentra24's rendered React/Tailwind layout.
@@ -2067,9 +2355,11 @@ def extract_encuentra24_rendered_fallback(page_html, url):
         title_index = main_text.lower().find(title_text.lower())
         after_title = main_text[title_index + len(title_text):].strip()
 
+    price_token_pattern = r"(?:US\$|USD|\$)\s*[\d,.]+(?:\s*(?:[kKmM]\b|mil(?:lones?)?\b|millones?\b))?"
+
     # The location appears immediately after the title and before the first main
     # price. Ignore country-only placeholders like "El Salvador".
-    location_segment = re.split(r"\$\s*[\d,.]+", after_title, maxsplit=1)[0]
+    location_segment = re.split(price_token_pattern, after_title, maxsplit=1, flags=re.IGNORECASE)[0]
     location_segment = normalize_source_text(location_segment.replace(" ,", ",").strip(" ,|-"))
     if location_segment:
         location_parts = []
@@ -2080,22 +2370,38 @@ def extract_encuentra24_rendered_fallback(page_html, url):
                 location_parts.append(part)
         fallback["location"] = ", ".join(location_parts[:2])
 
+    named_price_pattern = r"por\s+((?:(?:US\$|USD|\$)\s*)?[\d,.]+(?:\s*(?:[kKmM]\b|mil(?:lones?)?\b|millones?\b))?)"
+    title_price_match = re.search(named_price_pattern, title_text, re.IGNORECASE) if title_text else None
+    meta_price_match = re.search(named_price_pattern, meta_title, re.IGNORECASE) if meta_title else None
+
+    if title_price_match and parse_price(title_price_match.group(1)):
+        fallback["price"] = title_price_match.group(1).strip()
+    elif meta_price_match and parse_price(meta_price_match.group(1)):
+        fallback["price"] = meta_price_match.group(1).strip()
+
     price_segment = after_title
     spec_anchor = re.search(r"\brec[áa]maras\b|\bba[ñn]os\b|\bparking\b|\bdetalles adicionales\b", price_segment, re.IGNORECASE)
     if spec_anchor:
         price_segment = price_segment[:spec_anchor.start()]
 
-    price_candidates = re.findall(r"\$\s*[\d,.]+", price_segment)
-    if price_candidates:
-        if "% off" in price_segment.lower():
-            fallback["price"] = price_candidates[-1]
-        else:
-            fallback["price"] = price_candidates[0]
+    if not fallback["price"]:
+        price_candidates = []
+        for match in re.finditer(price_token_pattern, price_segment, re.IGNORECASE):
+            candidate = normalize_source_text(match.group(0))
+            parsed = parse_price(candidate)
+            if not parsed or parsed <= 0:
+                continue
 
-    if not fallback["price"] and meta_title:
-        price_match = re.search(r"por\s+(?:USD\s+)?([\d,.]+)", meta_title, re.IGNORECASE)
-        if price_match:
-            fallback["price"] = f"${price_match.group(1)}"
+            context_window = price_segment[max(0, match.start() - 30):match.end() + 45].lower()
+            if parsed < 10000 and any(token in context_window for token in ("mantenimiento", "/mes", "mensual")):
+                continue
+
+            price_candidates.append(candidate)
+
+        if "% off" in price_segment.lower() and len(price_candidates) >= 2:
+            fallback["price"] = price_candidates[1]
+        elif price_candidates:
+            fallback["price"] = price_candidates[0]
 
     if fallback["price"] and not parse_price(fallback["price"]):
         fallback["price"] = ""
@@ -2164,6 +2470,18 @@ def extract_encuentra24_rendered_fallback(page_html, url):
                     fallback["specs"]["Área total"] = value
                 else:
                     fallback["details"][label] = value
+
+    details_location = build_encuentra24_location_text(
+        exact_address=fallback["details"].get("Ubicación", ""),
+        region_name=fallback["details"].get("Región", ""),
+    )
+    if details_location and (
+        not fallback["location"]
+        or is_suspicious_encuentra24_location_fragment(fallback["location"])
+        or ("," not in fallback["location"] and "," in details_location)
+    ):
+        fallback["location"] = details_location
+        fallback["details"]["Ubicación"] = details_location
 
     description_heading = next(
         (
@@ -2236,13 +2554,13 @@ def extract_encuentra24_embedded_fallback(page_html, url):
     city = extract_escaped_string_value(blob_after, "city")
     locality = extract_escaped_string_value(blob_after, "locality")
 
-    location_parts = []
-    for value in [exact_address, address, region_name, city, locality]:
-        cleaned = normalize_source_text(value)
-        if not cleaned or cleaned.lower() == "el salvador" or cleaned in location_parts:
-            continue
-        location_parts.append(cleaned)
-    location_text = ", ".join(location_parts[:2])
+    location_text = build_encuentra24_location_text(
+        exact_address=exact_address,
+        address=address,
+        region_name=region_name,
+        city=city,
+        locality=locality,
+    )
 
     price_value = extract_escaped_number_value(blob_after, "price_value")
     if price_value is None:
@@ -2969,6 +3287,7 @@ def scrape_listing(url, listing_type):
         # Price - extract from multiple sources and use the most complete one
         price = ""
         price_candidates = []
+        meta_title = extract_meta_content(resp.text, "og:title") or extract_meta_content(resp.text, "title")
         
         # Source 1: Price element on page
         price_el = soup.select_one(".estate-price") or soup.select_one(".d3-price")
@@ -2978,20 +3297,49 @@ def scrape_listing(url, listing_type):
                 price_candidates.append(el_price)
         
         # Source 2: Look for price in title (common pattern: "por XXXXX.00")
-        title_price_match = re.search(r'por\s+(?:USD\s+)?([\d,\.]+)', title, re.IGNORECASE)
+        title_price_match = re.search(
+            r'por\s+(?:USD\s+|US\$\s*|\$\s*)?([\d,.]+(?:\s*(?:[kKmM]\b|mil(?:lones?)?\b|millones?\b))?)',
+            title,
+            re.IGNORECASE,
+        )
         if title_price_match:
             price_candidates.append(f"${title_price_match.group(1)}")
         
         # Source 3: Look for $ price in title
-        title_dollar_match = re.search(r'\$\s*([\d,\.]+)', title)
+        title_dollar_match = re.search(r'\$\s*([\d,.]+(?:\s*(?:[kKmM]\b|mil(?:lones?)?\b|millones?\b))?)', title)
         if title_dollar_match:
             price_candidates.append(f"${title_dollar_match.group(1)}")
-        
-        # Source 4: Fallback - search full page text
+
+        # Source 4: Price in SEO metadata (common on newer Encuentra24 pages)
+        if meta_title:
+            meta_price_match = re.search(
+                r'por\s+(?:USD\s+|US\$\s*|\$\s*)?([\d,.]+(?:\s*(?:[kKmM]\b|mil(?:lones?)?\b|millones?\b))?)',
+                meta_title,
+                re.IGNORECASE,
+            )
+            if meta_price_match:
+                meta_candidate = f"${meta_price_match.group(1)}"
+                if (parse_price(meta_candidate) or 0) > 0:
+                    price_candidates.append(meta_candidate)
+
+            meta_dollar_match = re.search(r'\$\s*([\d,.]+(?:\s*(?:[kKmM]\b|mil(?:lones?)?\b|millones?\b))?)', meta_title)
+            if meta_dollar_match:
+                meta_candidate = f"${meta_dollar_match.group(1)}"
+                if (parse_price(meta_candidate) or 0) > 0:
+                    price_candidates.append(meta_candidate)
+
+        # Source 5: Fallback - search explicit "Precio" labels only.
+        # Avoid grabbing revenue mentions such as "$7,200 mensuales" from the
+        # description body, which can appear before the asking price in page text.
         if not price_candidates:
-            page_match = re.search(r"\$[\d,\.]+", soup.get_text())
+            page_text = normalize_source_text(soup.get_text(" ", strip=True))
+            page_match = re.search(
+                r"\bprecio\b\s*:?\s*\$\s*([\d,.]+(?:\s*(?:[kKmM]\b|mil(?:lones?)?\b|millones?\b))?)",
+                page_text,
+                re.IGNORECASE,
+            )
             if page_match:
-                price_candidates.append(page_match.group(0))
+                price_candidates.append(f"${page_match.group(1)}")
         
         # Choose the largest price (to get full price, not truncated display)
         best_price = 0
@@ -3003,7 +3351,9 @@ def scrape_listing(url, listing_type):
         
         # If no named price found, use empty
         if not price and price_candidates:
-            price = price_candidates[0]
+            fallback_candidate = price_candidates[0]
+            if (parse_price(fallback_candidate) or 0) > 0:
+                price = fallback_candidate
 
         # Specs - from insight attributes (bedrooms, bathrooms, area, etc.)
         specs = {}
@@ -3147,12 +3497,24 @@ def scrape_listing(url, listing_type):
             if longitude is None and fallback.get("longitude") is not None:
                 longitude = fallback["longitude"]
 
-        if not price or not location or not specs or not details or not description:
+        if (
+            not price
+            or not location
+            or not specs
+            or not details
+            or not description
+            or is_suspicious_encuentra24_location_fragment(location)
+        ):
             rendered_fallback = extract_encuentra24_rendered_fallback(resp.text, url)
 
             if not price:
                 price = rendered_fallback.get("price", "") or price
-            if not location:
+            rendered_location = rendered_fallback.get("location", "")
+            if rendered_location and should_prefer_rendered_encuentra24_location(location, rendered_location, title=title, url=url):
+                location = rendered_location
+                if rendered_fallback.get("details", {}).get("Ubicación"):
+                    details["Ubicación"] = rendered_fallback["details"]["Ubicación"]
+            elif not location:
                 location = rendered_fallback.get("location", "") or location
             if not published_date:
                 published_date = rendered_fallback.get("published_date", "") or published_date
@@ -4145,6 +4507,206 @@ def get_realtor_detail_published_date(detail_url):
         return ""
 
 
+def realtor_resolve_apollo_ref(apollo_state, ref):
+    """Resolve Apollo references in Realtor __NEXT_DATA__ payloads."""
+    if isinstance(ref, dict) and ref.get("id"):
+        return apollo_state.get(ref["id"], ref)
+    return ref
+
+
+def normalize_realtor_listing_detail(apollo_state, value, detail_page_url=None):
+    """Normalize one Realtor ListingDetail payload into the shared listing schema."""
+    if not isinstance(value, dict):
+        return None
+
+    listing_id = value.get("id")
+    if not listing_id:
+        return None
+
+    url_key = 'detailPageUrl({"language":"en"})'
+    detail_url = value.get(url_key)
+    if detail_url:
+        full_url = detail_url if str(detail_url).startswith("http") else f"{REALTOR_BASE_URL}{detail_url}"
+    else:
+        full_url = detail_page_url or ""
+
+    if not full_url:
+        return None
+
+    price_key = 'price({"currency":"USD","language":"en"})'
+    price_data = realtor_resolve_apollo_ref(apollo_state, value.get(price_key))
+    price_str = ""
+    if isinstance(price_data, dict):
+        price_str = price_data.get("displayListingPrice", "")
+
+    location_data = realtor_resolve_apollo_ref(apollo_state, value.get("location"))
+    location = ""
+    if isinstance(location_data, dict):
+        state = (location_data.get("state") or "").replace("-", " ").replace(" Department", "")
+        location = state.strip()
+
+    ml_key = 'multilingual({"language":"en"})'
+    ml_data = realtor_resolve_apollo_ref(apollo_state, value.get(ml_key))
+    title = value.get("displayAddress", "")
+    if isinstance(ml_data, dict) and ml_data.get("fullAddress"):
+        title = ml_data["fullAddress"]
+
+    image_urls = []
+    for photo_ref in value.get("photos", [])[:10]:
+        photo_data = realtor_resolve_apollo_ref(apollo_state, photo_ref)
+        if isinstance(photo_data, dict) and photo_data.get("path"):
+            image_urls.append(f"{REALTOR_PHOTO_CDN}{photo_data['path']}")
+
+    specs = {}
+    bedrooms = value.get("bedrooms")
+    bathrooms = value.get("bathrooms")
+    parking = value.get("parkingSpaces")
+
+    if bedrooms:
+        specs["habitaciones"] = str(bedrooms)
+    if bathrooms:
+        specs["banos"] = str(bathrooms)
+    if parking:
+        specs["parqueo"] = str(parking)
+
+    size_key = 'buildingSize({"language":"en","unit":"SQUARE_FEET"})'
+    size_val = value.get(size_key)
+    if size_val:
+        try:
+            sqft = float(str(size_val).replace(",", ""))
+            specs["area"] = f"{round(sqft * SQFT_TO_M2, 2)} m2"
+        except Exception:
+            specs["area"] = str(size_val)
+
+    land_key = 'landSize({"language":"en","unit":"SQUARE_FEET"})'
+    land_val = value.get(land_key)
+    if land_val:
+        try:
+            sqft = float(str(land_val).replace(",", ""))
+            specs["terreno"] = f"{round(sqft * SQFT_TO_M2, 2)} m2"
+        except Exception:
+            specs["terreno"] = str(land_val)
+
+    description = value.get("description", "")
+    if description:
+        description = remove_emojis(description[:1000])
+
+    price_value = parse_price(price_str)
+    listing_type = correct_listing_type("sale", title, description, price_value, url=full_url)
+
+    prop_types_key = 'propertyTypes({"language":"en"})'
+    prop_types_raw = value.get(prop_types_key, {})
+    property_type = ""
+    if isinstance(prop_types_raw, dict) and prop_types_raw.get("json"):
+        prop_list = prop_types_raw.get("json", [])
+        if isinstance(prop_list, list) and prop_list:
+            property_type = prop_list[0]
+    elif isinstance(prop_types_raw, list) and prop_types_raw:
+        property_type = prop_types_raw[0] if isinstance(prop_types_raw[0], str) else ""
+
+    published_date = ""
+    published_at = value.get("publishedAt", "")
+    if published_at:
+        try:
+            dt = datetime.strptime(published_at.split(" ")[0], "%Y-%m-%d")
+            published_date = dt.strftime("%d/%m/%Y")
+        except Exception:
+            pass
+
+    if not published_date and full_url:
+        published_date = get_realtor_detail_published_date(full_url)
+
+    details = {}
+    if property_type:
+        details["property_type"] = property_type
+    channel = value.get("channel", "")
+    if channel:
+        details["channel"] = channel
+    listing_category = value.get("listingCategory", "")
+    if listing_category:
+        details["category"] = listing_category
+
+    latitude = None
+    longitude = None
+    geo_key = f"$ListingDetail:{listing_id}.geoLocation"
+    geo_data = apollo_state.get(geo_key, {})
+    if isinstance(geo_data, dict):
+        try:
+            lat_val = geo_data.get("latitude")
+            lng_val = geo_data.get("longitude")
+            if lat_val is not None and lng_val is not None:
+                latitude = float(lat_val)
+                longitude = float(lng_val)
+        except (ValueError, TypeError):
+            pass
+
+    municipio_info = detect_municipio(location, description, title)
+    return {
+        "title": remove_emojis(title[:200]) if title else "",
+        "price": price_str,
+        "location": location,
+        "published_date": published_date,
+        "listing_type": listing_type,
+        "url": full_url,
+        "external_id": str(listing_id),
+        "specs": normalize_listing_specs(specs),
+        "details": details,
+        "description": description,
+        "images": image_urls,
+        "source": "Realtor",
+        "active": True,
+        "municipio_detectado": municipio_info["municipio_detectado"],
+        "departamento": municipio_info["departamento"],
+        "latitude": latitude,
+        "longitude": longitude,
+        "last_updated": datetime.now().isoformat()
+    }
+
+
+def scrape_realtor_listing(detail_url, listing_type="auto"):
+    """Scrape one Realtor detail URL into the shared listing schema."""
+    session = get_realtor_session()
+    response = session.get(detail_url, timeout=30)
+    if response.status_code == 404:
+        return None
+    if response.status_code != 200:
+        raise RuntimeError(f"Realtor detail fetch failed ({response.status_code})")
+
+    soup = BeautifulSoup(response.text, "html.parser")
+    next_data = soup.select_one("script#__NEXT_DATA__")
+    if not next_data or not next_data.string:
+        raise RuntimeError("Realtor detail page missing __NEXT_DATA__")
+
+    data = json.loads(next_data.string)
+    apollo_state = data.get("props", {}).get("apolloState", {})
+    target_path = urlparse(detail_url).path.rstrip("/")
+
+    candidates = []
+    matched_listing = None
+    for key, value in apollo_state.items():
+        if not key.startswith("ListingDetail:"):
+            continue
+        normalized = normalize_realtor_listing_detail(apollo_state, value, detail_page_url=detail_url)
+        if not normalized:
+            continue
+        candidates.append(normalized)
+        candidate_path = urlparse(normalized.get("url") or "").path.rstrip("/")
+        if candidate_path == target_path:
+            matched_listing = normalized
+            break
+
+    if not matched_listing and len(candidates) == 1:
+        matched_listing = candidates[0]
+
+    if not matched_listing:
+        raise RuntimeError("Realtor detail page did not contain a matching listing")
+
+    if listing_type in ("sale", "rent"):
+        matched_listing["listing_type"] = listing_type
+
+    return matched_listing
+
+
 def get_realtor_listings_from_page(page_url):
     """
     Extract listing data directly from Realtor.com page's __NEXT_DATA__ JSON.
@@ -4168,190 +4730,12 @@ def get_realtor_listings_from_page(page_url):
         apollo_state = data.get("props", {}).get("apolloState", {})
         
         listings = []
-        
-        # Helper to resolve Apollo references
-        def resolve_ref(ref):
-            if isinstance(ref, dict) and ref.get("id"):
-                return apollo_state.get(ref["id"], ref)
-            return ref
-        
-        # Extract all ListingDetail entries
         for key, value in apollo_state.items():
             if not key.startswith("ListingDetail:"):
                 continue
-            if not isinstance(value, dict):
-                continue
-            if not value.get("id"):
-                continue
-            
-            listing_id = value.get("id")
-            
-            # Skip if no URL
-            url_key = 'detailPageUrl({"language":"en"})'
-            detail_url = value.get(url_key)
-            if not detail_url:
-                continue
-            
-            full_url = f"{REALTOR_BASE_URL}{detail_url}"
-            
-            # Resolve price
-            price_key = 'price({"currency":"USD","language":"en"})'
-            price_ref = value.get(price_key)
-            price_data = resolve_ref(price_ref)
-            price_str = ""
-            if isinstance(price_data, dict):
-                price_str = price_data.get("displayListingPrice", "")
-            
-            # Resolve location - Only show department (state)
-            location_ref = value.get("location")
-            location_data = resolve_ref(location_ref)
-            location = ""
-            if isinstance(location_data, dict):
-                # Only use the state/department, formatted nicely
-                state = (location_data.get("state") or "").replace("-", " ").replace(" Department", "")
-                location = state.strip()
-            
-            # Resolve multilingual for title
-            ml_key = 'multilingual({"language":"en"})'
-            ml_ref = value.get(ml_key)
-            ml_data = resolve_ref(ml_ref)
-            title = value.get("displayAddress", "")
-            if isinstance(ml_data, dict) and ml_data.get("fullAddress"):
-                title = ml_data["fullAddress"]
-            
-            # Resolve photos
-            photos = value.get("photos", [])
-            image_urls = []
-            for photo_ref in photos[:10]:  # Limit to 10 photos
-                photo_data = resolve_ref(photo_ref)
-                if isinstance(photo_data, dict) and photo_data.get("path"):
-                    image_urls.append(f"{REALTOR_PHOTO_CDN}{photo_data['path']}")
-            
-
-            
-            # Specs
-            specs = {}
-            bedrooms = value.get("bedrooms")
-            bathrooms = value.get("bathrooms")
-            parking = value.get("parkingSpaces")
-            
-            if bedrooms:
-                specs["habitaciones"] = str(bedrooms)
-            if bathrooms:
-                specs["banos"] = str(bathrooms)
-            if parking:
-                specs["parqueo"] = str(parking)
-            
-            # Building/Land size - Convert from sqft to m²
-            size_key = 'buildingSize({"language":"en","unit":"SQUARE_FEET"})'
-            size_val = value.get(size_key)
-            if size_val:
-                try:
-                    # Remove commas and convert
-                    sqft = float(str(size_val).replace(",", ""))
-                    m2 = round(sqft * SQFT_TO_M2, 2)
-                    specs["area"] = f"{m2} m²"
-                except:
-                    specs["area"] = str(size_val)
-            
-            land_key = 'landSize({"language":"en","unit":"SQUARE_FEET"})'
-            land_val = value.get(land_key)
-            if land_val:
-                try:
-                    sqft = float(str(land_val).replace(",", ""))
-                    m2 = round(sqft * SQFT_TO_M2, 2)
-                    specs["terreno"] = f"{m2} m²"
-                except:
-                    specs["terreno"] = str(land_val)
-            
-            # Determine listing type from channel parameter in URL or default to sale
-            listing_type = "sale"  # Default
-            
-            # Extract description directly (available in JSON) - needed for correct_listing_type
-            description = value.get("description", "")
-            if description:
-                description = remove_emojis(description[:1000])
-            
-            # Correct listing_type based on content analysis (title, description, price)
-            price_value = parse_price(price_str)
-            listing_type = correct_listing_type(listing_type, title, description, price_value, url=full_url)
-            
-            # Property type - extract from JSON format
-            prop_types_key = 'propertyTypes({"language":"en"})'
-            prop_types_raw = value.get(prop_types_key, {})
-            property_type = ""
-            if isinstance(prop_types_raw, dict) and prop_types_raw.get("json"):
-                # Format: {'type': 'json', 'json': ['House']}
-                prop_list = prop_types_raw.get("json", [])
-                if isinstance(prop_list, list) and len(prop_list) > 0:
-                    property_type = prop_list[0]
-            elif isinstance(prop_types_raw, list) and len(prop_types_raw) > 0:
-                property_type = prop_types_raw[0] if isinstance(prop_types_raw[0], str) else ""
-            
-            # Extract published date
-            published_date = ""
-            published_at = value.get("publishedAt", "")
-            if published_at:
-                try:
-                    # Format: "2026-01-22 08:20:47" -> "22/01/2026"
-                    dt = datetime.strptime(published_at.split(" ")[0], "%Y-%m-%d")
-                    published_date = dt.strftime("%d/%m/%Y")
-                except:
-                    pass
-            
-            # Fallback: fetch detail page if published_date is still empty
-            if not published_date and full_url:
-                published_date = get_realtor_detail_published_date(full_url)
-            
-            # Build details dict
-            details = {}
-            if property_type:
-                details["property_type"] = property_type
-            channel = value.get("channel", "")
-            if channel:
-                details["channel"] = channel
-            listing_category = value.get("listingCategory", "")
-            if listing_category:
-                details["category"] = listing_category
-            
-            # Extract coordinates from geoLocation in Apollo state
-            latitude = None
-            longitude = None
-            geo_key = f"$ListingDetail:{listing_id}.geoLocation"
-            geo_data = apollo_state.get(geo_key, {})
-            if isinstance(geo_data, dict):
-                try:
-                    lat_val = geo_data.get("latitude")
-                    lng_val = geo_data.get("longitude")
-                    if lat_val is not None and lng_val is not None:
-                        latitude = float(lat_val)
-                        longitude = float(lng_val)
-                except (ValueError, TypeError):
-                    pass
-            
-            # Detect municipality from location, description and title
-            municipio_info = detect_municipio(location, description, title)
-            
-            listings.append({
-                "title": remove_emojis(title[:200]) if title else "",
-                "price": price_str,
-                "location": location,
-                "published_date": published_date,
-                "listing_type": listing_type,
-                "url": full_url,
-                "external_id": str(listing_id),
-                "specs": normalize_listing_specs(specs),  # Normalize specs (area, beds, baths, etc.)
-                "details": details,
-                "description": description,
-                "images": image_urls,
-                "source": "Realtor",
-                "active": True,
-                "municipio_detectado": municipio_info["municipio_detectado"],
-                "departamento": municipio_info["departamento"],
-                "latitude": latitude,
-                "longitude": longitude,
-                "last_updated": datetime.now().isoformat()
-            })
+            normalized = normalize_realtor_listing_detail(apollo_state, value)
+            if normalized:
+                listings.append(normalized)
         
         return listings
         
@@ -4837,18 +5221,52 @@ def cbr_map_property_type(property_type_name):
 
 def cbr_build_location_text(term_names, property_meta):
     """Build a compact location string from taxonomy names and address fields."""
+    def is_noise_fragment(value):
+        cleaned = normalize_source_text(value).strip(" ,|-")
+        if not cleaned:
+            return True
+        if cleaned.lower() == "el salvador":
+            return True
+        if re.fullmatch(r"-?\d+(?:\.\d+)?", cleaned):
+            return True
+        if re.fullmatch(r"-?\d{1,3}\.\d+\s*,\s*-?\d{1,3}\.\d+(?:\s*,\s*\d+(?:\.\d+)?)?", cleaned):
+            return True
+        return False
+
+    def extract_parts(raw_value):
+        cleaned = normalize_source_text(raw_value)
+        if not cleaned:
+            return []
+
+        parts = []
+        for piece in re.split(r"[|,]", cleaned):
+            part = normalize_source_text(piece).strip(" ,|-")
+            if is_noise_fragment(part):
+                continue
+            if part.lower() not in [existing.lower() for existing in parts]:
+                parts.append(part)
+
+        if not parts and not is_noise_fragment(cleaned):
+            return [cleaned]
+
+        return parts
+
     parts = []
     for taxonomy in ["property_area", "property_city", "property_state"]:
         for value in term_names.get(taxonomy, []):
-            if value and value not in parts:
-                parts.append(value)
+            for part in extract_parts(value):
+                if part and part.lower() not in [existing.lower() for existing in parts]:
+                    parts.append(part)
 
     for meta_key in ["fave_property_location", "fave_property_map_address", "fave_property_address"]:
         value = cbr_get_meta_value(property_meta, meta_key)
-        if value and value not in parts:
-            parts.append(value)
+        for part in extract_parts(value):
+            if part and part.lower() not in [existing.lower() for existing in parts]:
+                parts.append(part)
             if len(parts) >= 3:
                 break
+        if len(parts) >= 3:
+            break
 
     return ", ".join(parts[:3])
 
@@ -6635,7 +7053,7 @@ def extract_propilatam_date_from_html(raw_html):
             # Convert milliseconds to seconds if needed
             if ts > 9999999999:
                 ts = ts / 1000
-            pub_date = datetime.fromtimestamp(ts)
+            pub_date = datetime.fromtimestamp(ts, timezone.utc)
             result['published_date'] = pub_date.strftime("%d/%m/%Y")
         
         # Fallback: calculate from days_on_site if no datePublished
@@ -6649,7 +7067,7 @@ def extract_propilatam_date_from_html(raw_html):
             ts = int(upd_match.group(1))
             if ts > 9999999999:
                 ts = ts / 1000
-            result['date_last_updated'] = datetime.fromtimestamp(ts).strftime("%d/%m/%Y")
+            result['date_last_updated'] = datetime.fromtimestamp(ts, timezone.utc).strftime("%d/%m/%Y")
 
         # PropiLatam commonly exposes updated_at as Unix ms timestamp.
         # Use it as a fallback when explicit publish timestamps are missing.
@@ -6658,7 +7076,7 @@ def extract_propilatam_date_from_html(raw_html):
             ts = int(propi_updated_match.group(1))
             if ts > 9999999999:
                 ts = ts / 1000
-            updated_date = datetime.fromtimestamp(ts).strftime("%d/%m/%Y")
+            updated_date = datetime.fromtimestamp(ts, timezone.utc).strftime("%d/%m/%Y")
             result.setdefault('published_date', updated_date)
             result.setdefault('date_last_updated', updated_date)
     except Exception as e:
@@ -6674,12 +7092,36 @@ def normalize_propilatam_location_phrase(location):
         return ""
 
     cleaned = re.sub(
-        r'^(?:venta|alquiler|renta|sale|rent)\s+en\s+',
+        r'^(?:(?:compra\s+en\s+preventa)|(?:venta|alquiler|renta|sale|rent)(?:\s+(?:y|o)\s+(?:venta|alquiler|renta|sale|rent))?)\s+en\s+',
         "",
         cleaned,
         flags=re.IGNORECASE,
     )
     return cleaned.strip(" ,|-")
+
+
+def extract_propilatam_location_from_meta_description(meta_description):
+    """Recover location from Propi/Vivo meta descriptions when the page body is sparse."""
+    cleaned = normalize_source_text(meta_description)
+    if not cleaned:
+        return ""
+
+    patterns = [
+        r'\bdesde\s+\$?[\d,.]+\s+en\s+(.+?)(?:[.;]|$)',
+        r'ubicad[oa]\s+en\s+(.+?)(?:[.;]|$)',
+        r'\ben\s+(.+?)(?:[.;]|$)',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, cleaned, re.IGNORECASE)
+        if not match:
+            continue
+
+        location = normalize_propilatam_location_phrase(match.group(1))
+        location = re.sub(r",?\s*el salvador\s*$", "", location, flags=re.IGNORECASE).strip(" ,|-")
+        if location:
+            return location
+
+    return ""
 
 
 def extract_propilatam_main_description(main_text):
@@ -6799,10 +7241,22 @@ def scrape_propilatam_listing(url, listing_type="sale"):
             title_el = candidate_soup.find("h1")
             candidate_title = title_el.get_text(strip=True) if title_el else ""
 
-            if "no se encuentra disponible" in candidate_text_lower:
+            if any(
+                marker in candidate_text_lower
+                for marker in (
+                    "no se encuentra disponible",
+                    "página no encontrada",
+                    "pagina no encontrada",
+                    "no se encontró este anuncio",
+                    "no se encontro este anuncio",
+                )
+            ):
                 continue
 
             if not candidate_title:
+                continue
+
+            if "undefined" in normalize_source_text(candidate_title).lower():
                 continue
 
             selected_url = resp.url if resp.url else candidate_url
@@ -7008,11 +7462,12 @@ def scrape_propilatam_listing(url, listing_type="sale"):
             if next_el:
                 description = next_el.get_text(strip=True)[:1000]
         
+        og_desc = soup.find("meta", {"property": "og:description"})
+        meta_description = normalize_source_text(og_desc.get("content")) if og_desc and og_desc.get("content") else ""
+
         # If no description from heading, try meta description
-        if not description:
-            og_desc = soup.find("meta", {"property": "og:description"})
-            if og_desc and og_desc.get("content"):
-                description = og_desc["content"][:1000]
+        if not description and meta_description:
+            description = meta_description[:1000]
         
         # Location from title, breadcrumbs, and URL path.
         location = ""
@@ -7029,6 +7484,13 @@ def scrape_propilatam_listing(url, listing_type="sale"):
         ):
             location = structured_location
 
+        meta_location = extract_propilatam_location_from_meta_description(meta_description)
+        if meta_location and (
+            not location
+            or location.lower() in ("programar asesoría", "programar asesoria", "elegir unidad", "ver disponibles")
+        ):
+            location = meta_location
+
         if not location:
             loc_links = soup.select('a[href*="/bienes-raices/m/"], a[href*="/sv/venta/"], a[href*="/sv/alquiler/"]')
             if loc_links:
@@ -7041,7 +7503,23 @@ def scrape_propilatam_listing(url, listing_type="sale"):
                     # Skip navigation/menu labels that are not geographic locations.
                     if link_text_lc in ("el salvador bienes raices", "el salvador"):
                         continue
-                    if any(token in link_text_lc for token in ("quiero ", "comprar", "alquilar", "vender", "publicar", "iniciar", "registrar", "visita")):
+                    if any(token in link_text_lc for token in (
+                        "quiero ",
+                        "comprar",
+                        "alquilar",
+                        "vender",
+                        "publicar",
+                        "iniciar",
+                        "registrar",
+                        "visita",
+                        "programar",
+                        "asesor",
+                        "asesoría",
+                        "asesoria",
+                        "elegir unidad",
+                        "ver disponibles",
+                        "disponibles",
+                    )):
                         continue
                     if len(link_text_lc) < 3:
                         continue
