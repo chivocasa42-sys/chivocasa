@@ -115,7 +115,7 @@ def parse_area_value(text: str) -> Tuple[Optional[float], bool]:
     
     # Find all number patterns in the text
     # Pattern matches: 1,234.56 or 1.234,56 or 1234.56 or 1234
-    number_pattern = r'[\d]+(?:[.,]\d{3})*(?:[.,]\d+)?'
+    number_pattern = r'(?<![A-Za-zÀ-ÿ])[\d]+(?:[.,]\d{3})*(?:[.,]\d+)?(?![A-Za-zÀ-ÿ])'
     matches = re.findall(number_pattern, text)
     
     if matches:
@@ -172,13 +172,14 @@ def _parse_number(text: str) -> Optional[float]:
                 # Decimal: "1200,5"
                 return float(text.replace(',', '.'))
         
-        elif dots >= 1 and commas == 1:
-            # Format: 1.234,56 (European style)
+        elif dots >= 1 and commas >= 1:
+            # Mixed separators. Infer decimal separator from whichever appears last.
+            # Examples:
+            # - 1,234.56 -> US style
+            # - 1.234,56 -> European style
+            if text.rfind('.') > text.rfind(','):
+                return float(text.replace(',', ''))
             return float(text.replace('.', '').replace(',', '.'))
-        
-        elif commas >= 1 and dots == 1:
-            # Format: 1,234.56 (US style)
-            return float(text.replace(',', ''))
         
         elif dots > 1:
             # Multiple dots: 1.234.567 -> thousands separators
