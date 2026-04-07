@@ -294,6 +294,7 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
     const [mapCenter, setMapCenter] = useState<[number, number]>(DEFAULT_CENTER);
     const [mapReady, setMapReady] = useState(false);
     const [showDesktopMap, setShowDesktopMap] = useState(false);
+    const [isMobileFiltersExpanded, setIsMobileFiltersExpanded] = useState(false);
     const [nearbyData, setNearbyData] = useState<NearbyData | null>(null);
     const [sortBy, setSortBy] = useState<SortOption>('distance_asc');
     const [activeTab, setActiveTab] = useState<ListingTypeFilter>('sale');
@@ -583,17 +584,19 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
                         ) : showDesktopMap ? <div className="h-full w-full skeleton-pulse" /> : null}
 
                         <div className="pointer-events-none absolute inset-x-0 top-0 z-[500] p-3 md:p-4">
-                            <SearchControls
-                                searchQuery={searchQuery}
-                                isSearching={isSearching}
-                                searchResults={searchResults}
-                                isLoading={isLoading}
-                                disabled={!selectedLocation}
-                                variant="desktop"
-                                onInputChange={handleSearchInput}
-                                onSelectResult={selectSearchResult}
-                                onSearch={() => triggerSearch()}
-                            />
+                            <div className="ml-14 md:ml-16">
+                                <SearchControls
+                                    searchQuery={searchQuery}
+                                    isSearching={isSearching}
+                                    searchResults={searchResults}
+                                    isLoading={isLoading}
+                                    disabled={!selectedLocation}
+                                    variant="desktop"
+                                    onInputChange={handleSearchInput}
+                                    onSelectResult={selectSearchResult}
+                                    onSearch={() => triggerSearch()}
+                                />
+                            </div>
                         </div>
 
                         {false && (
@@ -610,7 +613,47 @@ export default function MapExplorer({ externalLocation }: MapExplorerProps) {
                     </div>
 
                     <div className="bg-white/92 px-4 py-2.5 md:px-5 lg:border-t lg:border-slate-200 lg:px-6">
-                        <div className="space-y-2.5">
+                        <button
+                            type="button"
+                            onClick={() =>
+                                setIsMobileFiltersExpanded((current) => !current)
+                            }
+                            aria-expanded={isMobileFiltersExpanded}
+                            aria-controls="mobile-explorer-filters"
+                            className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left shadow-sm transition hover:border-slate-300 lg:hidden"
+                        >
+                            <div className="min-w-0">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                    Filtros y resumen
+                                </p>
+                                <p className="mt-1 truncate text-sm font-semibold text-slate-900">
+                                    {radius} km | {selectedLocationName}
+                                </p>
+                            </div>
+                            <svg
+                                className={`h-5 w-5 flex-shrink-0 text-slate-500 transition-transform ${
+                                    isMobileFiltersExpanded ? 'rotate-180' : ''
+                                }`}
+                                viewBox="0 0 20 20"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="1.8"
+                                aria-hidden="true"
+                            >
+                                <path
+                                    d="m5 7.5 5 5 5-5"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                />
+                            </svg>
+                        </button>
+
+                        <div
+                            id="mobile-explorer-filters"
+                            className={`mt-2.5 space-y-2.5 lg:mt-0 ${
+                                isMobileFiltersExpanded ? 'block' : 'hidden'
+                            } lg:block`}
+                        >
                             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5">
                                 <div className="mb-2 flex items-center justify-between gap-3">
                                     <div>
