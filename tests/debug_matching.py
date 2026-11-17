@@ -5,8 +5,7 @@ from supabase import create_client
 from match_locations import normalize_text, remove_location_prefixes, load_location_groups, match_listing_with_texts
 import re
 
-url = 'https://zvamupbxzuxdgvzgbssn.supabase.co'
-key = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp2YW11cGJ4enV4ZGd2emdic3NuIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTA5MDMwNSwiZXhwIjoyMDg0NjY2MzA1fQ.VfONseJg19pMEymrc6FbdEQJUWxTzJdNlVTboAaRgEs'
+from supabase_config import SUPABASE_URL as url, SUPABASE_SERVICE_KEY as key
 
 supabase = create_client(url, key)
 

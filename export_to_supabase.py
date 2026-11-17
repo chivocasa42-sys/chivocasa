@@ -13,9 +13,7 @@ import json
 import os
 from supabase import create_client, Client
 
-# Supabase credentials (hardcoded for convenience - remove before committing!)
-SUPABASE_URL = "https://zvamupbxzuxdgvzgbssn.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp2YW11cGJ4enV4ZGd2emdic3NuIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTA5MDMwNSwiZXhwIjoyMDg0NjY2MzA1fQ.VfONseJg19pMEymrc6FbdEQJUWxTzJdNlVTboAaRgEs"
+from supabase_config import SUPABASE_URL, SUPABASE_SERVICE_KEY as SUPABASE_KEY
 
 JSON_FILE = "residential_areas_el_salvador.json"
 TABLE_NAME = "sv_locations"
@@ -148,8 +146,8 @@ def main():
     if not SUPABASE_URL or not SUPABASE_KEY:
         print("\n❌ Error: Supabase credentials not found!")
         print("   Set environment variables:")
-        print("   - SUPABASE_URL or NEXT_PUBLIC_SUPABASE_URL")
-        print("   - SUPABASE_SERVICE_ROLE_KEY or SUPABASE_KEY")
+        print("   - SUPABASE_URL")
+        print("   - SUPABASE_SERVICE_KEY (e.g. in .env.local)")
         return
     
     print(f"\n🔗 Supabase URL: {SUPABASE_URL[:40]}...")

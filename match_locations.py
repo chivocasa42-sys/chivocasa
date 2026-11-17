@@ -24,9 +24,7 @@ except ModuleNotFoundError:
     create_client = None
     Client = Any
 
-# Supabase credentials (hardcoded for convenience)
-SUPABASE_URL = "https://zvamupbxzuxdgvzgbssn.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp2YW11cGJ4enV4ZGd2emdic3NuIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTA5MDMwNSwiZXhwIjoyMDg0NjY2MzA1fQ.VfONseJg19pMEymrc6FbdEQJUWxTzJdNlVTboAaRgEs"
+from supabase_config import SUPABASE_URL, SUPABASE_SERVICE_KEY as SUPABASE_KEY
 
 BATCH_SIZE = 100
 DEBUG = True  # Set to True to see sample data

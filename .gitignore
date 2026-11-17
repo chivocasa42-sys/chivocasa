@@ -47,3 +47,14 @@ __pycache__/
 *.egg-info/
 .venv/
 venv/
+
+# local secrets / env exports not matched by .env*
+env.download
+
+# dedup checkpoints (local cache)
+.dedup_cache/
+.dedup_cache_temp/
+
+# scratch HTML page dumps
+/temp_*.html
+/test_*.html
